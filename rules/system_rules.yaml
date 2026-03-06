@@ -38,41 +38,6 @@ llm_general_rules:
       rule: |
         Make minimal, focused changes. Avoid refactoring unrelated code or adding 
         unnecessary features unless explicitly requested.
-        
-    - id: "collaboration"
-      priority: 7
-      rule: |
-        When working in a multi-LLM environment, coordinate with other LLMs through the 
-        ticketing system. Claim tickets before starting work, update status regularly, 
-        and release tickets if unable to complete them.
-
-  collaboration_rules:
-    - id: "ticket_claim"
-      priority: 1
-      rule: |
-        Always claim a ticket from the Kanban board before starting work. Use the 
-        ticket claim mechanism to indicate you are working on it. Unclaimed work 
-        should not be considered in progress.
-        
-    - id: "ticket_update"
-      priority: 2
-      rule: |
-        Update ticket status as work progresses. Move tickets through: 
-        Backlog -> In Progress -> Review -> Done. Keep the board accurate.
-        
-    - id: "ticket_release"
-      priority: 3
-      rule: |
-        If you cannot complete a ticket, release it back to the pool. Do not hold 
-        tickets indefinitely. If blocked for more than a reasonable time, move 
-        ticket back to backlog and notify.
-        
-    - id: "no_duplication"
-      priority: 4
-      rule: |
-        Check the ticket board before starting work to avoid duplicate effort. 
-        If a ticket is already claimed or in progress, coordinate with the 
-        assigned LLM before proceeding.
 
   output_format_rules:
     - id: "concise_responses"
