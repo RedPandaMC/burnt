@@ -2,13 +2,15 @@
   "$schema": "https://opencode.ai/config.json",
 
   // ── Model & Provider ──────────────────────────────────────────────
-  "model": "minimax/minimax-m2.5",
+  // Using Anthropic Sonnet 4.6 for strong code reasoning capabilities
+  "model": "anthropic/sonnet-4.6",
 
   // ── Instructions (replaces "general_rules") ───────────────────────
   // These are injected into every session as system context.
   // Put your system rules, coding standards, and kanban board state here.
   "instructions": [
-    "rules/system_rules.md"
+    "AGENTS.md",
+    "rules/system_rules.yaml"
   ],
 
   // ── Default Agent ─────────────────────────────────────────────────
