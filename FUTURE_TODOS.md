@@ -29,11 +29,11 @@
 
 ## Phase 1: Foundation & Validation (Critical)
 
-### 1.1 Run and Fix Tests
-- [ ] Run existing tests: `uv run pytest -m unit -v`
-- [ ] Run linting: `uv run ruff check src/ tests/`
-- [ ] Run formatting check: `uv run ruff format --check src/ tests/`
-- [ ] Fix all linting/type errors
+### 1.1 Run and Fix Tests ✅
+- [x] Run existing tests: `uv run pytest -m unit -v` — was selecting 0 (fixed)
+- [x] Run linting: `uv run ruff check src/ tests/` — was 29 errors (fixed)
+- [x] Run formatting check: `uv run ruff format --check src/ tests/` — clean
+- [x] Fix all linting/type errors — 0 errors remaining
 - [ ] Add return type hints to all functions (especially parsers/sql.py)
 - [ ] Add missing docstrings to reach interrogate coverage targets
 - [ ] Run security audit: `uv run bandit -c pyproject.toml -r src/`
