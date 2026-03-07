@@ -6,10 +6,10 @@
 
 ```yaml
 id: p2-03-query-history
-status: todo
+status: done
 phase: 2
 priority: high
-agent: ~
+agent: claude-sonnet-4-6
 blocked_by: [p2-01-databricks-connection]
 created_by: planner
 ```
@@ -98,8 +98,18 @@ All checks passed.
 
 ### Result
 
-[Executor: fill in after completion]
+Implemented successfully by claude-sonnet-4-6.
+
+- Added `QueryRecord` model to `src/dburnrate/core/models.py` with all 16 fields matching `system.query.history` schema
+- Created `src/dburnrate/tables/queries.py` with:
+  - `normalize_sql`: strips line/block comments, normalizes whitespace, uppercases, replaces string/numeric literals with `?`, collapses IN-lists
+  - `fingerprint_sql`: SHA-256 hex of normalized SQL
+  - `get_query_history`: fetches up to 10,000 rows for a warehouse over N days, no SELECT *
+  - `find_similar_queries`: fetches recent FINISHED queries, filters in-memory by fingerprint match
+  - `_row_to_record`: coerces int fields from string, preserves None for optional fields
+- Created `tests/unit/tables/test_queries.py` with 30 unit tests across 5 test classes, all using MagicMock (no HTTP calls)
+- All 192 unit tests pass; `ruff check` and `ruff format --check` exit 0
 
 ### Blocked reason
 
-[If blocked, explain here]
+N/A
