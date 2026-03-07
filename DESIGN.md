@@ -13,6 +13,22 @@
 
 ---
 
+## Current Status
+
+| Phase | Status | What | Tasks |
+|-------|--------|------|-------|
+| 1 | ✅ Done | Tests, lint, docstrings | `tasks/p1-*.md.completed` |
+| 2 | ✅ Done | Databricks system table client (billing, query history, compute) | `tasks/p2-*.md.completed` |
+| 3 | ✅ Done | EXPLAIN COST parser, Delta log reader, hybrid estimator | `tasks/p3-*.md.completed` |
+| 4 | 🔄 Active | Wire hybrid into CLI, AWS/GCP pricing, Delta scan sizes, fingerprint lookup | `tasks/p4-*.md` |
+| 5 | ⏳ Planned | Production hardening (error handling, caching, observability) | `tasks/p5-*.md` |
+| 6 | ⏳ Planned | ML cost bucket classification | `tasks/p6-*.md` |
+| 11–13 | ⏳ Post-MVP | Self-referential estimation, batch analysis, CI/CD workflows | `tasks/p11-*.md`, `tasks/p12-*.md`, `tasks/p13-*.md` |
+
+**Test count**: 263 passing | **Lint**: 0 errors | **Security**: bandit clean
+
+---
+
 # Research Findings
 
 ## Overview
@@ -489,123 +505,140 @@ def _require(module: str, extra: str):
 
 # Implementation Roadmap
 
-## Phase 1: Foundation & Validation (Critical)
+## Phase 1: Foundation & Validation ✅ COMPLETE
 
 ### 1.1 Run and Fix Tests ✅
 - [x] Run existing tests: `uv run pytest -m unit -v`
 - [x] Run linting: `uv run ruff check src/ tests/`
 - [x] Run formatting check: `uv run ruff format --check src/ tests/`
 - [x] Fix all linting/type errors
-- [ ] Add return type hints to all functions
-- [ ] Add missing docstrings
-- [ ] Run security audit: `uv run bandit -c pyproject.toml -r src/`
+- [x] Add return type hints to all functions
+- [x] Add missing docstrings
+- [x] Run security audit: `uv run bandit -c pyproject.toml -r src/`
 
-### 1.2 Code Quality
-- [ ] Type hints on all public functions
-- [ ] Proper exception handling
-- [ ] CLI argument validation
-
----
-
-## Phase 2: System Tables Integration (High Priority)
-
-### 2.1 Billing Integration
-- [ ] Implement `src/dburnrate/tables/billing.py`
-- [ ] Query `system.billing.usage`
-- [ ] Query `system.billing.list_prices`
-- [ ] Cost attribution: `query_duration / total_duration * hourly_cost`
-
-### 2.2 Query History Integration
-- [ ] Implement `src/dburnrate/tables/queries.py`
-- [ ] Extract: `execution_duration_ms`, `read_bytes`, `read_rows`, `total_task_duration_ms`
-
-### 2.3 Compute Integration
-- [ ] Implement `src/dburnrate/tables/compute.py`
-- [ ] Query `system.compute.node_types`
-- [ ] Query `system.compute.clusters`
-- [ ] Query `system.compute.node_timeline`
-
-### 2.4 Databricks Connection
-- [ ] REST API client
-- [ ] Workspace URL + token auth
-- [ ] Connection pooling and retry logic
-- [ ] Rate limiting
+### 1.2 Code Quality ✅
+- [x] Type hints on all public functions
+- [x] Proper exception handling
+- [x] CLI argument validation
 
 ---
 
-## Phase 3: EXPLAIN COST Integration (High Priority)
+## Phase 2: System Tables Integration ✅ COMPLETE
 
-### 3.1 EXPLAIN Parsing
-- [ ] Implement `src/dburnrate/parsers/explain.py`
-- [ ] Parse `sizeInBytes` and `rowCount`
-- [ ] Extract join strategies
-- [ ] Count shuffle operations
+### 2.1 Billing Integration ✅
+- [x] Implement `src/dburnrate/tables/billing.py`
+- [x] Query `system.billing.usage`
+- [x] Query `system.billing.list_prices`
+- [x] Cost attribution: `query_duration / total_duration * hourly_cost`
 
-### 3.2 Statistics Handling
-- [ ] Detect completeness (missing/partial/full)
-- [ ] Handle tables without ANALYZE
-- [ ] Delta metadata integration
+### 2.2 Query History Integration ✅
+- [x] Implement `src/dburnrate/tables/queries.py`
+- [x] Extract: `execution_duration_ms`, `read_bytes`, `read_rows`, `total_task_duration_ms`
+- [x] SQL fingerprinting: `normalize_sql()` + SHA-256 → `fingerprint_sql()`
 
-### 3.3 Hybrid Estimation
-- [ ] Combine static + EXPLAIN
-- [ ] Weight EXPLAIN higher when stats available
-- [ ] Confidence boost on agreement
+### 2.3 Compute Integration ✅
+- [x] Implement `src/dburnrate/tables/compute.py`
+- [x] Query `system.compute.node_types`
+- [x] Query `system.compute.clusters`
+- [x] Query `system.compute.node_timeline`
 
----
-
-## Phase 4: Delta Metadata Integration (Medium Priority)
-
-### 4.1 Delta Log Parsing
-- [ ] `_delta_log` parsing
-- [ ] Extract: `numRecords`, `size`, `minValues`, `maxValues`, `nullCount`
-- [ ] `DESCRIBE DETAIL` wrapper
-
-### 4.2 Scan Size Estimation
-- [ ] Total table size from transaction log
-- [ ] Partition-filtered scan sizes
-- [ ] Data volume factor
-
-### 4.3 Data Skipping
-- [ ] File-level min/max for predicate estimation
-- [ ] Z-ORDER/Liquid Clustering effectiveness
+### 2.4 Databricks Connection ✅
+- [x] REST API client (`src/dburnrate/tables/connection.py`)
+- [x] Workspace URL + token auth (Bearer)
+- [x] Inline result short-circuit + polling for async statements
+- [x] Basic retry logic
 
 ---
 
-## Phase 5: Historical Fingerprinting (High Priority)
+## Phase 3: EXPLAIN COST Integration ✅ COMPLETE
 
-### 5.1 Query Normalization
-- [ ] Percona-style normalization
-- [ ] Replace literals with `?`
-- [ ] Collapse IN-lists
-- [ ] Abstract database/schema names
+### 3.1 EXPLAIN Parsing ✅
+- [x] Implement `src/dburnrate/parsers/explain.py`
+- [x] Parse `sizeInBytes` and `rowCount`
+- [x] Extract join strategies
+- [x] Count shuffle operations
+- [x] Research spec: `docs/explain-cost-schema.md`
 
-### 5.2 Template Matching
-- [ ] SHA-256 template hashing
-- [ ] Exact match → historical p50/p95
-- [ ] Cache template → cost mappings
+### 3.2 Statistics Handling ✅
+- [x] Detect completeness (8-byte placeholder = no stats)
+- [x] Handle tables without ANALYZE (zero-fill)
+- [x] Delta metadata integration (`src/dburnrate/parsers/delta.py`)
 
-### 5.3 Similarity Matching
-- [ ] AST edit distance (sqlglot)
-- [ ] Embedding-based similarity (CodeBERT)
+### 3.3 Hybrid Estimation ✅
+- [x] Combine static + EXPLAIN (`src/dburnrate/estimators/hybrid.py`)
+- [x] Weight EXPLAIN higher when stats available
+- [x] Confidence boost on agreement
 
 ---
 
-## Phase 6: ML Cost Models (Medium Priority)
+## Phase 4: CLI Wiring & Multi-Cloud (🔄 Active)
+
+> Task files: `tasks/p4-01-wire-explain-into-cli.md`, `tasks/p4-02-delta-scan-size.md`,
+> `tasks/p4-03-fingerprint-lookup.md`, `tasks/p4-04-aws-gcp-pricing.md`
+
+### 4.1 Wire EXPLAIN into CLI
+- [ ] `estimate` command accepts `--warehouse-id` and `--workspace-url`
+- [ ] When connected: run `EXPLAIN COST`, use `HybridEstimator`
+- [ ] Fallback to static on connection error
+
+### 4.2 Delta Scan Size
+- [ ] `HybridEstimator.estimate()` accepts `delta_tables` kwarg
+- [ ] Delta sizes override EXPLAIN sizes override SQL complexity
+
+### 4.3 Fingerprint Lookup
+- [ ] CLI fingerprints query before EXPLAIN
+- [ ] `find_similar_queries()` → pass records to `HybridEstimator`
+
+### 4.4 AWS/GCP Pricing
+- [ ] AWS and GCP DBU rates in `pricing.py`
+- [ ] Cloud auto-detection from workspace URL
+- [ ] `--cloud` CLI flag
+
+---
+
+## Phase 5: Production Hardening (⏳ Planned)
+
+> Task files: `tasks/p5-00-research-production-hardening.md`, `tasks/p5-01-error-handling.md`,
+> `tasks/p5-02-caching-and-performance.md`, `tasks/p5-03-observability.md`
+
+### 5.1 Error Handling
+- [ ] Extended exception hierarchy (`AuthenticationError`, `RateLimitError`, `WarehouseError`, etc.)
+- [ ] User-friendly messages with recovery suggestions
+- [ ] Token redaction from all error output
+
+### 5.2 Caching & Performance
+- [ ] TTL cache for `DESCRIBE DETAIL` results (5 min default)
+- [ ] `requests.Session` + `HTTPAdapter` pool in `DatabricksClient`
+- [ ] Batch fingerprint lookups
+
+### 5.3 Observability
+- [ ] `logging.NullHandler()` on `dburnrate` root logger
+- [ ] Structured log calls (DEBUG/INFO/WARNING/ERROR)
+- [ ] `--debug` CLI flag for verbose output + full tracebacks
+- [ ] Per-tier timing in `CostEstimate.breakdown`
+
+---
+
+## Phase 6: ML Cost Models (⏳ Planned)
+
+> Task files: `tasks/p6-00-research-ml-models.md`, `tasks/p6-01-feature-extraction.md`,
+> `tasks/p6-02-classification-model.md`
 
 ### 6.1 Feature Extraction
-- [ ] Operator types
-- [ ] Cardinalities from EXPLAIN
-- [ ] Table sizes from Delta
-- [ ] Cluster configuration
+- [ ] `src/dburnrate/estimators/features.py` with `QueryFeatures` dataclass
+- [ ] Operator types, cardinalities from EXPLAIN
+- [ ] Table sizes from Delta, cluster config
+- [ ] `FEATURE_NAMES` constant for column ordering
 
 ### 6.2 Classification Model
-- [ ] Cost buckets: low/medium/high/very-high
-- [ ] sklearn implementation
-- [ ] Training data from history
+- [ ] `src/dburnrate/estimators/ml.py` with `CostBucketClassifier`
+- [ ] Cost buckets: low (<0.1 DBU) / medium / high / very-high (>10 DBU)
+- [ ] `HistGradientBoostingClassifier` (sklearn `[ml]` extra)
+- [ ] `train-model` CLI command
 
-### 6.3 Advanced Models
-- [ ] RAAL/DRAL-inspired models
-- [ ] Zero-shot transfer
+### 6.3 HybridEstimator Integration
+- [ ] ML bucket as optional fourth signal
+- [ ] Confidence adjustment when ML contradicts other signals
 
 ---
 
@@ -848,10 +881,15 @@ uv run pip-audit
 
 ## Key Documents
 
-- **DESIGN.md** (this file) - Research, architecture, and roadmap
+- **DESIGN.md** (this file) - Research, architecture, roadmap, and current status
 - **AGENTS.md** - LLM working rules and workflow
-- **PLAN.md** - Original implementation plan
 - **README.md** - User-facing documentation
+- **tasks/*.md** - Authoritative execution task files (active tasks: `status: todo`)
+- **tasks/*.md.completed** - Completed task history
+- **docs/explain-cost-schema.md** - EXPLAIN COST parsing specification (583 lines)
+- **docs/usage.md** - Programmatic API usage guide
+
+> **Note**: `PLAN.md` has been archived (removed from working tree; preserved in git history at commit prior to removal). It contained scaffolding code for phases 0–4 that is now superseded by the working implementation in `src/` and the task files in `tasks/`.
 
 ---
 
@@ -864,4 +902,4 @@ uv run pip-audit
 5. **Batch analysis** - Glob patterns for bulk operations
 6. **CI/CD native** - Built for automation and workflows
 
-*Document version: 1.0 | Last updated: March 2026*
+*Document version: 1.1 | Last updated: March 2026 | PLAN.md archived*
