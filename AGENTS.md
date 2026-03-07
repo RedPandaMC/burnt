@@ -1,6 +1,16 @@
 # AGENTS.md - LLM Working Rules for dburnrate
 
-> This file defines how all LLM agents should work in this repository.
+> Auto-loaded by Claude Code. Governs all opencode sessions in this repo.
+> Roadmap: FUTURE_TODOS.md
+
+---
+
+## Project At a Glance
+
+**dburnrate** — Python package for pre-execution Databricks cost estimation.
+- Stack: Python 3.12, uv, hatchling, pydantic v2, typer, rich, sqlglot
+- Source: `src/dburnrate/` | Tests: `tests/unit/` | CLI: `uv run dburnrate`
+- Status: MVP built (phases 0-4 of PLAN.md)
 
 ---
 
@@ -22,6 +32,45 @@
 
 ### Multi-Step Tasks
 Use the TodoWrite tool to track progress. Break complex tasks into smaller, verifiable steps.
+
+---
+
+## Two-Role Parallel Coding
+
+This repo uses **planner/executor** pattern for AI-assisted development:
+
+| Role | Model | Responsibility |
+|------|-------|---------------|
+| **Planner** | Anthropic (Claude Opus/Sonnet) | Reads FUTURE_TODOS.md, decomposes tasks, writes task specs to `tasks/` |
+| **Executor** | Kimi / Minimax / Sonnet | Picks up task files from `tasks/`, implements code, runs tests, writes handoff |
+
+### If you are a PLANNER agent:
+1. Read FUTURE_TODOS.md — work Phase 1 first, then Phase 2, etc.
+2. Check `tasks/` for existing in-progress/blocked tasks before creating new ones
+3. Create self-contained task files using `tasks/TEMPLATE.md`
+4. Tasks must include: file list to read, exact acceptance criteria, test commands
+5. Mark tasks `status: todo` — executor picks them up
+6. After executor marks `status: done`, verify the handoff notes, update FUTURE_TODOS.md
+
+### If you are an EXECUTOR agent:
+1. List `tasks/` and pick ONE `status: todo` task
+2. Update status to `status: in-progress` and add `agent: <your-model-id>`
+3. Read ONLY the files listed in the task's `context.files` section
+4. Implement, then run the task's `verification.commands` — ALL must pass
+5. Write results to `handoff.result` in the task file
+6. Mark `status: done` or `status: blocked` (with reason)
+7. Never start a second task until the first is done or blocked
+
+### Parallel execution rules:
+- Tasks with non-overlapping file sets can run in parallel
+- Tasks with `blocked_by: [task-id]` must wait
+- Never modify a file another in-progress task owns (check `context.files`)
+
+### Task file lifecycle (MANDATORY)
+- Active tasks: `tasks/<id>.md` (status: todo | in-progress | blocked)
+- Completed tasks: rename to `tasks/<id>.md.completed` — **never delete, always rename**
+- When marking a task done, the planner renames the file: `mv tasks/<id>.md tasks/<id>.md.completed`
+- `ls tasks/*.md` should show only actionable tasks; `ls tasks/*.md.completed` shows history
 
 ---
 
