@@ -1,5 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "autoshare": false,
-  "instructions": ["You are working in the dburnrate Python project. ALWAYS read CLAUDE.md at the start of every session for rules and workflow. Key rules: use `uv run` for all Python commands, follow the two-role workflow (Planner=Anthropic, Executor=Kimi/Minimax/Sonnet), work tasks from the `tasks/` directory, run tests+lint before marking any work done. See CLAUDE.md for full details."]
+  "instructions": ["You are working in the dburnrate Python project. ALWAYS read AGENTS.md at the start of every session for rules and workflow. Key rules: use `uv run` for all Python commands, follow the two-role workflow (Planner=Anthropic, Executor=Kimi/Minimax/Sonnet), work tasks from the `tasks/` directory, run tests+lint before marking any work done. See AGENTS.md for full details."]
 }
