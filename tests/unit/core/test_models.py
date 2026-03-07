@@ -1,11 +1,12 @@
 import pytest
+
 from dburnrate.core.models import (
-    OperationInfo,
-    QueryProfile,
     ClusterConfig,
-    PricingInfo,
-    CostEstimate,
     ClusterRecommendation,
+    CostEstimate,
+    OperationInfo,
+    PricingInfo,
+    QueryProfile,
 )
 
 

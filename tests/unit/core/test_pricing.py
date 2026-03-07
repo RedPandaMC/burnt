@@ -1,15 +1,16 @@
-import pytest
 from decimal import Decimal
+
+import pytest
+
+from dburnrate.core.exceptions import PricingError
 from dburnrate.core.pricing import (
     AZURE_DBU_RATES,
     AZURE_INSTANCE_DBU,
-    PHOTON_MULTIPLIER_AZURE,
-    get_dbu_rate,
-    compute_cost_usd,
     apply_photon,
+    compute_cost_usd,
+    get_dbu_rate,
     usd_to_eur,
 )
-from dburnrate.core.exceptions import PricingError
 
 
 class TestAzureDbuRates:

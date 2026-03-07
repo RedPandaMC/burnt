@@ -1,8 +1,8 @@
-import pytest
 from decimal import Decimal
-from unittest.mock import Mock, patch
-from dburnrate.estimators.static import CostEstimator, estimate_cost
+from unittest.mock import Mock
+
 from dburnrate.core.models import ClusterConfig
+from dburnrate.estimators.static import CostEstimator, estimate_cost
 
 
 class TestCostEstimator:
@@ -68,7 +68,7 @@ class TestCostEstimator:
         assert confidence == "low"
 
     def test_compute_confidence_high_complexity(self):
-        from dburnrate.core.models import QueryProfile, OperationInfo
+        from dburnrate.core.models import OperationInfo, QueryProfile
 
         estimator = CostEstimator()
         profile = QueryProfile(

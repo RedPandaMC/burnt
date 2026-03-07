@@ -1,13 +1,10 @@
-import pytest
-from decimal import Decimal
+from dburnrate.core.models import ClusterConfig, CostEstimate
 from dburnrate.estimators.whatif import (
-    apply_photon_scenario,
-    apply_cluster_resize,
-    apply_serverless_migration,
     SPEEDUP_FACTORS,
-    PHOTON_COST_MULTIPLIER,
+    apply_cluster_resize,
+    apply_photon_scenario,
+    apply_serverless_migration,
 )
-from dburnrate.core.models import CostEstimate, ClusterConfig
 
 
 class TestApplyPhotonScenario:

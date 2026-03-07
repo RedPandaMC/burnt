@@ -1,7 +1,9 @@
-import pytest
 import tempfile
 from pathlib import Path
-from dburnrate.core.config import Settings, Config
+
+import pytest
+
+from dburnrate.core.config import Config, Settings
 
 
 class TestSettings:

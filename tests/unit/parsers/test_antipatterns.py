@@ -1,10 +1,9 @@
-import pytest
 from dburnrate.parsers.antipatterns import (
-    detect_antipatterns,
-    _detect_sql_antipatterns,
-    _detect_pyspark_antipatterns,
     AntiPattern,
     Severity,
+    _detect_pyspark_antipatterns,
+    _detect_sql_antipatterns,
+    detect_antipatterns,
 )
 
 

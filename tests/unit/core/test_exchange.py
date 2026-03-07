@@ -1,10 +1,12 @@
-import pytest
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
+
+import pytest
 import requests
-from dburnrate.core.exchange import FrankfurterProvider, FixedRateProvider
+
 from dburnrate.core.exceptions import PricingError
+from dburnrate.core.exchange import FixedRateProvider, FrankfurterProvider
 
 
 class TestFrankfurterProvider:
@@ -47,7 +49,6 @@ class TestFrankfurterProvider:
         assert result == Decimal("92")
 
     def test_get_rate_weekday_adjustment(self):
-        provider = FrankfurterProvider()
         saturday = date(2024, 1, 6)
         assert saturday.weekday() == 5
 

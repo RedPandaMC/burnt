@@ -1,13 +1,13 @@
 import pytest
-from dburnrate.parsers.sql import (
-    parse_sql,
-    extract_tables,
-    detect_operations,
-    compute_complexity,
-    analyze_query,
-    OPERATION_WEIGHTS,
-)
+
 from dburnrate.core.exceptions import ParseError
+from dburnrate.parsers.sql import (
+    analyze_query,
+    compute_complexity,
+    detect_operations,
+    extract_tables,
+    parse_sql,
+)
 
 
 class TestParseSql:

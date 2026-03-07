@@ -1,8 +1,8 @@
-import pytest
 import json
 import tempfile
 from pathlib import Path
-from dburnrate.parsers.notebooks import parse_notebook, parse_dbc, NotebookCell
+
+from dburnrate.parsers.notebooks import NotebookCell, parse_notebook
 
 
 class TestParseNotebook:
