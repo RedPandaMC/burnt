@@ -109,3 +109,16 @@ class DeltaTableInfo(BaseModel):
     num_files: int
     num_records: int | None = None
     partition_columns: list[str] = []
+
+
+class ExplainPlan(BaseModel):
+    """Parsed representation of a Databricks EXPLAIN COST output."""
+
+    total_size_bytes: int
+    estimated_rows: int | None = None
+    join_types: list[str] = []
+    shuffle_count: int = 0
+    plan_depth: int = 0
+    stats_complete: bool = False
+    raw_plan: str = ""
+    operations: list[OperationInfo] = []
