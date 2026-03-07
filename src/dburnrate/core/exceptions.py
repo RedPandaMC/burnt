@@ -29,3 +29,15 @@ class EstimationError(DburnrateError):
     """Raised when cost estimation fails."""
 
     pass
+
+
+class DatabricksConnectionError(DburnrateError):
+    """Raised when connection to Databricks workspace fails."""
+
+    pass
+
+
+class DatabricksQueryError(DburnrateError):
+    """Raised when a SQL statement execution fails on Databricks."""
+
+    pass
