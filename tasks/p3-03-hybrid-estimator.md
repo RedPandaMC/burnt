@@ -6,10 +6,10 @@
 
 ```yaml
 id: p3-03-hybrid-estimator
-status: todo
+status: done
 phase: 3
 priority: high
-agent: ~        # Claude/Sonnet — algorithm design + model integration
+agent: claude-sonnet-4-6
 blocked_by: [p3-01-explain-parser, p2-01-databricks-connection]
 created_by: planner
 ```
@@ -98,8 +98,21 @@ uv run ruff format --check src/ tests/
 
 ### Result
 
-[Executor: fill in after completion]
+Implemented `src/dburnrate/estimators/hybrid.py` with `HybridEstimator` class.
+
+Key implementation decisions:
+- `CostEstimate` has no `explanation` field — used `breakdown` (dict) and `warnings` (list) to carry signal metadata
+- `CostEstimate.estimated_cost_usd` is `float | None` (not Decimal) — matched existing model convention
+- Static estimator `estimate()` takes `(query, language, cluster)` — called with `cluster=cluster` kwarg
+- `ClusterConfig.dbu_per_hour` confirmed as the correct field name (float)
+- Nominal `$0.20/DBU` rate used for cost_usd when no pricing is available
+
+Signal priority order: historical p50 median > EXPLAIN COST blend > static fallback.
+Confidence assignment: historical=high, stats_complete=high, stats_incomplete=medium, static-only=low/medium.
+
+Tests: 19 unit tests covering all required scenarios.
+All 263 unit tests pass. ruff check and format clean.
 
 ### Blocked reason
 
-[If blocked, explain here]
+N/A
