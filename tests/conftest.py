@@ -13,6 +13,9 @@ def pytest_configure(config):
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
-        if "unit" not in item.keywords and "integration" not in item.keywords:
-            if "tests/unit" in str(item.fspath):
-                item.add_marker(pytest.mark.unit)
+        if (
+            item.get_closest_marker("unit") is None
+            and item.get_closest_marker("integration") is None
+            and "tests/unit" in str(item.path)
+        ):
+            item.add_marker(pytest.mark.unit)
