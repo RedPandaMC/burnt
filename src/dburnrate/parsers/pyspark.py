@@ -1,3 +1,5 @@
+"""PySpark code analysis using AST."""
+
 import ast as ast_module
 
 from ..core.exceptions import ParseError
@@ -25,33 +27,40 @@ DECORATOR_WEIGHTS = {
 
 
 def analyze_pyspark(source: str) -> list[OperationInfo]:
+    """Analyze PySpark code for cost-affecting operations."""
     try:
         tree = ast_module.parse(source)
     except SyntaxError as e:
         raise ParseError(f"Failed to parse PySpark: {e}") from e
 
-    operations = []
     visitor = PySparkVisitor()
     visitor.visit(tree)
     return visitor.operations
 
 
 class PySparkVisitor(ast_module.NodeVisitor):
+    """AST visitor for PySpark code analysis."""
+
     def __init__(self):
+        """Initialize visitor."""
         self.operations: list[OperationInfo] = []
         self._in_udf = False
         self._udf_type = None
 
     def visit_Call(self, node: ast_module.Call):
+        """Visit function calls."""
         if isinstance(node.func, ast_module.Attribute):
             method_name = node.func.attr
 
             if method_name in PYSPARK_WEIGHTS:
                 weight = PYSPARK_WEIGHTS[method_name]
-                if method_name == "repartition" and node.args:
-                    if isinstance(node.args[0], ast_module.Constant):
-                        if node.args[0].value == 1:
-                            weight = 15
+                if (
+                    method_name == "repartition"
+                    and node.args
+                    and isinstance(node.args[0], ast_module.Constant)
+                    and node.args[0].value == 1
+                ):
+                    weight = 15
                 self.operations.append(
                     OperationInfo(
                         name=method_name,
@@ -60,13 +69,10 @@ class PySparkVisitor(ast_module.NodeVisitor):
                     )
                 )
 
-            if method_name == "sql" and isinstance(node.func.value, ast_module.Name):
-                if node.func.value.id == "spark":
-                    pass
-
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast_module.FunctionDef):
+        """Visit function definitions."""
         for decorator in node.decorator_list:
             dec_name = self._get_decorator_name(decorator)
             if dec_name in DECORATOR_WEIGHTS:
@@ -80,6 +86,7 @@ class PySparkVisitor(ast_module.NodeVisitor):
         self.generic_visit(node)
 
     def _get_decorator_name(self, decorator) -> str:
+        """Extract decorator name from AST node."""
         if isinstance(decorator, ast_module.Name):
             return decorator.id
         elif isinstance(decorator, ast_module.Call):

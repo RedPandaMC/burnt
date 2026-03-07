@@ -1,8 +1,12 @@
+"""Anti-pattern detection for SQL and PySpark."""
+
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
+    """Severity levels for anti-patterns."""
+
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
@@ -10,6 +14,8 @@ class Severity(str, Enum):
 
 @dataclass
 class AntiPattern:
+    """Represents an anti-pattern detected in code."""
+
     name: str
     severity: Severity
     description: str
@@ -18,6 +24,7 @@ class AntiPattern:
 
 
 def detect_antipatterns(source: str, language: str = "sql") -> list[AntiPattern]:
+    """Detect anti-patterns in source code."""
     if language == "sql":
         return _detect_sql_antipatterns(source)
     elif language == "pyspark":
@@ -26,6 +33,7 @@ def detect_antipatterns(source: str, language: str = "sql") -> list[AntiPattern]
 
 
 def _detect_sql_antipatterns(sql: str) -> list[AntiPattern]:
+    """Detect SQL anti-patterns."""
     patterns = []
 
     if "CROSS JOIN" in sql.upper():
@@ -62,6 +70,7 @@ def _detect_sql_antipatterns(sql: str) -> list[AntiPattern]:
 
 
 def _detect_pyspark_antipatterns(source: str) -> list[AntiPattern]:
+    """Detect PySpark anti-patterns."""
     patterns = []
 
     if ".collect()" in source and ".limit(" not in source:

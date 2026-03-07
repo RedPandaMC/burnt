@@ -1,3 +1,5 @@
+"""Exchange rate providers for currency conversion."""
+
 from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
@@ -6,10 +8,16 @@ from .exceptions import PricingError
 
 
 class FrankfurterProvider:
+    """Exchange rate provider using Frankfurter API."""
+
     BASE_URL = "https://api.frankfurter.dev/v1"
 
-    @lru_cache(maxsize=30)
-    def get_rate(self, target_date: date, from_curr: str, to_curr: str) -> Decimal:
+    def __init__(self) -> None:
+        """Initialize provider with a per-instance LRU cache."""
+        self.get_rate = lru_cache(maxsize=30)(self._get_rate)
+
+    def _get_rate(self, target_date: date, from_curr: str, to_curr: str) -> Decimal:
+        """Fetch exchange rate from Frankfurter API."""
         if from_curr == to_curr:
             return Decimal("1")
 
@@ -37,15 +45,20 @@ class FrankfurterProvider:
         from_curr: str = "USD",
         to_curr: str = "EUR",
     ) -> Decimal:
+        """Convert amount between currencies."""
         rate = self.get_rate(target_date, from_curr, to_curr)
         return amount * rate
 
 
 class FixedRateProvider:
+    """Fixed exchange rate provider for testing."""
+
     def __init__(self, rate: Decimal):
+        """Initialize with a fixed rate."""
         self._rate = rate
 
     def get_rate(self, target_date: date, from_curr: str, to_curr: str) -> Decimal:
+        """Get fixed exchange rate."""
         if from_curr == to_curr:
             return Decimal("1")
         return self._rate
