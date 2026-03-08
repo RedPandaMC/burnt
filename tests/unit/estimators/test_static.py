@@ -1,6 +1,8 @@
 from decimal import Decimal
 from unittest.mock import Mock
 
+import pytest
+
 from dburnrate.core.models import ClusterConfig
 from dburnrate.estimators.static import CostEstimator, estimate_cost
 
@@ -53,11 +55,16 @@ class TestCostEstimator:
         result = estimator.estimate("SELECT * FROM users")
         assert result.estimated_cost_eur is not None
 
-    def test_infer_sku_all_purpose(self):
-        estimator = CostEstimator()
-        cluster = ClusterConfig(instance_type="Standard_DS3_v2")
-        sku = estimator._infer_sku(cluster)
-        assert sku == "ALL_PURPOSE"
+    def test_cluster_config_sku(self):
+        cluster = ClusterConfig(instance_type="Standard_DS3_v2", sku="ALL_PURPOSE")
+        assert cluster.sku == "ALL_PURPOSE"
+
+        cluster2 = ClusterConfig(instance_type="Standard_DS3_v2", sku="JOBS_COMPUTE")
+        assert cluster2.sku == "JOBS_COMPUTE"
+
+    def test_cluster_config_invalid_sku(self):
+        with pytest.raises(ValueError):
+            ClusterConfig(instance_type="Standard_DS3_v2", sku="INVALID_SKU")
 
     def test_compute_confidence_no_tables(self):
         from dburnrate.core.models import QueryProfile
