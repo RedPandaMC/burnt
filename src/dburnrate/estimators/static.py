@@ -1,11 +1,14 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from ..core.exchange import FrankfurterProvider
 from ..core.models import ClusterConfig, CostEstimate, QueryProfile
 from ..core.pricing import get_dbu_rate
 from ..parsers.pyspark import analyze_pyspark
 from ..parsers.sql import analyze_query
+
+MIN_DBU = 0.01
 
 
 class CostEstimator:
@@ -26,6 +29,7 @@ class CostEstimator:
         cluster: ClusterConfig | None = None,
     ) -> CostEstimate:
         cluster = cluster or self.cluster
+        profile: QueryProfile | None = None
 
         if language == "sql":
             profile = analyze_query(query)
@@ -41,13 +45,14 @@ class CostEstimator:
         scan_sec = scan_bytes / throughput_bps if throughput_bps > 0 else 0
         shuffle_sec = complexity * 5.0
         estimated_sec = scan_sec + shuffle_sec
-        estimated_dbu = (estimated_sec / 3600) * cluster.dbu_per_hour
+        estimated_dbu = max((estimated_sec / 3600) * cluster.dbu_per_hour, MIN_DBU)
 
         if cluster.photon_enabled:
             estimated_dbu = estimated_dbu * 2.5 / 2.7
 
-        sku = self._infer_sku(cluster)
-        estimated_cost_usd = float(Decimal(str(estimated_dbu)) * get_dbu_rate(sku))
+        estimated_cost_usd = float(
+            Decimal(str(estimated_dbu)) * get_dbu_rate(cluster.sku)
+        )
 
         estimated_cost_eur = None
         if self.target_currency != "USD":
@@ -64,17 +69,14 @@ class CostEstimator:
             estimated_cost_eur=round(float(estimated_cost_eur), 4)
             if estimated_cost_eur
             else None,
-            confidence=self._compute_confidence(profile if language == "sql" else None),
+            confidence=self._compute_confidence(profile),
             breakdown={"complexity": complexity, "cluster_factor": cluster_factor},
             warnings=[],
         )
 
-    def _infer_sku(self, cluster: ClusterConfig) -> str:
-        if "Standard_D" in cluster.instance_type:
-            return "ALL_PURPOSE"
-        return "JOBS_COMPUTE"
-
-    def _compute_confidence(self, profile: QueryProfile | None) -> str:
+    def _compute_confidence(
+        self, profile: QueryProfile | None
+    ) -> Literal["low", "medium", "high"]:
         if profile is None:
             return "medium"
         if not profile.tables:

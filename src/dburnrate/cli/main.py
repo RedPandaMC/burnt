@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ..core.config import Settings
-from ..core.models import ClusterConfig
+from ..core.models import VALID_SKUS, ClusterConfig
 from ..core.pricing import AZURE_INSTANCE_DBU, get_dbu_rate
 from ..estimators.pipeline import EstimationPipeline
 from ..estimators.static import CostEstimator
@@ -24,6 +24,12 @@ def estimate(
     ),
     workers: int = typer.Option(2, "--workers", "-w", help="Number of workers"),
     photon: bool = typer.Option(False, "--photon", help="Enable Photon"),
+    sku: str = typer.Option(
+        "ALL_PURPOSE",
+        "--sku",
+        "-s",
+        help=f"SKU type: {', '.join(sorted(VALID_SKUS))}",
+    ),
     currency: str = typer.Option("USD", "--currency", help="Output currency (USD/EUR)"),
     output: str = typer.Option(
         "table", "--output", "-o", help="Output format: table, json, text"
@@ -54,6 +60,7 @@ def estimate(
         num_workers=workers,
         dbu_per_hour=dbu_rate,
         photon_enabled=photon,
+        sku=sku,
     )
 
     settings = Settings()
@@ -79,7 +86,17 @@ def estimate(
             )
             pipeline = EstimationPipeline(backend=None, warehouse_id=None)
 
-    result = pipeline.estimate(query, cluster)
+    try:
+        result = pipeline.estimate(query, cluster)
+    except ImportError as e:
+        if "sqlglot" in str(e):
+            console.print(
+                "[red]Error: sqlglot is required for SQL parsing.[/red]\n"
+                "Install with: [yellow]uv sync --extra sql[/yellow]\n"
+                "or: [yellow]pip install dburnrate[sql][/yellow]"
+            )
+            raise typer.Exit(1) from e
+        raise
 
     signal = "static"
     for warning in result.warnings:
@@ -91,8 +108,7 @@ def estimate(
         estimator = CostEstimator(cluster=cluster, target_currency=currency)
         result = estimator.estimate(query)
 
-    sku = "ALL_PURPOSE" if "Standard_D" in cluster_type else "JOBS_COMPUTE"
-    dbu_rate_decimal = get_dbu_rate(sku)
+    dbu_rate_decimal = get_dbu_rate(cluster.sku)
     estimated_cost_usd = round(float(result.estimated_dbu) * float(dbu_rate_decimal), 4)
 
     if output == "json":
@@ -152,15 +168,16 @@ def whatif(
             console.print(f"[yellow]Warning:[/yellow] {w}")
 
 
-
 @app.command()
 def lint(
     path: str = typer.Argument(..., help="Path to file or directory to lint"),
-    fail_on: str = typer.Option("error", "--fail-on", help="Exit code 1 on severity (info, warning, error)"),
+    fail_on: str = typer.Option(
+        "error", "--fail-on", help="Exit code 1 on severity (info, warning, error)"
+    ),
 ):
     """Lint SQL and PySpark code for cost anti-patterns."""
     from pathlib import Path
-    import sys
+
     from dburnrate import lint_file
 
     target = Path(path)
@@ -181,7 +198,7 @@ def lint(
 
     severity_levels = {"info": 1, "warning": 2, "error": 3}
     fail_threshold = severity_levels.get(fail_on.lower(), 3)
-    
+
     found_issues = False
     fail_build = False
 
@@ -191,29 +208,46 @@ def lint(
             found_issues = True
             console.print(f"\n[bold]{file_path}[/bold]")
             for issue in issues:
-                color = "red" if issue.severity == "error" else "yellow" if issue.severity == "warning" else "blue"
-                console.print(f"  [{color}]{issue.severity.upper()}[/{color}] {issue.name}: {issue.description}")
+                color = (
+                    "red"
+                    if issue.severity == "error"
+                    else "yellow"
+                    if issue.severity == "warning"
+                    else "blue"
+                )
+                console.print(
+                    f"  [{color}]{issue.severity.upper()}[/{color}] {issue.name}: {issue.description}"
+                )
                 console.print(f"  [dim]Suggestion: {issue.suggestion}[/dim]")
-                
+
                 if severity_levels.get(str(issue.severity), 0) >= fail_threshold:
                     fail_build = True
 
     if not found_issues:
         console.print("[green]No cost anti-patterns found![/green]")
-        
+
     if fail_build:
         raise typer.Exit(1)
 
 
 @app.command()
 def advise(
-    run_id: str = typer.Option(..., "--run-id", help="Databricks Job Run ID or Statement ID to analyze"),
+    run_id: str = typer.Option(
+        ..., "--run-id", help="Databricks Job Run ID or Statement ID to analyze"
+    ),
 ):
     """Analyze a recent interactive test run and recommend an optimized Jobs Cluster configuration."""
-    console.print(f"[bold blue]Analyzing execution metrics for run: {run_id}[/bold blue]")
-    console.print("[yellow]Note: The Interactive Advisor is currently in active development.[/yellow]")
-    console.print("This command will soon connect to system.lakeflow.job_run_timeline to fetch actual memory/CPU metrics.")
+    console.print(
+        f"[bold blue]Analyzing execution metrics for run: {run_id}[/bold blue]"
+    )
+    console.print(
+        "[yellow]Note: The Interactive Advisor is currently in active development.[/yellow]"
+    )
+    console.print(
+        "This command will soon connect to system.lakeflow.job_run_timeline to fetch actual memory/CPU metrics."
+    )
     raise typer.Exit(0)
+
 
 @app.command()
 def version():

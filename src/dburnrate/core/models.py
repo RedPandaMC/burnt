@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class OperationInfo(BaseModel):
@@ -24,6 +24,9 @@ class QueryProfile(BaseModel):
     complexity_score: float = 0.0
 
 
+VALID_SKUS = {"ALL_PURPOSE", "JOBS_COMPUTE", "SQL_ENDPOINT", "DLT", "SERVERLESS"}
+
+
 class ClusterConfig(BaseModel):
     """Databricks cluster configuration."""
 
@@ -32,6 +35,14 @@ class ClusterConfig(BaseModel):
     num_workers: int = 2
     dbu_per_hour: float = 0.75
     photon_enabled: bool = False
+    sku: str = "ALL_PURPOSE"
+
+    @field_validator("sku")
+    @classmethod
+    def validate_sku(cls, v: str) -> str:
+        if v not in VALID_SKUS:
+            raise ValueError(f"Invalid SKU: {v}. Must be one of: {VALID_SKUS}")
+        return v
 
 
 class PricingInfo(BaseModel):

@@ -1,4 +1,17 @@
-from ..core._compat import require
+"""Prophet-based cost forecasting.
+
+This module provides time-series forecasting for DBU costs using Facebook Prophet.
+
+Requires the 'prophet' extra to be installed:
+    uv sync --extra prophet
+    # or
+    pip install dburnrate[prophet]
+
+Note: This is a post-MVP feature. The forecast accuracy depends on having
+sufficient historical data (minimum 30 days recommended).
+"""
+
+from dburnrate._compat import require
 
 
 def forecast_costs(usage_df, periods: int = 30, freq: str = "D"):
