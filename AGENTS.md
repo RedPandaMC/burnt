@@ -10,7 +10,9 @@
 **dburnrate** — Python package for pre-execution Databricks cost estimation.
 - Stack: Python 3.12, uv, hatchling, pydantic v2, typer, rich, sqlglot
 - Source: `src/dburnrate/` | Tests: `tests/unit/` | CLI: `uv run dburnrate`
-- Status: Phases 1–3 complete (263 tests passing). Phase 4 in progress.
+- Status: Phases 1–3 complete (263 tests passing). Phase 4A (critical bug fixes) is next.
+
+> **March 2026 Audit:** The static estimator formula is mathematically wrong (960× overestimate), the hybrid estimator uses a phantom price ($0.20/DBU matches no real SKU), and EXPLAIN DBU constants are ~7,900× too high. Fix these before wiring the CLI. See `files/00-EXECUTIVE-SUMMARY.md` and DESIGN.md §"Critical Bugs".
 
 ---
 
@@ -35,14 +37,15 @@ Use the TodoWrite tool to track progress. Break complex tasks into smaller, veri
 
 ---
 
-## Two-Role Parallel Coding
+## Three-Role Development
 
-This repo uses **planner/executor** pattern for AI-assisted development:
+This repo uses **planner/executor/validator** pattern for AI-assisted development:
 
 | Role | Model | Responsibility |
 |------|-------|---------------|
 | **Planner** | Anthropic (Claude Opus/Sonnet) | Reads DESIGN.md roadmap, decomposes tasks, writes task specs to `tasks/` |
 | **Executor** | Kimi / Minimax / Sonnet | Picks up task files from `tasks/`, implements code, runs tests, writes handoff |
+| **Validator** | Planner after executor marks done | Runs benchmark queries, checks estimate accuracy, verifies CLI integration |
 
 ### If you are a PLANNER agent:
 1. Read DESIGN.md §"Implementation Roadmap" — work phases in order
@@ -57,9 +60,11 @@ This repo uses **planner/executor** pattern for AI-assisted development:
 2. Update status to `status: in-progress` and add `agent: <your-model-id>`
 3. Read ONLY the files listed in the task's `context.files` section
 4. Implement, then run the task's `verification.commands` — ALL must pass
-5. Write results to `handoff.result` in the task file
-6. Mark `status: done` or `status: blocked` (with reason)
-7. Never start a second task until the first is done or blocked
+5. **Integration check:** run `dburnrate estimate "SELECT 1"` and verify the new signal appears in output (not just unit tests passing)
+6. **Benchmark check** (estimation tasks only): run against `tests/benchmarks/` and confirm estimates are within the phase tolerance (Phase 4: 10×, Phase 5: 3×, Phase 6: 2×)
+7. Write results to `handoff.result` in the task file
+8. Mark `status: done` or `status: blocked` (with reason)
+9. Never start a second task until the first is done or blocked
 
 ### Parallel execution rules:
 - Tasks with non-overlapping file sets can run in parallel
@@ -71,6 +76,13 @@ This repo uses **planner/executor** pattern for AI-assisted development:
 - Completed tasks: rename to `tasks/<id>.md.completed` — **never delete, always rename**
 - When marking a task done, the planner renames the file: `mv tasks/<id>.md tasks/<id>.md.completed`
 - `ls tasks/*.md` should show only actionable tasks; `ls tasks/*.md.completed` shows history
+
+### Task Files Must Specify (Estimation Tasks)
+Every task that touches estimation logic **must** include:
+1. The formula to implement (with units)
+2. How constants were derived (citation or calculation — no fabricated values)
+3. Expected output for ≥3 test inputs with known correct answers
+4. Acceptable error bounds (e.g., "within 10× of actual")
 
 ---
 
@@ -205,20 +217,24 @@ src/dburnrate/
 
 ## Important Notes
 
-### Current Status (Phase 4 in progress)
+### Current Status (Phase 4A is next)
 
 - Phases 1–3 complete: 263 unit tests pass, 0 lint errors
 - System tables client, billing, query history, compute: implemented (Phase 2)
 - EXPLAIN COST parser, Delta log reader, hybrid estimator: implemented (Phase 3)
+- **Critical bugs identified (March 2026 audit):** quadratic formula in static estimator, phantom $0.20/DBU price, EXPLAIN constants 7,900× too high, SQL injection in table queries, string-matching anti-pattern detector, shadowed classes in protocols.py
 - Phase 4 tasks in `tasks/p4-*.md`: wire CLI, Delta scan sizes, fingerprint lookup, AWS/GCP pricing
-- Estimator DBU formula is heuristic — not empirically calibrated yet (known gap)
+- **Missing:** `tables/attribution.py`, `EstimationPipeline` orchestrator, `TableRegistry`, `RuntimeBackend`
 
 ### Priority Order
 
-1. **Phase 4** (active): Wire CLI with hybrid estimator, fingerprint lookup, AWS/GCP pricing
-2. **Phase 5**: Production hardening (error handling, caching, observability)
-3. **Phase 6**: ML cost models (feature extraction, classification)
-4. **Post-MVP**: Forecasting, DLT/SDP, batch analysis, self-referential estimation
+1. **Phase 4A** (next): Fix 7 critical bugs before any CLI wiring — see DESIGN.md §"Phase 4A: Critical Bug Fixes"
+2. **Phase 4B** (active): Wire `EstimationPipeline` into CLI, implement attribution, AWS/GCP pricing
+3. **Phase 4C**: Enterprise support: `TableRegistry` + `RuntimeBackend`
+4. **Phase 4D**: Ship `dburnrate lint` as standalone (ready today, 2 days effort)
+5. **Phase 5**: Production hardening (error handling, caching, observability, multi-cloud VM pricing)
+6. **Phase 6**: ML cost models (requires calibration data from 4B)
+7. **v0.2+**: Notebook aggregation, batch analysis, cost regression, CI/CD gates
 
 ---
 
