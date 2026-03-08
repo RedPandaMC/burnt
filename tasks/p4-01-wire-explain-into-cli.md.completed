@@ -89,7 +89,20 @@ uv run ruff format --check src/ tests/
 
 ### Result
 
-[Executor: fill in after completion]
+```
+EXPLAIN COST wired into CLI estimate command:
+- Added --warehouse-id and --workspace-url options
+- When warehouse_id provided: runs EXPLAIN COST via DatabricksClient
+- Uses HybridEstimator instead of CostEstimator
+- Falls back to static on error with yellow warning
+- Output table shows Signal row: "static" | "explain+static"
+- Cost calculated using get_dbu_rate() from pricing.py
+
+Verification:
+- All existing tests pass
+- CLI shows Signal row in output
+- No ruff errors
+```
 
 ### Blocked reason
 

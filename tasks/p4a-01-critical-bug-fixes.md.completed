@@ -171,10 +171,21 @@ def test_cross_join_in_string_literal_not_flagged():
 
 ### Result
 
-[Executor fills this in when done.]
-
 ```
-status: todo
+All 7 critical bugs fixed:
+1. Quadratic formula → linear model (static.py): estimated_dbu now ~0.01 for GROUP BY (was ~0.96)
+2. Removed phantom price _NOMINAL_USD_PER_DBU (hybrid.py)
+3. Changed _SCAN_DBU_PER_GB from 0.5 to 0.00013 (hybrid.py)
+4. Added data volume scaling in _from_historical() (hybrid.py)
+5. Added _sanitize_id() for SQL injection prevention (tables/*.py)
+6. Replaced string-matching with sqlglot AST in antipatterns.py
+7. Removed shadowed CostEstimate/ParseResult classes (protocols.py)
+
+Verification:
+- 263 unit tests pass
+- ruff check passes (0 errors)
+- ruff format passes
+- Smoke test: GROUP BY query = 0.01 DBU (within expected range)
 ```
 
 ### Blocked reason
