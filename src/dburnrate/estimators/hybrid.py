@@ -13,9 +13,8 @@ _JOIN_DBU_WEIGHTS: dict[str, float] = {
     "ShuffledHashJoin": 0.3,
     "CartesianProduct": 2.0,
 }
-_SCAN_DBU_PER_GB: float = 0.5
+_SCAN_DBU_PER_GB: float = 0.00013
 _SHUFFLE_DBU_EACH: float = 0.2
-_NOMINAL_USD_PER_DBU: float = 0.20
 
 
 class HybridEstimator:
@@ -53,12 +52,16 @@ class HybridEstimator:
         return self._blend(static_estimate, explain_plan, cluster)
 
     def _from_historical(
-        self, records: list[QueryRecord], cluster: ClusterConfig
+        self,
+        records: list[QueryRecord],
+        cluster: ClusterConfig,
+        current_read_bytes: int | None = None,
     ) -> CostEstimate | None:
         """Build a CostEstimate from historical execution records, or None if no valid durations.
 
         Uses the median (p50) execution duration across all records with non-None
-        execution_duration_ms.
+        execution_duration_ms. If current_read_bytes is provided and historical data
+        includes read_bytes, scales the duration proportionally.
         """
         durations = [
             r.execution_duration_ms
@@ -69,12 +72,23 @@ class HybridEstimator:
             return None
 
         p50_ms = median(durations)
+
+        read_bytes_values = [r.read_bytes for r in records if r.read_bytes is not None]
+        if (
+            read_bytes_values
+            and current_read_bytes is not None
+            and current_read_bytes > 0
+        ):
+            historical_read_bytes = median(read_bytes_values)
+            if historical_read_bytes > 0:
+                scale_factor = current_read_bytes / historical_read_bytes
+                p50_ms = p50_ms * scale_factor
+
         dbu = (p50_ms / 3_600_000) * cluster.dbu_per_hour
-        cost_usd = round(dbu * _NOMINAL_USD_PER_DBU, 6)
 
         return CostEstimate(
             estimated_dbu=round(dbu, 4),
-            estimated_cost_usd=cost_usd,
+            estimated_cost_usd=None,
             confidence="high",
             breakdown={"p50_duration_ms": p50_ms, "record_count": len(records)},
             warnings=[
@@ -102,11 +116,10 @@ class HybridEstimator:
             confidence = "medium"
 
         blended_dbu = explain_dbu * weight_explain + static_dbu * weight_static
-        cost_usd = round(blended_dbu * _NOMINAL_USD_PER_DBU, 6)
 
         return CostEstimate(
             estimated_dbu=round(blended_dbu, 4),
-            estimated_cost_usd=cost_usd,
+            estimated_cost_usd=None,
             confidence=confidence,
             breakdown={
                 "explain_dbu": round(explain_dbu, 4),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,16 @@ _RETRY_STATUSES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 3
 _POLL_INTERVAL_S = 1.0
 _STATEMENT_TIMEOUT = "30s"
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,256}$")
+
+
+def _sanitize_id(value: str, field: str = "id") -> str:
+    """Raise ValueError if value contains chars unsafe for SQL interpolation."""
+    if not _SAFE_ID_RE.match(value):
+        raise ValueError(
+            f"Invalid {field}: {value!r} (alphanumeric, hyphens, underscores only)"
+        )
+    return value
 
 
 class DatabricksClient:

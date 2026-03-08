@@ -1,25 +1,21 @@
 """Protocol classes for dburnrate."""
 
-from datetime import date
-from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
+
+from datetime import date  # noqa: TC003
+from decimal import Decimal  # noqa: TC003
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from .models import CostEstimate
 
 
 @runtime_checkable
 class Estimator(Protocol):
     """Protocol for cost estimators."""
 
-    def estimate(self, query: str, **kwargs: object) -> "CostEstimate":
+    def estimate(self, query: str, **kwargs: object) -> CostEstimate:
         """Estimate cost for a query."""
-        ...
-
-
-@runtime_checkable
-class Parser(Protocol):
-    """Protocol for query parsers."""
-
-    def parse(self, source: str) -> "ParseResult":
-        """Parse source code into an AST."""
         ...
 
 
@@ -30,15 +26,3 @@ class ExchangeRateProvider(Protocol):
     def get_rate(self, date: date, from_currency: str, to_currency: str) -> Decimal:
         """Get exchange rate between currencies."""
         ...
-
-
-class CostEstimate:
-    """Placeholder for CostEstimate model."""
-
-    pass
-
-
-class ParseResult:
-    """Placeholder for ParseResult model."""
-
-    pass

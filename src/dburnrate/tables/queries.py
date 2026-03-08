@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .connection import DatabricksClient
 
 from ..core.models import QueryRecord
+from .connection import _sanitize_id
 
 _HISTORY_COLUMNS = """
     statement_id, statement_text, statement_type,
@@ -68,11 +69,12 @@ def get_query_history(
 
     Returns up to 10,000 most recent records ordered by start_time descending.
     """
+    safe_warehouse_id = _sanitize_id(warehouse_id, "warehouse_id")
     sql = f"""
         SELECT {_HISTORY_COLUMNS}
         FROM system.query.history
         WHERE start_time >= DATEADD(day, -{days}, CURRENT_TIMESTAMP())
-          AND compute.warehouse_id = '{warehouse_id}'
+          AND compute.warehouse_id = '{safe_warehouse_id}'
         ORDER BY start_time DESC
         LIMIT 10000
     """
@@ -92,10 +94,11 @@ def find_similar_queries(
     comparing each statement's fingerprint against the provided sql_fingerprint.
     Returns up to limit matching records.
     """
+    safe_warehouse_id = _sanitize_id(warehouse_id, "warehouse_id")
     sql = f"""
         SELECT {_HISTORY_COLUMNS}
         FROM system.query.history
-        WHERE compute.warehouse_id = '{warehouse_id}'
+        WHERE compute.warehouse_id = '{safe_warehouse_id}'
           AND status = 'FINISHED'
         ORDER BY start_time DESC
         LIMIT {limit * 100}

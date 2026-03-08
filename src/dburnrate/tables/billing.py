@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .connection import DatabricksClient
 
 from ..core.models import UsageRecord
+from .connection import _sanitize_id
 
 _USAGE_COLUMNS = (
     "account_id, workspace_id, sku_name, cloud, usage_start_time, usage_end_time,"
@@ -40,7 +41,8 @@ def get_live_prices(
     client: DatabricksClient, warehouse_id: str, sku_names: list[str]
 ) -> dict[str, Decimal]:
     """Fetch current USD prices per DBU for the given SKU names from system.billing.list_prices."""
-    placeholders = ", ".join(f"'{s}'" for s in sku_names)
+    sanitized_skus = [_sanitize_id(s, "sku_name") for s in sku_names]
+    placeholders = ", ".join(f"'{s}'" for s in sanitized_skus)
     sql = f"""
         SELECT {_PRICES_COLUMNS}
         FROM system.billing.list_prices

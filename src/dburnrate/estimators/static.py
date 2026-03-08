@@ -35,9 +35,13 @@ class CostEstimator:
             complexity = sum(op.weight for op in ops)
 
         cluster_factor = cluster.num_workers * cluster.dbu_per_hour
-        time_estimate = complexity / 100
 
-        estimated_dbu = complexity * cluster_factor * time_estimate
+        throughput_bps = cluster.num_workers * 3.2e9
+        scan_bytes = complexity * 1e9
+        scan_sec = scan_bytes / throughput_bps if throughput_bps > 0 else 0
+        shuffle_sec = complexity * 5.0
+        estimated_sec = scan_sec + shuffle_sec
+        estimated_dbu = (estimated_sec / 3600) * cluster.dbu_per_hour
 
         if cluster.photon_enabled:
             estimated_dbu = estimated_dbu * 2.5 / 2.7

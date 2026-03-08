@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from ..core.exceptions import ParseError
+from .sql import detect_operations
+
 
 class Severity(StrEnum):
     """Severity levels for anti-patterns."""
@@ -33,10 +36,16 @@ def detect_antipatterns(source: str, language: str = "sql") -> list[AntiPattern]
 
 
 def _detect_sql_antipatterns(sql: str) -> list[AntiPattern]:
-    """Detect SQL anti-patterns."""
+    """Detect SQL anti-patterns using AST traversal."""
     patterns = []
 
-    if "CROSS JOIN" in sql.upper():
+    try:
+        operations = detect_operations(sql)
+    except ParseError:
+        return patterns
+
+    join_ops = [op for op in operations if op.name == "Join" and op.kind == "CROSS"]
+    if join_ops:
         patterns.append(
             AntiPattern(
                 name="cross_join",
@@ -46,25 +55,38 @@ def _detect_sql_antipatterns(sql: str) -> list[AntiPattern]:
             )
         )
 
-    if "SELECT *" in sql.upper() and "LIMIT" not in sql.upper():
-        patterns.append(
-            AntiPattern(
-                name="select_star_no_limit",
-                severity=Severity.INFO,
-                description="SELECT * without LIMIT may return large result sets",
-                suggestion="Add LIMIT clause or select specific columns",
-            )
-        )
+    try:
+        from sqlglot import exp, parse_one
 
-    if "ORDER BY" in sql.upper() and "LIMIT" not in sql.upper():
-        patterns.append(
-            AntiPattern(
-                name="order_by_no_limit",
-                severity=Severity.WARNING,
-                description="ORDER BY without LIMIT forces global sort",
-                suggestion="Add LIMIT or remove ORDER BY if not needed",
-            )
+        ast = parse_one(sql)
+        has_select_star = any(
+            isinstance(node, exp.Star) for node in ast.find_all(exp.Star)
         )
+        has_limit = any(isinstance(node, exp.Limit) for node in ast.find_all(exp.Limit))
+        if has_select_star and not has_limit:
+            patterns.append(
+                AntiPattern(
+                    name="select_star_no_limit",
+                    severity=Severity.INFO,
+                    description="SELECT * without LIMIT may return large result sets",
+                    suggestion="Add LIMIT clause or select specific columns",
+                )
+            )
+
+        has_order_by = any(
+            isinstance(node, exp.Order) for node in ast.find_all(exp.Order)
+        )
+        if has_order_by and not has_limit:
+            patterns.append(
+                AntiPattern(
+                    name="order_by_no_limit",
+                    severity=Severity.WARNING,
+                    description="ORDER BY without LIMIT forces global sort",
+                    suggestion="Add LIMIT or remove ORDER BY if not needed",
+                )
+            )
+    except ParseError:
+        pass
 
     return patterns
 

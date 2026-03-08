@@ -9,6 +9,7 @@ if TYPE_CHECKING:
 
 from ..core.exceptions import DatabricksQueryError
 from ..core.models import ClusterConfig
+from .connection import _sanitize_id
 
 _NODE_TYPE_COLUMNS = (
     "node_type_id, num_cores, memory_mb, instance_type_id, dbu_per_hour"
@@ -39,10 +40,11 @@ def get_cluster_config(
 
     Raises DatabricksQueryError if the cluster is not found.
     """
+    safe_cluster_id = _sanitize_id(cluster_id, "cluster_id")
     sql = f"""
         SELECT {_CLUSTER_COLUMNS}
         FROM system.compute.clusters
-        WHERE cluster_id = '{cluster_id}'
+        WHERE cluster_id = '{safe_cluster_id}'
         LIMIT 1
     """
     rows = client.execute_sql(sql, warehouse_id)
@@ -70,10 +72,11 @@ def get_node_timeline(
     warehouse_id: str,
 ) -> list[dict[str, Any]]:
     """Fetch node utilization timeline for a cluster within a time range."""
+    safe_cluster_id = _sanitize_id(cluster_id, "cluster_id")
     sql = f"""
         SELECT {_TIMELINE_COLUMNS}
         FROM system.compute.node_timeline
-        WHERE cluster_id = '{cluster_id}'
+        WHERE cluster_id = '{safe_cluster_id}'
           AND start_time >= '{start_time}'
           AND end_time <= '{end_time}'
         ORDER BY start_time
