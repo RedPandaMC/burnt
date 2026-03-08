@@ -20,12 +20,207 @@
 | 1 | ✅ Done | Tests, lint, docstrings | `tasks/p1-*.md.completed` |
 | 2 | ✅ Done | Databricks system table client (billing, query history, compute) | `tasks/p2-*.md.completed` |
 | 3 | ✅ Done | EXPLAIN COST parser, Delta log reader, hybrid estimator | `tasks/p3-*.md.completed` |
-| 4 | 🔄 Active | Wire hybrid into CLI, AWS/GCP pricing, Delta scan sizes, fingerprint lookup | `tasks/p4-*.md` |
-| 5 | ⏳ Planned | Production hardening (error handling, caching, observability) | `tasks/p5-*.md` |
-| 6 | ⏳ Planned | ML cost bucket classification | `tasks/p6-*.md` |
-| 11–13 | ⏳ Post-MVP | Self-referential estimation, batch analysis, CI/CD workflows | `tasks/p11-*.md`, `tasks/p12-*.md`, `tasks/p13-*.md` |
+| 4A | 🔄 Active | Fix critical bugs (quadratic formula, phantom price, SQL injection, SKU inference) | `tasks/p4a-*.md` |
+| 4B | 🔄 Active | Wire hybrid pipeline into CLI + calibration research | `tasks/p4-*.md` |
+| 4C | ⏳ Planned | Enterprise support: TableRegistry + RuntimeBackend | — |
+| 4D | 🟢 Ready | Ship `dburnrate lint` as standalone feature | — |
+| 5 | ⏳ Planned | Production hardening (error handling, caching, observability) + multi-cloud | `tasks/p5-*.md` |
+| 6 | ⏳ Planned | ML cost bucket classification (requires calibration data) | `tasks/p6-*.md` |
+| v0.2 | ⏳ Deferred | Notebook aggregation, compute advisor, cost regression detection | — |
+| v0.3 | ⏳ Deferred | CI/CD gates, DABs integration, forecasting | — |
 
 **Test count**: 263 passing | **Lint**: 0 errors | **Security**: bandit clean
+
+### Roadmap changes (March 2026 Audit)
+- **Phase 11** (`estimate_current_notebook()`): Reinstated — not a gimmick but Mode 5 parity. `estimate_self()` renamed to `estimate_current_notebook()` with proper path detection chain.
+- **Phase 12** (batch glob): Deferred to v0.2 after core accuracy is validated
+- **Phase 13** (CI/CD workflows): Deferred to v0.3
+- **Phases 7–10**: Merged into Phase 5 (eliminated duplicate scope)
+
+---
+
+# March 2026 Audit: Critical Findings
+
+> Independent audit of all source files, 263 tests, and DESIGN.md. See `files/` for full reports.
+
+## Critical Bugs (Must Fix Before Any Estimate Is Trusted)
+
+### Bug 1: Static Estimator Formula Is Quadratic (estimators/static.py)
+Current: `complexity² × cluster_factor / 100` → 960× overestimate for simple GROUP BY.
+**Fix:** Replace with linear throughput model: `(scan_bytes / throughput_bps + shuffle_count × shuffle_overhead) / 3600 × cluster_dbu_per_hour`
+
+### Bug 2: Hybrid Estimator Uses Phantom Price (estimators/hybrid.py)
+`_NOMINAL_USD_PER_DBU = 0.20` matches no real SKU (ALL_PURPOSE=$0.55, JOBS=$0.30, SQL_SERVERLESS=$0.70).
+**Fix:** Remove constant. Call `get_dbu_rate(sku)` from `core/pricing.py`.
+
+### Bug 3: EXPLAIN DBU Constants Are Ungrounded (estimators/hybrid.py)
+`_SCAN_DBU_PER_GB = 0.5` is ~7,900× too high. DS3_v2 scans Parquet at ~3.2 GB/s → 1 GB takes ~0.3 s = 0.000063 DBU.
+**Fix:** Derive from throughput benchmarks (R1 in research backlog). Use `0.000063 DBU/GB` as interim constant until empirically calibrated.
+
+### Bug 4: Historical Estimation Ignores Data Volume Scaling (estimators/hybrid.py)
+p50 duration from history is not scaled when current table is larger than historical runs.
+**Fix:** `adjusted_ms = p50_ms × (current_read_bytes / median_historical_read_bytes)`
+
+### Bug 5: SQL Injection in System Table Queries (tables/billing.py, queries.py, compute.py)
+All queries use f-string interpolation. Sanitize or parameterize all cluster_id/warehouse_id inputs.
+
+### Bug 6: Anti-Pattern Detector Uses String Matching (parsers/antipatterns.py)
+`"CROSS JOIN" in sql.upper()` matches inside comments, string literals. Use sqlglot AST (already in `sql.py`).
+
+### Bug 7: protocols.py Shadows Core Models
+`CostEstimate` and `ParseResult` in `protocols.py` shadow the real `CostEstimate` in `models.py`. The `Estimator` protocol references the wrong class.
+
+### Bug 8: SKU Inference Misclassifies Compute (estimators/static.py)
+String-matching on instance type misclassifies SQL Warehouses, serverless, DLT. SKU must be explicit.
+
+## Architecture Gaps
+
+### Gap 1: No Estimation Pipeline Orchestrator
+`HybridEstimator`, `DatabricksClient`, fingerprinting, Delta metadata, EXPLAIN all exist but nothing connects them. CLI uses only static estimator.
+**Required:** `src/dburnrate/estimators/pipeline.py` — `EstimationPipeline` class orchestrating all tiers.
+
+### Gap 2: No Databricks Runtime Support (Critical for 70% In-Cluster Use)
+Package communicates exclusively via REST. Running inside a Databricks notebook → wasteful REST round-trip when `spark.sql()` is already available. Zero awareness of `DATABRICKS_RUNTIME_VERSION`.
+**Required:** `src/dburnrate/runtime/` — `RuntimeBackend` protocol with `SparkBackend` (in-cluster) and `RestBackend` (external) implementations + `auto_backend()` detection.
+
+### Gap 3: Missing `tables/attribution.py`
+Referenced in DESIGN.md but doesn't exist. Required for calibration, "last time this cost $X" signal, and ML training data.
+**Core pattern:** `system.billing.usage` × `system.billing.list_prices` join on cloud/sku/time; query attribution via `warehouse_id` + time overlap.
+
+### Gap 4: DBU-Only Estimates Miss 40-60% of Classic Compute Cost
+For classic clusters (Jobs, All-Purpose, DLT) the Azure VM bill is separate. DS4_v2 cluster = $0.585/hr in VM fees on top of DBU.
+**Required:** Total cost = `(dbu × dbu_rate) + (vm_hours × vm_rate × node_count)` for classic; `dbu × serverless_rate` for serverless.
+
+### Gap 5: No Top-Level Python API
+`import dburnrate; dburnrate.estimate("SELECT ...")` fails. Only entry point is CLI.
+
+## Enterprise Support: TableRegistry
+
+Enterprise environments hide system tables behind curated views with row-level security. dburnrate has 8 hardcoded `system.*` paths across 3 files.
+
+**Required:** `src/dburnrate/core/table_registry.py` — `TableRegistry` dataclass mapping logical → physical table names. Configurable via env vars (`DBURNRATE_TABLE_BILLING_USAGE=...`), TOML config, or programmatic API. All `tables/*.py` modules accept a `registry` parameter.
+
+Config channels:
+- Env: `DBURNRATE_TABLE_BILLING_USAGE`, `DBURNRATE_TABLE_QUERY_HISTORY`, etc.
+- TOML: `[dburnrate.tables]` section in `.dburnrate.toml` or `pyproject.toml`
+- Programmatic: `dburnrate.estimate("...", registry=TableRegistry(billing_usage="..."))`
+
+## Research Backlog
+
+| ID | Question | Status | Priority |
+|----|----------|--------|----------|
+| R1 | Actual Parquet scan / shuffle / join throughput per instance type | 🔬 Needs benchmark | P0 — blocks all constants |
+| R2 | EXPLAIN COST accuracy vs actual execution (with/without PO stats) | 🔬 Needs benchmark | P1 |
+| R3 | AQE plan divergence rate (EXPLAIN vs actual physical plan) | 🔬 Needs benchmark | P2 |
+| R4 | Fingerprint recurrence rates (enterprise jobs vs ad-hoc) | 🔬 Needs benchmark | P1 |
+| R5 | Billing attribution accuracy at concurrent queries | 🔬 Needs benchmark | P0 |
+| R6 | Predictive Optimization coverage and freshness | ✅ Done | P2 |
+| R7 | system.query.history coverage map | ✅ Done | P1 |
+| R8 | Serverless billing granularity | ✅ Done | P2 |
+| R9 | Cloud VM pricing APIs (Azure, AWS, GCP) | ✅ Done | P0 |
+| R10 | Liquid Clustering vs partitioning scan cost impact | 🔬 Needs benchmark | P3 |
+| R11 | ML feature importance (SHAP values) | 🔬 Needs benchmark | P3 |
+
+**Key R6 finding:** Predictive Optimization runs exclusively on Unity Catalog managed tables, uses stats-on-write via Photon, billed under `billing_origin_product = 'PREDICTIVE_OPTIMIZATION'`. Freshness queryable from `system.storage.predictive_optimization_operations_history`.
+
+**Key R7 finding:** `system.query.history` captures SQL Warehouses + serverless notebooks/jobs only. All-purpose clusters, classic Jobs clusters, DLT, and PySpark DataFrames are NOT captured.
+
+**Key R8 finding:** Serverless SQL Warehouses have no per-query DBU attribution. `usage_metadata` is mostly null except `warehouse_id`. Serverless jobs have clean per-run attribution via `job_id`/`job_run_id`.
+
+**Key R9 finding:** Azure VM pricing via `prices.azure.com/api/retail/prices` (zero auth). DS4_v2=$0.585/hr, DS3_v2=$0.293/hr, E8s_v3=$0.504/hr. Infracost GraphQL API covers all clouds with one interface.
+
+## SQL Warehouse DBU Rates (Cross-Referenced March 2026)
+
+| Size | DBU/hr | Confidence |
+|------|--------|-----------|
+| 2X-Small | 4 | Confirmed |
+| X-Small | ~8 | Inferred |
+| Small | 12 | Confirmed |
+| Medium | 24 | Confirmed |
+| Large | ~48 | Inferred |
+| X-Large | ~96 | Inferred |
+| 2X-Large | ~192 | Inferred |
+| 4X-Large | 528 | Confirmed |
+
+## Lakeflow Job Cost Attribution (Canonical SQL, January 2026)
+
+```sql
+-- Per-job-run cost with clock-hour-aligned timeline join
+SELECT t1.workspace_id, t2.name, t1.job_id, t1.run_id, SUM(list_cost) as list_cost
+FROM (
+  SELECT workspace_id, usage_metadata.job_id,
+         usage_metadata.job_run_id as run_id,
+         SUM(usage_quantity * list_prices.pricing.default) as list_cost
+  FROM system.billing.usage t1
+  INNER JOIN system.billing.list_prices list_prices
+    ON t1.cloud = list_prices.cloud AND t1.sku_name = list_prices.sku_name
+    AND t1.usage_start_time >= list_prices.price_start_time
+    AND (t1.usage_end_time <= list_prices.price_end_time OR list_prices.price_end_time IS NULL)
+  WHERE billing_origin_product = 'JOBS'
+    AND usage_date >= CURRENT_DATE() - INTERVAL 30 DAY
+  GROUP BY ALL
+) t1
+LEFT JOIN (
+  SELECT *, ROW_NUMBER() OVER(PARTITION BY workspace_id, job_id ORDER BY change_time DESC) as rn
+  FROM system.lakeflow.jobs QUALIFY rn=1
+) t2 USING (workspace_id, job_id)
+GROUP BY ALL ORDER BY list_cost DESC
+```
+
+**All-purpose cluster limitation:** `usage_metadata.job_id` is NULL for jobs on all-purpose clusters. Per Databricks: "Precise cost calculation for jobs on all-purpose compute is not possible with 100% accuracy."
+
+## Compute Throughput Benchmarks (R1 Research Findings)
+
+**Parquet scan:** CERN measurements on 20-core Xeon: 0.05–0.10 GB/s per core. Databricks Cache ~4× boost.
+
+**Azure instance I/O limits:**
+| Instance | vCPUs | Uncached Disk MB/s | Network Mbps |
+|----------|-------|-------------------|-------------|
+| DS3_v2 | 4 | 192 | 3,000 |
+| DS4_v2 | 8 | 384 | 6,000 |
+| D16s_v3 | 16 | 384 | 8,000 |
+| E8s_v3 | 8 | 192 | 5,000 |
+
+**Photon speedups (SIGMOD '22, TPC-H SF=3000):**
+| Operation | Speedup |
+|-----------|---------|
+| Parquet scan | 1.2–2× |
+| Hash join | 3–3.5× |
+| Aggregation | 3.5–5.7× |
+| Sort | ~2× |
+| TPC-H overall | 4× avg, 23× max |
+
+**Critical:** Photon DBU rates are ~1.5–2× higher. Breakeven requires sufficient speedup — Zipher benchmark shows join query 1.8× faster but 4× more expensive ($0.07→$0.30).
+
+## Testing Strategy Gaps
+
+1. **Zero accuracy tests** — 263 tests verify types/edges, not estimate correctness
+2. **No benchmark dataset** — required: `tests/benchmarks/` with TPC-DS queries + known costs
+3. **No property-based tests** — Hypothesis is in dev deps but unused
+4. **No integration test infrastructure** — no fixtures for live Databricks connection
+
+**Accuracy targets by phase:**
+- Phase 4: All estimates within **10×** of actual
+- Phase 5: Within **3×** of actual
+- Phase 6 (ML): Within **2×** of actual
+
+**Required benchmark structure:**
+```
+tests/benchmarks/
+├── README.md
+├── queries/          # TPC-DS reference SQL
+├── explain_outputs/  # Known EXPLAIN COST text
+├── delta_metadata/   # Known DESCRIBE DETAIL outputs
+├── expected_costs.json
+└── conftest.py
+```
+
+## Performance Notes
+
+For `dburnrate estimate` in connected mode: 85-95% of wall time is network I/O. Rust acceleration is premature until batch mode ships and profiling confirms parsing is the bottleneck. Prefer:
+1. Server-side fingerprinting via `SHA2(UPPER(REGEXP_REPLACE(statement_text, '\\d+', '?')), 256)`
+2. `sqlglotrs` optional dep for 2-5× faster tokenization (zero custom Rust)
+3. Aggressive TTL caching on `DESCRIBE DETAIL` and `normalize_sql`
 
 ---
 
@@ -571,266 +766,199 @@ def _require(module: str, extra: str):
 
 ---
 
-## Phase 4: CLI Wiring & Multi-Cloud (🔄 Active)
+## Phase 4A: Critical Bug Fixes (🔴 Must Do First)
+
+> These bugs make every existing estimate wrong. Fix before wiring CLI.
+
+### 4A.1 Fix Quadratic Formula → Linear Throughput Model (estimators/static.py)
+- [ ] Replace `complexity² × cluster_factor / 100` with linear model
+- [ ] Formula: `(scan_bytes / throughput_bps + shuffle_count × shuffle_overhead_sec) / 3600 × cluster_dbu_per_hour`
+- [ ] Use interim constant: `throughput_bps = 3.2e9` (DS4_v2 Parquet scan from R1 research)
+- [ ] Verify: GROUP BY on 2-worker DS3_v2 produces ~0.001 DBU (not 0.96)
+
+### 4A.2 Fix Phantom Price (estimators/hybrid.py)
+- [ ] Remove `_NOMINAL_USD_PER_DBU = 0.20`
+- [ ] Use `get_dbu_rate(sku)` from `core/pricing.py` throughout
+- [ ] Return DBU estimates from hybrid; let CLI/API layer convert to dollars
+
+### 4A.3 Fix EXPLAIN DBU Constants (estimators/hybrid.py)
+- [ ] Replace `_SCAN_DBU_PER_GB = 0.5` with `_SCAN_DBU_PER_GB = 0.000063` (derived from 0.3s/GB × cluster_dbu_per_hour / 3600)
+- [ ] Document derivation with citation (R1 benchmarks)
+- [ ] Add TODO comment noting constants need empirical calibration (R1)
+
+### 4A.4 Add Data Volume Scaling to Historical Estimates (estimators/hybrid.py)
+- [ ] Implement: `adjusted_ms = p50_ms × (current_read_bytes / median_historical_read_bytes)`
+- [ ] Guard: if `median_historical_read_bytes == 0`, skip scaling
+
+### 4A.5 Fix SQL Injection in Table Queries (tables/*.py)
+- [ ] Sanitize `cluster_id`, `warehouse_id`, `statement_id` inputs (alphanumeric + hyphens only)
+- [ ] Add `_sanitize_id(value: str) -> str` helper in `connection.py`
+
+### 4A.6 Fix Anti-Pattern Detector (parsers/antipatterns.py)
+- [ ] Replace string-matching with sqlglot AST traversal
+- [ ] Reuse `detect_operations()` from `sql.py`
+
+### 4A.7 Fix protocols.py Shadow Classes
+- [ ] Remove `CostEstimate` and `ParseResult` placeholder classes from `protocols.py`
+- [ ] Update `Estimator` protocol to import from `models.py`
+
+---
+
+## Phase 4B: CLI Wiring & Attribution (🔄 Active)
 
 > Task files: `tasks/p4-01-wire-explain-into-cli.md`, `tasks/p4-02-delta-scan-size.md`,
 > `tasks/p4-03-fingerprint-lookup.md`, `tasks/p4-04-aws-gcp-pricing.md`
 
-### 4.1 Wire EXPLAIN into CLI
-- [ ] `estimate` command accepts `--warehouse-id` and `--workspace-url`
-- [ ] When connected: run `EXPLAIN COST`, use `HybridEstimator`
+### 4B.1 EstimationPipeline Orchestrator (NEW — required first)
+- [ ] Create `src/dburnrate/estimators/pipeline.py`
+- [ ] `EstimationPipeline.estimate(query, cluster)` orchestrates all tiers
+- [ ] Tier 1: static (always runs)
+- [ ] Tier 2: Delta metadata (if connected)
+- [ ] Tier 3: EXPLAIN COST (if connected + warehouse_id)
+- [ ] Tier 4: fingerprint + history lookup (if connected)
+- [ ] Graceful fallback at each tier
+
+### 4B.2 Wire Pipeline into CLI
+- [ ] `estimate` command uses `EstimationPipeline`, not static estimator
+- [ ] `--warehouse-id`, `--workspace-url` flags
+- [ ] `--explain` flag shows per-tier breakdown
 - [ ] Fallback to static on connection error
 
-### 4.2 Delta Scan Size
-- [ ] `HybridEstimator.estimate()` accepts `delta_tables` kwarg
-- [ ] Delta sizes override EXPLAIN sizes override SQL complexity
+### 4B.3 Missing `tables/attribution.py`
+- [ ] Implement billing × list_prices join (canonical SQL from `files/02-ARCHITECTURE-GAPS.md`)
+- [ ] Per-query attribution via warehouse_id + time overlap
+- [ ] Lakeflow job-run cost attribution
+- [ ] `get_historical_cost(fingerprint)` → used by pipeline Tier 4
 
-### 4.3 Fingerprint Lookup
-- [ ] CLI fingerprints query before EXPLAIN
-- [ ] `find_similar_queries()` → pass records to `HybridEstimator`
-
-### 4.4 AWS/GCP Pricing
+### 4B.4 AWS/GCP Pricing
+- [ ] `get_dbu_rate(sku_name, cloud="AZURE", tier="PREMIUM") -> Decimal`
 - [ ] AWS and GCP DBU rates in `pricing.py`
 - [ ] Cloud auto-detection from workspace URL
 - [ ] `--cloud` CLI flag
 
 ---
 
+## Phase 4C: Enterprise Support (⏳ Planned)
+
+### 4C.1 TableRegistry
+- [ ] `src/dburnrate/core/table_registry.py` — frozen dataclass with default `system.*` paths
+- [ ] Thread registry through `billing.py`, `queries.py`, `compute.py` (all 8 hardcoded refs)
+- [ ] Env var support: `DBURNRATE_TABLE_BILLING_USAGE`, etc.
+- [ ] TOML config: `[dburnrate.tables]` in `.dburnrate.toml`
+
+### 4C.2 RuntimeBackend (Dual-Mode)
+- [ ] `src/dburnrate/runtime/` package
+- [ ] `RuntimeBackend` Protocol: `execute_sql()`, `explain_cost()`, `describe_detail()`, `is_connected`
+- [ ] `SparkBackend`: uses `SparkSession.getActiveSession()` (in-cluster)
+- [ ] `RestBackend`: uses `DatabricksClient` (external)
+- [ ] `auto_backend()`: checks `DATABRICKS_RUNTIME_VERSION` env var
+
+### 4C.3 Top-Level Python API
+- [ ] `dburnrate.estimate(query, cluster=None, registry=None) -> CostEstimate`
+- [ ] `dburnrate.TableRegistry` exported from `__init__.py`
+
+---
+
+## Phase 4D: `dburnrate lint` (🟢 Ready Today)
+
+Anti-pattern detection works now with zero calibration. Ship as standalone feature.
+
+### 4D.1 CLI Command
+- [ ] `dburnrate lint <path|glob>` — recursive file discovery
+- [ ] Output: file:line severity message
+- [ ] Exit code 1 if any errors found (CI-compatible)
+- [ ] Severity levels: ERROR / WARNING / INFO
+- [ ] `--format json` for CI integration
+
+---
+
 ## Phase 5: Production Hardening (⏳ Planned)
 
-> Task files: `tasks/p5-00-research-production-hardening.md`, `tasks/p5-01-error-handling.md`,
-> `tasks/p5-02-caching-and-performance.md`, `tasks/p5-03-observability.md`
+> Consolidates former Phases 5, 7, 8, 9, 10. Task files: `tasks/p5-*.md`
 
 ### 5.1 Error Handling
-- [ ] Extended exception hierarchy (`AuthenticationError`, `RateLimitError`, `WarehouseError`, etc.)
+- [ ] Extended exception hierarchy (`AuthenticationError`, `RateLimitError`, `WarehouseError`)
 - [ ] User-friendly messages with recovery suggestions
 - [ ] Token redaction from all error output
+- [ ] Graceful degradation with `--extra sql` hint
 
 ### 5.2 Caching & Performance
 - [ ] TTL cache for `DESCRIBE DETAIL` results (5 min default)
 - [ ] `requests.Session` + `HTTPAdapter` pool in `DatabricksClient`
-- [ ] Batch fingerprint lookups
+- [ ] Server-side fingerprinting: push `SHA2(REGEXP_REPLACE(...))` to SQL instead of client-side
+- [ ] `sqlglotrs` optional dep for batch mode
 
 ### 5.3 Observability
 - [ ] `logging.NullHandler()` on `dburnrate` root logger
 - [ ] Structured log calls (DEBUG/INFO/WARNING/ERROR)
-- [ ] `--debug` CLI flag for verbose output + full tracebacks
+- [ ] `--debug` flag for verbose output + full tracebacks
 - [ ] Per-tier timing in `CostEstimate.breakdown`
+
+### 5.4 Multi-Cloud Pricing
+- [ ] AWS DBU rates + instance types (Photon 2.9× multiplier)
+- [ ] GCP DBU rates + instance types
+- [ ] VM pricing via Azure Retail Prices API / AWS Pricing API / GCP Billing Catalog (or Infracost)
+- [ ] Total cost of ownership: DBU + VM for classic; DBU-bundled for serverless
+
+### 5.5 Enhanced Operations
+- [ ] COPY INTO, OPTIMIZE/ZORDER detection (sqlglot AST)
+- [ ] Unity Catalog 3-level naming awareness
+- [ ] Anti-pattern severity levels + suggestions
+
+### 5.6 CLI Enhancements
+- [ ] `--export json/csv` flag
+- [ ] `dburnrate audit --days N` — hidden cost audit (PO, mat views, monitoring)
+- [ ] `dburnrate waste --days N` — idle cluster detection
+- [ ] `dburnrate advise` — compute type advisor
 
 ---
 
-## Phase 6: ML Cost Models (⏳ Planned)
+## Phase 6: ML Cost Models (⏳ Planned — Requires Calibration Data from 4B)
 
-> Task files: `tasks/p6-00-research-ml-models.md`, `tasks/p6-01-feature-extraction.md`,
-> `tasks/p6-02-classification-model.md`
+> Task files: `tasks/p6-*.md`
 
 ### 6.1 Feature Extraction
-- [ ] `src/dburnrate/estimators/features.py` with `QueryFeatures` dataclass
+- [ ] `src/dburnrate/estimators/features.py` — `QueryFeatures` dataclass
 - [ ] Operator types, cardinalities from EXPLAIN
 - [ ] Table sizes from Delta, cluster config
-- [ ] `FEATURE_NAMES` constant for column ordering
+- [ ] `FEATURE_NAMES` constant
 
 ### 6.2 Classification Model
-- [ ] `src/dburnrate/estimators/ml.py` with `CostBucketClassifier`
-- [ ] Cost buckets: low (<0.1 DBU) / medium / high / very-high (>10 DBU)
+- [ ] `src/dburnrate/estimators/ml.py` — `CostBucketClassifier`
+- [ ] Buckets: low (<0.1 DBU) / medium / high / very-high (>10 DBU)
 - [ ] `HistGradientBoostingClassifier` (sklearn `[ml]` extra)
 - [ ] `train-model` CLI command
 
 ### 6.3 HybridEstimator Integration
-- [ ] ML bucket as optional fourth signal
+- [ ] ML bucket as optional fourth signal in `EstimationPipeline`
 - [ ] Confidence adjustment when ML contradicts other signals
 
 ---
 
-## Phase 7: Multi-Cloud Support (Medium Priority)
+## v0.2: New Features (⏳ Deferred)
 
-### 7.1 AWS Support
-- [ ] AWS DBU rates
-- [ ] AWS instance types
-- [ ] Photon multiplier (2.9x)
+Requires calibrated estimation (Phase 4A) first.
 
-### 7.2 GCP Support
-- [ ] GCP DBU rates
-- [ ] GCP instance types
-
-### 7.3 Refactoring
-- [ ] Cloud selection in pricing.py
-- [ ] Cloud detection from workspace URL
+| Feature | Description | Effort |
+|---------|-------------|--------|
+| Notebook-level aggregation | Per-cell cost breakdown for `.ipynb` files | 3 days |
+| Cost regression detection | Alert when p50 cost for fingerprint jumps >2× | 1 week |
+| Committed-use discount modeling | Model DBCU savings from 90-day usage | 3 days |
+| Lakeflow job DAG estimation | Estimate multi-task job from job definition JSON | 2 weeks |
+| Batch file analysis | `dburnrate estimate-batch "queries/*.sql"` | 1 week |
+| Spot instance modeling | Model spot VM savings vs interruption risk | 2 days |
 
 ---
 
-## Phase 8: Enhanced Operations Detection (Medium Priority)
+## v0.3: CI/CD & Integrations (⏳ Deferred)
 
-### 8.1 SQL Operations
-- [ ] COPY INTO detection
-- [ ] OPTIMIZE/ZORDER detection
-- [ ] Streaming table detection
-- [ ] Liquid Clustering detection
-
-### 8.2 Unity Catalog
-- [ ] Catalog/schema awareness
-- [ ] 3-level naming
-- [ ] Metastore integration
-
-### 8.3 Anti-patterns
-- [ ] Expand detection
-- [ ] Severity levels
-- [ ] Suggestions
-
----
-
-## Phase 9: Production Hardening (High Priority)
-
-### 9.1 Error Handling
-- [ ] Comprehensive exceptions
-- [ ] User-friendly messages
-- [ ] Recovery strategies
-
-### 9.2 Performance
-- [ ] Metadata lookup caching
-- [ ] Connection pooling
-- [ ] Batch queries
-
-### 9.3 Observability
-- [ ] Structured logging
-- [ ] Metrics collection
-- [ ] Debug mode
-
----
-
-## Phase 10: CLI Enhancements (Low Priority)
-
-### 10.1 Commands
-- [ ] `--warehouse-id` flag
-- [ ] `--job-id` flag
-- [ ] `--export` JSON/CSV
-- [ ] `--watch` continuous monitoring
-- [ ] Configuration file support
-
-### 10.2 Output
-- [ ] Table visualization
-- [ ] Comparison output
-- [ ] Trend charts
-
----
-
-## Phase 11: Self-Referential Cost Estimation (NEW)
-
-> Enable the package to estimate cost of code currently being executed
-
-### 11.1 Core API
-- [ ] Implement `dburnrate.estimate_self()` function
-- [ ] Read current file via `__file__` or `inspect`
-- [ ] Parse all code above the import statement
-- [ ] Return CostEstimate for current module
-
-### 11.2 Usage Pattern
-```python
-# At the bottom of any Python file/notebook
-import dburnrate
-estimate = dburnrate.estimate_self()
-print(f"This file would cost ${estimate.cost_usd:.4f} to run")
-```
-
-### 11.3 Implementation Details
-- [ ] Detect if running in notebook vs script
-- [ ] Handle Jupyter magic commands
-- [ ] Exclude import statement itself from analysis
-- [ ] Cache results to avoid re-parsing
-
-### 11.4 CLI Support
-- [ ] `dburnrate estimate-self` command
-- [ ] Auto-detect current working file
-- [ ] Support for specific file path override
-
----
-
-## Phase 12: Batch File Analysis (NEW)
-
-> Analyze multiple files at once with glob pattern support
-
-### 12.1 Core API
-- [ ] Implement `dburnrate.estimate_batch()` function
-- [ ] Support glob patterns: `queries/*.sql`
-- [ ] Support explicit file lists: `['query1.sql', 'query2.py']`
-- [ ] Support directory recursion
-
-### 12.2 Output Formats
-- [ ] Summary table with aggregate stats
-- [ ] Individual results per file
-- [ ] CSV export option
-- [ ] JSON export option
-
-### 12.3 CLI Commands
-```bash
-# Glob patterns
-dburnrate estimate-batch "queries/*.sql"
-dburnrate estimate-batch "notebooks/**/*.ipynb"
-
-# Directories (recursive by default)
-dburnrate estimate-batch ./queries/
-
-# Multiple specific files
-dburnrate estimate-batch query1.sql query2.py notebook.ipynb
-
-# Export options
-dburnrate estimate-batch queries/ --format csv --output costs.csv
-dburnrate estimate-batch queries/ --format json --output costs.json
-```
-
-### 12.4 Features
-- [ ] Parallel processing for large batches
-- [ ] Progress bar with `rich`
-- [ ] Skip unsupported file types gracefully
-- [ ] Aggregate statistics (total cost, average, min/max)
-- [ ] Sort by cost (highest first)
-- [ ] Filter by confidence level
-
----
-
-## Phase 13: CLI Workflows & Documentation (NEW)
-
-> Comprehensive CLI usage patterns and CI/CD integration
-
-### 13.1 Common Workflows
-- [ ] Document single-file estimation workflow
-- [ ] Document batch analysis workflow
-- [ ] Document comparison workflow (what-if scenarios)
-- [ ] Document integration with Git workflows
-
-### 13.2 CI/CD Integration
-- [ ] GitHub Actions workflow template
-- [ ] GitLab CI template
-- [ ] Pre-commit hook for cost estimation
-- [ ] PR comment bot (post estimates on PRs)
-
-### 13.3 Documentation
-- [ ] `docs/cli-workflows.md` - Complete CLI guide
-- [ ] Usage examples for common scenarios
-- [ ] Troubleshooting guide
-- [ ] Performance optimization tips
-
-### 13.4 GitHub Actions Example
-```yaml
-# .github/workflows/cost-check.yml
-name: Cost Estimation Check
-on: [pull_request]
-jobs:
-  estimate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Estimate costs
-        run: |
-          pip install dburnrate[sql]
-          dburnrate estimate-batch queries/ --format json --output costs.json
-      - name: Comment PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const costs = require('./costs.json');
-            // Post cost summary as PR comment
-```
+| Feature | Description |
+|---------|-------------|
+| CI/CD cost gate | `dburnrate compare baseline.json current.json --threshold 200%` |
+| DABs integration | `dburnrate estimate-bundle ./databricks.yml` |
+| Notebook widget | `dburnrate.install_widget()` for Databricks UI |
+| GitHub Actions template | Post estimate as PR comment |
+| Data layout advisor | Liquid Clustering vs partitioning scan cost impact |
 
 ---
 
@@ -893,13 +1021,149 @@ uv run pip-audit
 
 ---
 
+## Interaction Modes
+
+dburnrate targets five distinct usage contexts. All features must be available in all modes — the backend is the only variable.
+
+| # | Mode | Where code runs | Backend | Auth |
+|---|------|----------------|---------|------|
+| 1 | **Local CLI, offline** | Laptop / CI | Static only | None |
+| 2 | **Local CLI + Databricks** | Laptop | `RestBackend` | PAT token |
+| 3 | **Databricks CLI / job** | Databricks terminal or job task | `SparkBackend` | Auto |
+| 4 | **Databricks notebook, external** | Notebook analyzing *other* files | `SparkBackend` | Auto |
+| 5 | **Databricks notebook, self** | Notebook analyzing *itself* | `SparkBackend` + path detection | Auto |
+
+### Feature Parity Matrix
+
+| Feature | Mode 1 | Mode 2 | Mode 3 | Mode 4 | Mode 5 |
+|---------|:------:|:------:|:------:|:------:|:------:|
+| `estimate("SELECT ...")` | Static | Hybrid | Hybrid | Hybrid | Hybrid |
+| `estimate_file("file.sql")` | Static | Hybrid | Hybrid | Hybrid | Hybrid |
+| `estimate_notebook("path")` | Static | Hybrid | Hybrid | Hybrid | ✓ |
+| `estimate_current_notebook()` | — | — | ✓ | — | ✓ |
+| `estimate_cells()` — per-cell breakdown | — | — | — | — | ✓ |
+| `display()` — rich table in notebook output | — | — | — | — | ✓ |
+| `lint` — anti-pattern detection | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `audit` — hidden cost audit | — | ✓ | ✓ | ✓ | ✓ |
+| `waste` — idle cluster detection | — | ✓ | ✓ | ✓ | ✓ |
+| `advise` — compute type advisor | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+### Python API (all modes)
+
+```python
+import dburnrate
+
+# Single SQL string or code snippet
+estimate = dburnrate.estimate("SELECT * FROM sales JOIN customers ON sales.cust_id = customers.id")
+
+# File on disk (.sql, .py, .ipynb, .dbc)
+estimate = dburnrate.estimate_file("./queries/daily_etl.sql")
+
+# Notebook by explicit path (Modes 1–4)
+estimate = dburnrate.estimate_notebook("/Workspace/Users/me/etl.ipynb")
+
+# Current notebook — path auto-detected (Modes 3 and 5)
+estimate = dburnrate.estimate_current_notebook()
+
+# Per-cell breakdown of current notebook (Mode 5)
+cells = dburnrate.estimate_cells()      # list[CellEstimate]
+for cell in cells:
+    print(f"Cell {cell.index} ({cell.language}): {cell.estimated_dbu:.4f} DBU — {cell.summary}")
+
+# Rich table in notebook output (Mode 5)
+dburnrate.display()          # full notebook cost breakdown
+dburnrate.display(cell=5)    # single cell detail
+```
+
+### CLI (all modes, same commands)
+
+```bash
+dburnrate estimate "SELECT ..."
+dburnrate estimate ./notebook.ipynb
+dburnrate estimate ./notebook.ipynb --breakdown    # per-cell table
+dburnrate estimate "queries/*.sql"                 # glob (batch)
+dburnrate estimate --self                          # current notebook/script (Modes 3, 5)
+dburnrate lint ./queries/
+dburnrate audit --days 30
+dburnrate waste --days 7
+dburnrate advise "SELECT ..." --current-sku ALL_PURPOSE
+```
+
+### Mode 5: Current Notebook Path Detection
+
+```python
+def current_notebook_path() -> str | None:
+    """Detect path of currently-running notebook. Returns None if not in a notebook."""
+
+    # 1. Databricks SparkConf — most reliable inside DBR
+    try:
+        from pyspark.sql import SparkSession
+        spark = SparkSession.getActiveSession()
+        if spark:
+            path = spark.conf.get("spark.databricks.notebook.path", None)
+            if path:
+                return path
+    except Exception:
+        pass
+
+    # 2. dbutils context — interactive Databricks notebooks
+    try:
+        import IPython
+        ip = IPython.get_ipython()
+        if ip:
+            dbutils = ip.user_ns.get("dbutils")
+            if dbutils:
+                return dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+    except Exception:
+        pass
+
+    # 3. ipynbname — local Jupyter (optional dep)
+    try:
+        import ipynbname
+        return str(ipynbname.path())
+    except Exception:
+        pass
+
+    # 4. __file__ — script context (Mode 3 in a .py job)
+    import inspect
+    for frame_info in inspect.stack():
+        f = frame_info.filename
+        if f and not f.startswith("<") and f != __file__:
+            return f
+
+    return None
+```
+
+`estimate_current_notebook()` calls `current_notebook_path()` then delegates to `estimate_notebook()` — no separate implementation needed. The `--self` CLI flag does the same.
+
+### `CellEstimate` model
+
+```python
+@dataclass
+class CellEstimate:
+    index: int                  # cell number (1-based)
+    language: str               # "sql" | "python" | "scala" | "markdown"
+    source: str                 # cell source code
+    estimated_dbu: float
+    cost_usd: float
+    confidence: str             # "high" | "medium" | "low"
+    summary: str                # one-line description of most expensive operation
+    anti_patterns: list[AntiPattern]
+```
+
+`dburnrate.estimate_cells()` returns `list[CellEstimate]` with a `.total` property summing the notebook. `dburnrate.display()` renders it as a rich table using `rich` (already a dep) or `displayHTML()` when inside Databricks.
+
+---
+
 ## Design Principles Summary
 
-1. **Layered fidelity** - Static → Historical → Live pricing
-2. **Hybrid architecture** - EXPLAIN + Delta + fingerprinting + ML
-3. **Multi-signal approach** - No single silver bullet
-4. **Self-referential** - Package can estimate its own cost
-5. **Batch analysis** - Glob patterns for bulk operations
-6. **CI/CD native** - Built for automation and workflows
+1. **Accuracy first** - Fix bugs before adding features; calibrate before shipping estimates
+2. **Layered fidelity** - Static → Delta → EXPLAIN → Historical → ML
+3. **Hybrid architecture** - EXPLAIN + Delta + fingerprinting + ML via `EstimationPipeline`
+4. **Dual-mode runtime** - `SparkBackend` (in-cluster) + `RestBackend` (external), auto-detected
+5. **Enterprise-ready** - Configurable `TableRegistry` for governance view environments
+6. **Total cost, not DBU-only** - Include VM infrastructure for classic compute
+7. **Empirically grounded** - All constants must cite source or benchmark; no fabricated values
+8. **Full parity across 5 modes** - Every feature available in every context; backend is the only variable
 
-*Document version: 1.1 | Last updated: March 2026 | PLAN.md archived*
+*Document version: 1.3 | Last updated: March 2026 | Audit: files/00-EXECUTIVE-SUMMARY.md*
