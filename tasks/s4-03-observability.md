@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p5-03-observability
+id: s4-03-observability
 status: todo
-phase: 5
+sprint: 4
 priority: medium
 agent: ~
-blocked_by: [p5-01-error-handling]
+blocked_by: [s4-01-error-handling]
 created_by: planner
 ```
 

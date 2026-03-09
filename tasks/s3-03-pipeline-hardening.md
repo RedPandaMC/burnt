@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p4a-02-estimation-pipeline
+id: s3-03-pipeline-hardening
 status: todo
-phase: 4B
+sprint: 3
 priority: high
 agent: ~
-blocked_by: [p4a-01-critical-bug-fixes, p4a-01b-remaining-bugs]
+blocked_by: [s3-01-delta-scan-integration, s3-02-fingerprint-lookup]
 created_by: planner
 ```
 
@@ -43,7 +43,7 @@ tests/unit/estimators/
 # Reference
 files/02-ARCHITECTURE-GAPS.md    # EstimationPipeline design + attribution SQL
 files/05-RESEARCH-BACKLOG.md     # R5 attribution accuracy, Lakeflow SQL patterns
-DESIGN.md                        # §"Phase 4B" + §"Lakeflow Job Cost Attribution"
+DESIGN.md                        # §"Sprint" + §"Lakeflow Job Cost Attribution"
 ```
 
 ### Background

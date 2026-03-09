@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p5-01-error-handling
+id: s4-01-error-handling
 status: todo
-phase: 5
+sprint: 4
 priority: high
 agent: ~
-blocked_by: [p4-01-wire-explain-into-cli, p4-03-fingerprint-lookup, p5-00-research-production-hardening]
+blocked_by: [s3-03-pipeline-hardening]
 created_by: planner
 ```
 

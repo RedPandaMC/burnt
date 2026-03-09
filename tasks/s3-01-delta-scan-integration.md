@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p4-02-delta-scan-size
+id: s3-01-delta-scan-integration
 status: in-progress
-phase: 4
+sprint: 3
 priority: medium
 agent: kimi
-blocked_by: [p4-01-wire-explain-into-cli, p4a-01-critical-bug-fixes]
+blocked_by: [s1-01-runtime-backend]
 created_by: planner
 ```
 

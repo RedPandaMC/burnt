@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p5-02-caching-and-performance
+id: s4-02-caching
 status: todo
-phase: 5
+sprint: 4
 priority: medium
 agent: ~
-blocked_by: [p5-01-error-handling]
+blocked_by: [s4-01-error-handling]
 created_by: planner
 ```
 

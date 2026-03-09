@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p6-01-feature-extraction
+id: s5-01-feature-extraction
 status: todo
-phase: 6
+sprint: 5
 priority: medium
 agent: ~
-blocked_by: [p6-00-research-ml-models, p4-02-delta-scan-size]
+blocked_by: [s3-03-pipeline-hardening, s2-03-benchmark-dataset]
 created_by: planner
 ```
 

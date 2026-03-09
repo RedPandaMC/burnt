@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p4-03-fingerprint-lookup
+id: s3-02-fingerprint-lookup
 status: todo
-phase: 4
+sprint: 3
 priority: high
 agent: ~
-blocked_by: [p4-01-wire-explain-into-cli, p4a-01-critical-bug-fixes, p4-02-delta-scan-size]
+blocked_by: [s1-01-runtime-backend, s3-01-delta-scan-integration]
 created_by: planner
 ```
 

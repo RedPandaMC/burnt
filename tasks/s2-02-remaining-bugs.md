@@ -5,9 +5,9 @@
 ## Metadata
 
 ```yaml
-id: p4a-01b-remaining-bugs
+id: s2-02-remaining-bugs
 status: todo
-phase: 4A
+sprint: 2
 priority: critical
 agent: ~
 blocked_by: []

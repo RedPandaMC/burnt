@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p4a-04-benchmark-dataset
+id: s2-03-benchmark-dataset
 status: todo
-phase: 4B
+sprint: 2
 priority: high
 agent: ~
-blocked_by: [p4a-01]
+blocked_by: []
 created_by: planner
 ```
 
@@ -47,9 +47,9 @@ files/07-AGENT-WORKFLOW.md      # §7.4 benchmarking asset spec
 ### Background
 
 **Accuracy targets (from `files/06-TESTING-STRATEGY.md §6.3`):**
-- Phase 4: All estimates within **10×** of actual
-- Phase 5: Within **3×** of actual
-- Phase 6 (ML): Within **2×** of actual
+- Sprint: All estimates within **10×** of actual
+- Sprint: Within **3×** of actual
+- Sprint (ML): Within **2×** of actual
 
 **Required benchmark structure:**
 ```

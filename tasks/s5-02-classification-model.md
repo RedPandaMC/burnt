@@ -5,12 +5,12 @@
 ## Metadata
 
 ```yaml
-id: p6-02-classification-model
+id: s5-02-classification-model
 status: todo
-phase: 6
+sprint: 5
 priority: medium
 agent: ~
-blocked_by: [p6-01-feature-extraction]
+blocked_by: [s5-01-feature-extraction]
 created_by: planner
 ```
 
