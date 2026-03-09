@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from dburnrate.core.config import Config, Settings
+from burnt.core.config import Config, Settings
 
 
 class TestSettings:
@@ -16,10 +16,10 @@ class TestSettings:
 
     def test_settings_from_env_vars(self, monkeypatch):
         monkeypatch.setenv(
-            "DBURNRATE_WORKSPACE_URL", "https://example.cloud.databricks.com"
+            "BURNT_WORKSPACE_URL", "https://example.cloud.databricks.com"
         )
-        monkeypatch.setenv("DBURNRATE_TOKEN", "test_token")
-        monkeypatch.setenv("DBURNRATE_TARGET_CURRENCY", "EUR")
+        monkeypatch.setenv("BURNT_TOKEN", "test_token")
+        monkeypatch.setenv("BURNT_TARGET_CURRENCY", "EUR")
 
         settings = Settings()
         assert settings.workspace_url == "https://example.cloud.databricks.com"
@@ -27,12 +27,12 @@ class TestSettings:
         assert settings.target_currency == "EUR"
 
     def test_settings_from_toml(self, monkeypatch):
-        monkeypatch.delenv("DBURNRATE_WORKSPACE_URL", raising=False)
-        monkeypatch.delenv("DBURNRATE_TOKEN", raising=False)
-        monkeypatch.delenv("DBURNRATE_TARGET_CURRENCY", raising=False)
+        monkeypatch.delenv("BURNT_WORKSPACE_URL", raising=False)
+        monkeypatch.delenv("BURNT_TOKEN", raising=False)
+        monkeypatch.delenv("BURNT_TARGET_CURRENCY", raising=False)
 
         toml_content = """
-[dburnrate]
+[burnt]
 workspace_url = "https://test.cloud.databricks.com"
 token = "toml_token"
 target_currency = "GBP"

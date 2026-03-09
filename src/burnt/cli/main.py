@@ -12,7 +12,7 @@ from ..estimators.static import CostEstimator
 from ..estimators.whatif import apply_photon_scenario, apply_serverless_migration
 from ..parsers.notebooks import parse_dbc, parse_notebook
 
-app = typer.Typer(help="dburnrate - Pre-execution cost estimation for Databricks")
+app = typer.Typer(help="burnt - Pre-execution cost estimation for Databricks")
 console = Console()
 
 
@@ -40,7 +40,7 @@ def estimate(
     workspace_url: str = typer.Option(
         None,
         "--workspace-url",
-        help="Databricks workspace URL (overrides DBURNRATE_WORKSPACE_URL)",
+        help="Databricks workspace URL (overrides BURNT_WORKSPACE_URL)",
     ),
 ):
     query_path = Path(query)
@@ -93,7 +93,7 @@ def estimate(
             console.print(
                 "[red]Error: sqlglot is required for SQL parsing.[/red]\n"
                 "Install with: [yellow]uv sync --extra sql[/yellow]\n"
-                "or: [yellow]pip install dburnrate[sql][/yellow]"
+                "or: [yellow]pip install burnt[sql][/yellow]"
             )
             raise typer.Exit(1) from e
         raise
@@ -178,7 +178,7 @@ def lint(
     """Lint SQL and PySpark code for cost anti-patterns."""
     from pathlib import Path
 
-    from dburnrate import lint_file
+    from burnt import lint_file
 
     target = Path(path)
     if not target.exists():
@@ -254,7 +254,7 @@ def version():
     """Print version info."""
     from .. import __version__
 
-    console.print(f"dburnrate v{__version__}")
+    console.print(f"burnt v{__version__}")
 
 
 if __name__ == "__main__":

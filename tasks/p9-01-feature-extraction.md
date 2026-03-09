@@ -20,16 +20,16 @@ created_by: planner
 
 ### Goal
 
-Implement `src/dburnrate/estimators/features.py` — a module that converts an `ExplainPlan`, optional `DeltaTableInfo` dict, and `ClusterConfig` into a flat numeric feature vector suitable for sklearn models.
+Implement `src/burnt/estimators/features.py` — a module that converts an `ExplainPlan`, optional `DeltaTableInfo` dict, and `ClusterConfig` into a flat numeric feature vector suitable for sklearn models.
 
 ### Files to read
 
 ```
 docs/ml-cost-model-research.md        (from p6-00 — defines exact feature list)
-src/dburnrate/parsers/explain.py       # ExplainPlan, PlanNode models
-src/dburnrate/parsers/delta.py         # DeltaTableInfo model
-src/dburnrate/core/models.py           # ClusterConfig, CostEstimate
-src/dburnrate/tables/queries.py        # QueryRecord (for training label)
+src/burnt/parsers/explain.py       # ExplainPlan, PlanNode models
+src/burnt/parsers/delta.py         # DeltaTableInfo model
+src/burnt/core/models.py           # ClusterConfig, CostEstimate
+src/burnt/tables/queries.py        # QueryRecord (for training label)
 ```
 
 ### Background
@@ -83,7 +83,7 @@ All features must handle `None` plan gracefully (zero-fill). Document the column
 
 ## Acceptance Criteria
 
-- [ ] `src/dburnrate/estimators/features.py` created
+- [ ] `src/burnt/estimators/features.py` created
 - [ ] `QueryFeatures` dataclass with all fields from research doc
 - [ ] `extract_features(plan, delta_tables, cluster)` — handles `None` plan (zero-fill)
 - [ ] `to_vector(features)` — returns `list[float]`, length matches `len(FEATURE_NAMES)`

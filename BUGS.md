@@ -1,4 +1,4 @@
-# Bug Tracking - dburnrate
+# Bug Tracking - burnt
 
 > Status of critical bugs identified in March 2026 audit. Reference: `files/00-EXECUTIVE-SUMMARY.md` and `files/01-CRITICAL-CODE-FIXES.md`
 
@@ -25,43 +25,43 @@
 ## Fixed Bugs (Phase 4A - Completed)
 
 ### Bug 1: Static Estimator Formula Is Quadratic
-**File:** `src/dburnrate/estimators/static.py`  
+**File:** `src/burnt/estimators/static.py`  
 **Issue:** `complexity² × cluster_factor / 100` → 960× overestimate for simple GROUP BY.  
 **Fix:** Linear throughput model: `(scan_bytes / throughput_bps + shuffle_count × shuffle_overhead) / 3600 × cluster_dbu_per_hour`  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 2: Hybrid Estimator Uses Phantom Price
-**File:** `src/dburnrate/estimators/hybrid.py`  
+**File:** `src/burnt/estimators/hybrid.py`  
 **Issue:** `_NOMINAL_USD_PER_DBU = 0.20` matches no real SKU (ALL_PURPOSE=$0.55, JOBS=$0.30, SQL_SERVERLESS=$0.70).  
 **Fix:** Remove constant. Call `get_dbu_rate(sku)` from `core/pricing.py`.  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 3: EXPLAIN DBU Constants Are Ungrounded
-**File:** `src/dburnrate/estimators/hybrid.py`  
+**File:** `src/burnt/estimators/hybrid.py`  
 **Issue:** `_SCAN_DBU_PER_GB = 0.5` is ~7,900× too high. DS3_v2 scans Parquet at ~3.2 GB/s → 1 GB takes ~0.3 s = 0.000063 DBU.  
 **Fix:** `_SCAN_DBU_PER_GB = 0.00013` (interim constant).  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 4: Historical Estimation Ignores Data Volume Scaling
-**File:** `src/dburnrate/estimators/hybrid.py`  
+**File:** `src/burnt/estimators/hybrid.py`  
 **Issue:** p50 duration from history is not scaled when current table is larger than historical runs.  
 **Fix:** `adjusted_ms = p50_ms × (current_read_bytes / median_historical_read_bytes)`  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 5: SQL Injection in System Table Queries
-**Files:** `src/dburnrate/tables/billing.py`, `queries.py`, `compute.py`  
+**Files:** `src/burnt/tables/billing.py`, `queries.py`, `compute.py`  
 **Issue:** All queries use f-string interpolation.  
 **Fix:** Add `_sanitize_id()` validation function.  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 6: Anti-Pattern Detector Uses String Matching
-**File:** `src/dburnrate/parsers/antipatterns.py`  
+**File:** `src/burnt/parsers/antipatterns.py`  
 **Issue:** `"CROSS JOIN" in sql.upper()` matches inside comments, string literals.  
 **Fix:** Use sqlglot AST (already in `sql.py`).  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
 
 ### Bug 7: protocols.py Shadows Core Models
-**File:** `src/dburnrate/core/protocols.py`  
+**File:** `src/burnt/core/protocols.py`  
 **Issue:** `CostEstimate` and `ParseResult` shadow the real `CostEstimate` in `models.py`.  
 **Fix:** Remove placeholder classes, import from `core.models`.  
 **Task:** `p4a-01-critical-bug-fixes.md.completed`
@@ -71,28 +71,28 @@
 ## Pending Bugs (Phase 4A - To Be Fixed)
 
 ### Bug 8: SKU Inference Misclassifies Compute
-**File:** `src/dburnrate/estimators/static.py`  
+**File:** `src/burnt/estimators/static.py`  
 **Issue:** String-matching on instance type misclassifies SQL Warehouses, serverless, DLT.  
 **Impact:** Wrong pricing tier applied to estimates.  
 **Fix Required:** Make SKU explicit parameter, remove fragile inference.  
 **Task:** `p4a-01b-remaining-bugs.md` (status: todo)
 
 ### Bug 9: forecast/prophet.py Is Empty Stub
-**File:** `src/dburnrate/forecast/prophet.py`  
+**File:** `src/burnt/forecast/prophet.py`  
 **Issue:** File exists but contains no real implementation.  
 **Impact:** Missing functionality advertised in package.  
 **Fix Required:** Implement or mark as TODO with clear documentation.  
 **Task:** `p4a-01b-remaining-bugs.md` (status: todo)
 
 ### Bug 10: No Graceful Degradation in CLI
-**File:** `src/dburnrate/cli/main.py`  
-**Issue:** If sqlglot isn't installed, `dburnrate estimate "SELECT ..."` crashes with ImportError.  
+**File:** `src/burnt/cli/main.py`  
+**Issue:** If sqlglot isn't installed, `burnt estimate "SELECT ..."` crashes with ImportError.  
 **Impact:** Poor user experience, no helpful guidance.  
 **Fix Required:** Add try/except with helpful installation suggestion.  
 **Task:** `p4a-01b-remaining-bugs.md` (status: todo)
 
 ### Bug 11: Missing tables/attribution.py
-**File:** `src/dburnrate/tables/attribution.py` (doesn't exist)  
+**File:** `src/burnt/tables/attribution.py` (doesn't exist)  
 **Issue:** Referenced in DESIGN.md but not implemented. Required for calibration.  
 **Impact:** Historical cost lookups and ML training impossible.  
 **Fix Required:** Create file with billing × list_prices join logic.  
@@ -107,7 +107,7 @@ These are design/implementation gaps rather than bugs:
 1. **No Estimation Pipeline Orchestrator** - Missing `EstimationPipeline` class to connect all estimation tiers
 2. **No Databricks Runtime Support** - Missing `RuntimeBackend` for in-cluster execution  
 3. **DBU-Only Estimates Miss VM Costs** - Classic compute requires VM infrastructure cost addition
-4. **No Top-Level Python API** - `import dburnrate` doesn't expose public functions
+4. **No Top-Level Python API** - `import burnt` doesn't expose public functions
 5. **Missing TableRegistry** - Enterprise support for governance view environments
 
 > These gaps are tracked in DESIGN.md §"Implementation Roadmap" and respective task files.

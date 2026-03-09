@@ -25,11 +25,11 @@ Add structured logging throughout the estimation pipeline, a `--debug` CLI flag 
 ### Files to read
 
 ```
-src/dburnrate/cli/main.py
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/estimators/static.py
-src/dburnrate/tables/connection.py
-src/dburnrate/core/models.py
+src/burnt/cli/main.py
+src/burnt/estimators/hybrid.py
+src/burnt/estimators/static.py
+src/burnt/tables/connection.py
+src/burnt/core/models.py
 docs/production-hardening-research.md   (from p5-00)
 ```
 
@@ -37,10 +37,10 @@ docs/production-hardening-research.md   (from p5-00)
 
 **Logging setup:**
 
-Use Python stdlib `logging`. Add a `dburnrate` logger in `src/dburnrate/__init__.py`:
+Use Python stdlib `logging`. Add a `burnt` logger in `src/burnt/__init__.py`:
 ```python
 import logging
-logging.getLogger("dburnrate").addHandler(logging.NullHandler())
+logging.getLogger("burnt").addHandler(logging.NullHandler())
 ```
 
 Library consumers configure handlers themselves (best practice). CLI configures a handler when `--debug` is set.
@@ -54,11 +54,11 @@ Log levels:
 **Debug mode in CLI:**
 
 ```bash
-uv run dburnrate estimate "SELECT ..." --debug
+uv run burnt estimate "SELECT ..." --debug
 ```
 
 When `--debug`:
-- Configure `logging.basicConfig(level=logging.DEBUG)` for `dburnrate` logger
+- Configure `logging.basicConfig(level=logging.DEBUG)` for `burnt` logger
 - Show full traceback on error (not just user-friendly message)
 - Print timing breakdown in output table
 
@@ -81,7 +81,7 @@ Output table shows timing when `--debug`:
 
 ## Acceptance Criteria
 
-- [ ] `logging.NullHandler()` added to `dburnrate` root logger in `__init__.py`
+- [ ] `logging.NullHandler()` added to `burnt` root logger in `__init__.py`
 - [ ] `DEBUG`/`INFO`/`WARNING` log calls added in `hybrid.py`, `connection.py`, `cli/main.py`
 - [ ] Tokens never appear in log output (use `client._redact_url()` helper or similar)
 - [ ] `--debug` flag on all CLI commands enables `DEBUG` logging and full tracebacks
@@ -101,7 +101,7 @@ uv run pytest -m unit -v 2>&1 | tail -5
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 # Manual smoke test:
-uv run dburnrate estimate "SELECT 1" --debug
+uv run burnt estimate "SELECT 1" --debug
 ```
 
 ---

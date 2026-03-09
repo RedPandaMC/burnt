@@ -26,7 +26,7 @@ created_by: planner
 
 ```
 # Required
-src/dburnrate/...
+src/burnt/...
 tests/...
 
 # Reference
@@ -59,7 +59,7 @@ uv run ruff check src/ tests/
 
 ### Integration Check
 
-- [ ] Run `dburnrate estimate` (or relevant CLI command) and confirm the output reflects the new feature/fix. The new logic MUST be wired up and reachable from the user-facing CLI.
+- [ ] Run `burnt estimate` (or relevant CLI command) and confirm the output reflects the new feature/fix. The new logic MUST be wired up and reachable from the user-facing CLI.
 
 ---
 

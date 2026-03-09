@@ -1,4 +1,4 @@
-"""Protocol classes for dburnrate."""
+"""Protocol classes for burnt."""
 
 from __future__ import annotations
 

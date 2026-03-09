@@ -20,17 +20,17 @@ created_by: planner
 
 ### Goal
 
-Implement `src/dburnrate/estimators/ml.py` — a cost bucket classifier using sklearn that integrates as an optional fourth signal in `HybridEstimator`. The model is trained on `system.query.history` data and serialized to disk. When the `[ml]` extra is installed and a trained model exists, `HybridEstimator` uses it to refine the estimate.
+Implement `src/burnt/estimators/ml.py` — a cost bucket classifier using sklearn that integrates as an optional fourth signal in `HybridEstimator`. The model is trained on `system.query.history` data and serialized to disk. When the `[ml]` extra is installed and a trained model exists, `HybridEstimator` uses it to refine the estimate.
 
 ### Files to read
 
 ```
 docs/ml-cost-model-research.md          (from p6-00 — model choice, bucket boundaries)
-src/dburnrate/estimators/features.py    (from p6-01 — QueryFeatures, to_vector)
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/core/models.py            # CostEstimate
-src/dburnrate/tables/queries.py         # QueryRecord (training data)
-src/dburnrate/core/config.py            # Settings
+src/burnt/estimators/features.py    (from p6-01 — QueryFeatures, to_vector)
+src/burnt/estimators/hybrid.py
+src/burnt/core/models.py            # CostEstimate
+src/burnt/tables/queries.py         # QueryRecord (training data)
+src/burnt/core/config.py            # Settings
 ```
 
 ### Background
@@ -47,14 +47,14 @@ class CostBucket(str, Enum):
 **Model implementation:**
 
 ```python
-# src/dburnrate/estimators/ml.py
-# Requires: pip install dburnrate[ml]
+# src/burnt/estimators/ml.py
+# Requires: pip install burnt[ml]
 
 from sklearn.ensemble import HistGradientBoostingClassifier
 import joblib
 from pathlib import Path
 
-DEFAULT_MODEL_PATH = Path("~/.dburnrate/cost_model.joblib").expanduser()
+DEFAULT_MODEL_PATH = Path("~/.burnt/cost_model.joblib").expanduser()
 
 class CostBucketClassifier:
     def __init__(self, model_path: Path = DEFAULT_MODEL_PATH): ...
@@ -74,10 +74,10 @@ class CostBucketClassifier:
 
 **CLI command for training:**
 ```bash
-uv run dburnrate train-model --warehouse-id sql-xxxx --days 90
+uv run burnt train-model --warehouse-id sql-xxxx --days 90
 ```
 
-This fetches 90 days of `system.query.history`, extracts features for each record (using cached EXPLAIN if possible, otherwise zero-fill), labels by DBU bucket, trains classifier, saves to `~/.dburnrate/cost_model.joblib`.
+This fetches 90 days of `system.query.history`, extracts features for each record (using cached EXPLAIN if possible, otherwise zero-fill), labels by DBU bucket, trains classifier, saves to `~/.burnt/cost_model.joblib`.
 
 **Integration in HybridEstimator:**
 
@@ -102,7 +102,7 @@ def _require_sklearn():
 
 ## Acceptance Criteria
 
-- [ ] `src/dburnrate/estimators/ml.py` created (only importable with `[ml]` extra)
+- [ ] `src/burnt/estimators/ml.py` created (only importable with `[ml]` extra)
 - [ ] `CostBucket` enum with 4 buckets (boundary values from research doc)
 - [ ] `CostBucketClassifier.train()` — trains `HistGradientBoostingClassifier`, saves with `joblib`
 - [ ] `CostBucketClassifier.predict()` — returns `(CostBucket, float)`, loads model lazily
@@ -110,10 +110,10 @@ def _require_sklearn():
 - [ ] `train-model` CLI command added to `cli/main.py`
   - `--warehouse-id` required
   - `--days` optional (default 90)
-  - `--model-path` optional (default `~/.dburnrate/cost_model.joblib`)
+  - `--model-path` optional (default `~/.burnt/cost_model.joblib`)
 - [ ] `HybridEstimator` uses `CostBucketClassifier` when available (optional init arg)
 - [ ] Import guarded: `ImportError` with helpful message if sklearn not installed
-- [ ] Model directory (`~/.dburnrate/`) created automatically if missing
+- [ ] Model directory (`~/.burnt/`) created automatically if missing
 - [ ] New unit tests: `tests/unit/estimators/test_ml.py`
   - Test `CostBucket` boundaries
   - Test `is_available()` when no model file
@@ -133,7 +133,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 # With ml extra:
 uv sync --extra ml
-uv run dburnrate train-model --help
+uv run burnt train-model --help
 ```
 
 ---

@@ -1,4 +1,4 @@
-"""Unit tests for src/dburnrate/tables/billing.py."""
+"""Unit tests for src/burnt/tables/billing.py."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dburnrate.core.exceptions import DatabricksQueryError
-from dburnrate.core.models import UsageRecord
-from dburnrate.tables.billing import (
+from burnt.core.exceptions import DatabricksQueryError
+from burnt.core.models import UsageRecord
+from burnt.tables.billing import (
     _coerce_usage_row,
     get_historical_usage,
     get_live_prices,

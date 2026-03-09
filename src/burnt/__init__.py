@@ -1,5 +1,5 @@
 """
-dburnrate - Pre-Orchestration FinOps & Cost Estimation for Databricks.
+burnt - Pre-Orchestration FinOps & Cost Estimation for Databricks.
 
 The Data Engineer's best friend for cost-aware linting, interactive cluster advising,
 and programmatic pipeline cost estimation.

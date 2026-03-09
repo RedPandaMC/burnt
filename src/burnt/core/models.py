@@ -1,4 +1,4 @@
-"""Pydantic models for dburnrate."""
+"""Pydantic models for burnt."""
 
 from decimal import Decimal
 from typing import Literal

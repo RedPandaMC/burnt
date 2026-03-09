@@ -25,9 +25,9 @@ Add TTL-based caching for `DESCRIBE DETAIL` results and reuse `requests.Session`
 ### Files to read
 
 ```
-src/dburnrate/tables/connection.py
-src/dburnrate/parsers/delta.py
-src/dburnrate/estimators/hybrid.py
+src/burnt/tables/connection.py
+src/burnt/parsers/delta.py
+src/burnt/estimators/hybrid.py
 docs/production-hardening-research.md   (from p5-00)
 ```
 
@@ -59,7 +59,7 @@ class TTLCache:
     def set(self, key: str, value: object) -> None: ...
 ```
 
-Cache key: `f"{workspace_url}:{table_name}"`. TTL: 300 seconds (5 min) default, configurable via `DBURNRATE_CACHE_TTL` env var.
+Cache key: `f"{workspace_url}:{table_name}"`. TTL: 300 seconds (5 min) default, configurable via `BURNT_CACHE_TTL` env var.
 
 Apply cache in `DatabricksClient` for any `DESCRIBE DETAIL` queries. The `HybridEstimator` should benefit transparently.
 
@@ -76,7 +76,7 @@ When estimating multiple queries in a single session, fingerprint lookups can be
 - [ ] `TTLCache` class implemented (simple in-memory dict with expiry, thread-safe with `threading.Lock`)
 - [ ] `DESCRIBE DETAIL` results cached with 300s TTL (configurable via env var)
 - [ ] `find_similar_queries_batch()` added to `tables/queries.py`
-- [ ] Cache TTL configurable via `DBURNRATE_CACHE_TTL` env var (add to `core/config.py`)
+- [ ] Cache TTL configurable via `BURNT_CACHE_TTL` env var (add to `core/config.py`)
 - [ ] New unit tests: `tests/unit/tables/test_cache.py`, `tests/unit/tables/test_batch_queries.py`
 - [ ] All existing tests still pass
 - [ ] `uv run ruff check src/ tests/` exits 0

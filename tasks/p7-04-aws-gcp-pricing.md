@@ -20,16 +20,16 @@ created_by: planner
 
 ### Goal
 
-Extend `src/dburnrate/core/pricing.py` to support AWS and GCP Databricks pricing alongside the existing Azure data. Add cloud auto-detection from workspace URL and `--cloud` CLI flag. The estimators should select the correct DBU rate table based on cloud.
+Extend `src/burnt/core/pricing.py` to support AWS and GCP Databricks pricing alongside the existing Azure data. Add cloud auto-detection from workspace URL and `--cloud` CLI flag. The estimators should select the correct DBU rate table based on cloud.
 
 ### Files to read
 
 ```
 # Required
-src/dburnrate/core/pricing.py
-src/dburnrate/core/models.py        # ClusterConfig
-src/dburnrate/core/config.py        # Settings
-src/dburnrate/cli/main.py
+src/burnt/core/pricing.py
+src/burnt/core/models.py        # ClusterConfig
+src/burnt/core/config.py        # Settings
+src/burnt/cli/main.py
 tests/unit/core/test_pricing.py
 ```
 

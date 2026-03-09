@@ -26,12 +26,12 @@ Extend `HybridEstimator` and `CostEstimator` to accept a `DeltaTableInfo` per re
 
 ```
 # Required
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/estimators/static.py
-src/dburnrate/parsers/delta.py
-src/dburnrate/parsers/sql.py        # extract_tables()
-src/dburnrate/core/models.py
-src/dburnrate/tables/connection.py
+src/burnt/estimators/hybrid.py
+src/burnt/estimators/static.py
+src/burnt/parsers/delta.py
+src/burnt/parsers/sql.py        # extract_tables()
+src/burnt/core/models.py
+src/burnt/tables/connection.py
 ```
 
 ### Background

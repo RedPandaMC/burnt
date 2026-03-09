@@ -1,7 +1,7 @@
 # EXPLAIN COST Output Format — Parsing Specification
 
 > This document is the authoritative reference for implementing the `ExplainPlan` parser
-> in `src/dburnrate/parsers/explain.py`. An executor can implement the parser by reading
+> in `src/burnt/parsers/explain.py`. An executor can implement the parser by reading
 > only this file — no Databricks documentation is needed.
 
 ---
@@ -487,8 +487,8 @@ def extract_optimized_section(text: str) -> str:
 
 ## Section 7: ExplainPlan Pydantic Model Specification
 
-This model should be defined in `src/dburnrate/core/models.py` alongside the existing
-models, or in a new file `src/dburnrate/parsers/explain.py` if preferred.
+This model should be defined in `src/burnt/core/models.py` alongside the existing
+models, or in a new file `src/burnt/parsers/explain.py` if preferred.
 
 ```python
 from __future__ import annotations
@@ -554,7 +554,7 @@ def parse_explain_cost(text: str) -> ExplainPlan:
     ...
 ```
 
-It should raise `ParseError` (from `src/dburnrate/core/exceptions.py`) for all
+It should raise `ParseError` (from `src/burnt/core/exceptions.py`) for all
 invalid inputs, consistent with the existing `parse_sql()` function in `sql.py`.
 
 ---

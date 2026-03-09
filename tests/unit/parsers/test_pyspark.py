@@ -1,7 +1,7 @@
 import pytest
 
-from dburnrate.core.exceptions import ParseError
-from dburnrate.parsers.pyspark import PYSPARK_WEIGHTS, PySparkVisitor, analyze_pyspark
+from burnt.core.exceptions import ParseError
+from burnt.parsers.pyspark import PYSPARK_WEIGHTS, PySparkVisitor, analyze_pyspark
 
 
 class TestAnalyzePySpark:

@@ -25,13 +25,13 @@ Expand the exception hierarchy, add user-friendly error messages with recovery s
 ### Files to read
 
 ```
-src/dburnrate/core/exceptions.py
-src/dburnrate/tables/connection.py
-src/dburnrate/tables/billing.py
-src/dburnrate/tables/queries.py
-src/dburnrate/tables/compute.py
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/cli/main.py
+src/burnt/core/exceptions.py
+src/burnt/tables/connection.py
+src/burnt/tables/billing.py
+src/burnt/tables/queries.py
+src/burnt/tables/compute.py
+src/burnt/estimators/hybrid.py
+src/burnt/cli/main.py
 docs/production-hardening-research.md   (from p5-00)
 ```
 
@@ -39,16 +39,16 @@ docs/production-hardening-research.md   (from p5-00)
 
 Current exception hierarchy in `exceptions.py`:
 ```python
-class DburnrateError(Exception): ...
-class ParseError(DburnrateError): ...
-class ConfigError(DburnrateError): ...
-class PricingError(DburnrateError): ...
-class EstimationError(DburnrateError): ...
+class BurntError(Exception): ...
+class ParseError(BurntError): ...
+class ConfigError(BurntError): ...
+class PricingError(BurntError): ...
+class EstimationError(BurntError): ...
 ```
 
 Extend with:
 ```python
-class ConnectionError(DburnrateError): ...      # Databricks connectivity
+class ConnectionError(BurntError): ...      # Databricks connectivity
 class AuthenticationError(ConnectionError): ... # 401 — bad token
 class RateLimitError(ConnectionError): ...      # 429 — backoff needed
 class WarehouseError(ConnectionError): ...      # warehouse stopped/not found
@@ -57,11 +57,11 @@ class TimeoutError(ConnectionError): ...        # request timeout
 ```
 
 Each exception must have:
-- `message` — user-facing, actionable (e.g. "Token rejected (401). Check DBURNRATE_TOKEN.")
-- `suggestion` — recovery step (e.g. "Run: export DBURNRATE_TOKEN=dapi...")
+- `message` — user-facing, actionable (e.g. "Token rejected (401). Check BURNT_TOKEN.")
+- `suggestion` — recovery step (e.g. "Run: export BURNT_TOKEN=dapi...")
 - Token values must be redacted from all error messages and tracebacks
 
-CLI `main.py` must catch `DburnrateError` subclasses at the top level and print rich-formatted messages (red for error, yellow for suggestion) without full tracebacks in normal mode.
+CLI `main.py` must catch `BurntError` subclasses at the top level and print rich-formatted messages (red for error, yellow for suggestion) without full tracebacks in normal mode.
 
 ---
 
@@ -73,7 +73,7 @@ CLI `main.py` must catch `DburnrateError` subclasses at the top level and print 
 - [ ] 401 → `AuthenticationError` with redacted token hint
 - [ ] 429 → `RateLimitError` with retry-after guidance
 - [ ] 503/timeout → `WarehouseError` or `TimeoutError`
-- [ ] CLI catches all `DburnrateError` at top level, prints clean message (no traceback unless `--debug`)
+- [ ] CLI catches all `BurntError` at top level, prints clean message (no traceback unless `--debug`)
 - [ ] Token strings never appear in error messages or exception `__str__`
 - [ ] New unit tests in `tests/unit/core/test_exceptions.py` and `tests/unit/tables/test_connection_errors.py`
 - [ ] All existing tests still pass

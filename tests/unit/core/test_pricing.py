@@ -2,8 +2,8 @@ from decimal import Decimal
 
 import pytest
 
-from dburnrate.core.exceptions import PricingError
-from dburnrate.core.pricing import (
+from burnt.core.exceptions import PricingError
+from burnt.core.pricing import (
     AZURE_DBU_RATES,
     AZURE_INSTANCE_DBU,
     apply_photon,

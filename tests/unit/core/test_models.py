@@ -1,6 +1,6 @@
 import pytest
 
-from dburnrate.core.models import (
+from burnt.core.models import (
     ClusterConfig,
     ClusterRecommendation,
     CostEstimate,

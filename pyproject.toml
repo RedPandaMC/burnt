@@ -1,5 +1,5 @@
 [project]
-name = "dburnrate"
+name = "burnt"
 version = "0.1.0"
 description = "Pre-execution cost estimation for Databricks workloads"
 readme = "README.md"
@@ -17,17 +17,17 @@ dependencies = [
 sql = ["sqlglot>=26.0"]
 forecasting = ["prophet>=1.1"]
 ml = ["scikit-learn>=1.3"]
-all = ["dburnrate[sql,forecasting,ml]"]
+all = ["burnt[sql,forecasting,ml]"]
 
 [project.scripts]
-dburnrate = "dburnrate.cli.main:app"
+burnt = "burnt.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dburnrate"]
+packages = ["src/burnt"]
 
 [dependency-groups]
 dev = [
@@ -70,12 +70,12 @@ xfail_strict = true
 filterwarnings = ["error"]
 
 [tool.coverage.run]
-source_pkgs = ["dburnrate"]
+source_pkgs = ["burnt"]
 branch = true
 parallel = true
 
 [tool.coverage.paths]
-source = ["src/dburnrate", "*/site-packages/dburnrate"]
+source = ["src/burnt", "*/site-packages/burnt"]
 
 [tool.coverage.report]
 show_missing = true
@@ -101,7 +101,7 @@ select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "TCH", "RUF"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dburnrate"]
+known-first-party = ["burnt"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

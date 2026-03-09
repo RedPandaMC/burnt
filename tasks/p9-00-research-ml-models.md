@@ -26,10 +26,10 @@ Research the academic and production ML approaches for Spark query cost estimati
 
 ```
 DESIGN.md                          # §"ML models achieve 14–98% accuracy"
-src/dburnrate/parsers/explain.py   # ExplainPlan model — available features
-src/dburnrate/parsers/delta.py     # DeltaTableInfo — table size features
-src/dburnrate/core/models.py       # ClusterConfig — cluster features
-src/dburnrate/tables/queries.py    # QueryRecord — training data source
+src/burnt/parsers/explain.py   # ExplainPlan model — available features
+src/burnt/parsers/delta.py     # DeltaTableInfo — table size features
+src/burnt/core/models.py       # ClusterConfig — cluster features
+src/burnt/tables/queries.py    # QueryRecord — training data source
 ```
 
 ### Research areas
@@ -82,7 +82,7 @@ src/dburnrate/tables/queries.py    # QueryRecord — training data source
 ## Acceptance Criteria
 
 - [ ] `docs/ml-cost-model-research.md` created covering all 8 areas
-- [ ] Each area ends with "Recommendation for dburnrate" section
+- [ ] Each area ends with "Recommendation for burnt" section
 - [ ] Feature vector specification: exact list of features, types, and encoding
 - [ ] Cost bucket boundaries defined with rationale
 - [ ] sklearn model choice justified with inference time estimate

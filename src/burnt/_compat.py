@@ -6,5 +6,5 @@ def require(extra: str) -> None:
         importlib.import_module(extra)
     except ImportError as e:
         raise ImportError(
-            f"The '{extra}' extra is required. Install with: pip install dburnrate[{extra}]"
+            f"The '{extra}' extra is required. Install with: pip install burnt[{extra}]"
         ) from e

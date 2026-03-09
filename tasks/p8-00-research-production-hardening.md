@@ -1,4 +1,4 @@
-# Task: Research production hardening strategies for dburnrate
+# Task: Research production hardening strategies for burnt
 
 ---
 
@@ -25,10 +25,10 @@ Research and document production hardening strategies specific to this project. 
 ### Files to read
 
 ```
-src/dburnrate/tables/connection.py
-src/dburnrate/core/exceptions.py
-src/dburnrate/cli/main.py
-src/dburnrate/estimators/hybrid.py
+src/burnt/tables/connection.py
+src/burnt/core/exceptions.py
+src/burnt/cli/main.py
+src/burnt/estimators/hybrid.py
 ```
 
 ### Research areas

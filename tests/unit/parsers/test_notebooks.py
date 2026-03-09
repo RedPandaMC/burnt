@@ -2,7 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from dburnrate.parsers.notebooks import NotebookCell, parse_notebook
+from burnt.parsers.notebooks import NotebookCell, parse_notebook
 
 
 class TestParseNotebook:

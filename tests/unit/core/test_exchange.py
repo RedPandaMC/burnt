@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from dburnrate.core.exceptions import PricingError
-from dburnrate.core.exchange import FixedRateProvider, FrankfurterProvider
+from burnt.core.exceptions import PricingError
+from burnt.core.exchange import FixedRateProvider, FrankfurterProvider
 
 
 class TestFrankfurterProvider:

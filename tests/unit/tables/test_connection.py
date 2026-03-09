@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dburnrate.core.config import Settings
-from dburnrate.core.exceptions import DatabricksConnectionError, DatabricksQueryError
-from dburnrate.tables.connection import DatabricksClient
+from burnt.core.config import Settings
+from burnt.core.exceptions import DatabricksConnectionError, DatabricksQueryError
+from burnt.tables.connection import DatabricksClient
 
 
 def _settings(**kwargs) -> Settings:
@@ -132,7 +132,7 @@ class TestRetryLogic:
 
         with (
             patch.object(client._session, "post", side_effect=side_effect),
-            patch("dburnrate.tables.connection.time.sleep"),
+            patch("burnt.tables.connection.time.sleep"),
         ):
             rows = client.execute_sql("SELECT 1", "wh-001")
         assert rows == []
@@ -146,7 +146,7 @@ class TestRetryLogic:
 
         with (
             patch.object(client._session, "post", return_value=rate_limit_resp),
-            patch("dburnrate.tables.connection.time.sleep"),
+            patch("burnt.tables.connection.time.sleep"),
             pytest.raises(DatabricksConnectionError),
         ):
             client.execute_sql("SELECT 1", "wh-001")
@@ -182,7 +182,7 @@ class TestPolling:
         with (
             patch.object(client._session, "post", return_value=submit_resp),
             patch.object(client._session, "get", side_effect=[pending_resp, done_resp]),
-            patch("dburnrate.tables.connection.time.sleep"),
+            patch("burnt.tables.connection.time.sleep"),
         ):
             rows = client.execute_sql("SELECT 42 AS x", "wh-001")
         assert rows == [{"x": "42"}]

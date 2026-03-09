@@ -26,11 +26,11 @@ When `--warehouse-id` is set and a Databricks connection is available, look up t
 
 ```
 # Required
-src/dburnrate/cli/main.py            (after p4-01)
-src/dburnrate/tables/queries.py      # fingerprint_sql, find_similar_queries
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/core/config.py
-src/dburnrate/tables/connection.py
+src/burnt/cli/main.py            (after p4-01)
+src/burnt/tables/queries.py      # fingerprint_sql, find_similar_queries
+src/burnt/estimators/hybrid.py
+src/burnt/core/config.py
+src/burnt/tables/connection.py
 ```
 
 ### Background

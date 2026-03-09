@@ -1,4 +1,4 @@
-# dburnrate Design Document
+# burnt Design Document
 
 > Comprehensive design document consolidating research, architecture, and roadmap
 
@@ -76,17 +76,17 @@ Referenced in DESIGN.md but doesn't exist. Required for calibration, "last time 
 File exists but contains no real implementation.
 
 ### Bug 11: No Graceful Degradation in CLI
-If sqlglot isn't installed, `dburnrate estimate "SELECT ..."` crashes with ImportError instead of falling back or suggesting `uv sync --extra sql`.
+If sqlglot isn't installed, `burnt estimate "SELECT ..."` crashes with ImportError instead of falling back or suggesting `uv sync --extra sql`.
 
 ## Architecture Gaps
 
 ### Gap 1: No Estimation Pipeline Orchestrator
 `HybridEstimator`, `DatabricksClient`, fingerprinting, Delta metadata, EXPLAIN all exist but nothing connects them. CLI uses only static estimator.
-**Required:** `src/dburnrate/estimators/pipeline.py` — `EstimationPipeline` class orchestrating all tiers.
+**Required:** `src/burnt/estimators/pipeline.py` — `EstimationPipeline` class orchestrating all tiers.
 
 ### Gap 2: No Databricks Runtime Support (Critical for 70% In-Cluster Use)
 Package communicates exclusively via REST. Running inside a Databricks notebook → wasteful REST round-trip when `spark.sql()` is already available. Zero awareness of `DATABRICKS_RUNTIME_VERSION`.
-**Required:** `src/dburnrate/runtime/` — `RuntimeBackend` protocol with `SparkBackend` (in-cluster) and `RestBackend` (external) implementations + `auto_backend()` detection.
+**Required:** `src/burnt/runtime/` — `RuntimeBackend` protocol with `SparkBackend` (in-cluster) and `RestBackend` (external) implementations + `auto_backend()` detection.
 
 ### Gap 3: Missing `tables/attribution.py`
 Referenced in DESIGN.md but doesn't exist. Required for calibration, "last time this cost $X" signal, and ML training data.
@@ -97,24 +97,24 @@ For classic clusters (Jobs, All-Purpose, DLT) the Azure VM bill is separate. DS4
 **Required:** Total cost = `(dbu × dbu_rate) + (vm_hours × vm_rate × node_count)` for classic; `dbu × serverless_rate` for serverless.
 
 ### Gap 5: No Top-Level Python API
-`import dburnrate; dburnrate.estimate("SELECT ...")` fails. Only entry point is CLI.
+`import burnt; burnt.estimate("SELECT ...")` fails. Only entry point is CLI.
 
 ### Gap 6: forecast/prophet.py Is Empty Stub
 File exists but contains no real implementation, implying functionality that doesn't exist.
 
 ### Gap 7: No Graceful Degradation in CLI
-If sqlglot isn't installed, `dburnrate estimate "SELECT ..."` crashes with ImportError instead of falling back or suggesting `uv sync --extra sql`.
+If sqlglot isn't installed, `burnt estimate "SELECT ..."` crashes with ImportError instead of falling back or suggesting `uv sync --extra sql`.
 
 ## Enterprise Support: TableRegistry
 
-Enterprise environments hide system tables behind curated views with row-level security. dburnrate has 8 hardcoded `system.*` paths across 3 files.
+Enterprise environments hide system tables behind curated views with row-level security. burnt has 8 hardcoded `system.*` paths across 3 files.
 
-**Required:** `src/dburnrate/core/table_registry.py` — `TableRegistry` dataclass mapping logical → physical table names. Configurable via env vars (`DBURNRATE_TABLE_BILLING_USAGE=...`), TOML config, or programmatic API. All `tables/*.py` modules accept a `registry` parameter.
+**Required:** `src/burnt/core/table_registry.py` — `TableRegistry` dataclass mapping logical → physical table names. Configurable via env vars (`BURNT_TABLE_BILLING_USAGE=...`), TOML config, or programmatic API. All `tables/*.py` modules accept a `registry` parameter.
 
 Config channels:
-- Env: `DBURNRATE_TABLE_BILLING_USAGE`, `DBURNRATE_TABLE_QUERY_HISTORY`, etc.
-- TOML: `[dburnrate.tables]` section in `.dburnrate.toml` or `pyproject.toml`
-- Programmatic: `dburnrate.estimate("...", registry=TableRegistry(billing_usage="..."))`
+- Env: `BURNT_TABLE_BILLING_USAGE`, `BURNT_TABLE_QUERY_HISTORY`, etc.
+- TOML: `[burnt.tables]` section in `.burnt.toml` or `pyproject.toml`
+- Programmatic: `burnt.estimate("...", registry=TableRegistry(billing_usage="..."))`
 
 ## Research Backlog
 
@@ -228,7 +228,7 @@ tests/benchmarks/
 
 ## Performance Notes
 
-For `dburnrate estimate` in connected mode: 85-95% of wall time is network I/O. Rust acceleration is premature until batch mode ships and profiling confirms parsing is the bottleneck. Prefer:
+For `burnt estimate` in connected mode: 85-95% of wall time is network I/O. Rust acceleration is premature until batch mode ships and profiling confirms parsing is the bottleneck. Prefer:
 1. Server-side fingerprinting via `SHA2(UPPER(REGEXP_REPLACE(statement_text, '\\d+', '?')), 256)`
 2. `sqlglotrs` optional dep for 2-5× faster tokenization (zero custom Rust)
 3. Aggressive TTL caching on `DESCRIBE DETAIL` and `normalize_sql`
@@ -632,9 +632,9 @@ cost = (current_DBU × 2.5) / speedup_factor
 ## Package architecture
 
 ```
-dburnrate/
+burnt/
 ├── src/
-│   └── dburnrate/
+│   └── burnt/
 │       ├── __init__.py
 │       ├── _compat.py              # Optional import helpers
 │       ├── core/
@@ -674,7 +674,7 @@ dburnrate/
 sql = ["sqlglot>=20.0"]
 forecasting = ["prophet>=1.1"]
 ml = ["scikit-learn>=1.3"]
-all = ["dburnrate[sql,forecasting,ml]"]
+all = ["burnt[sql,forecasting,ml]"]
 ```
 
 **Type safety:**
@@ -693,7 +693,7 @@ def _require(module: str, extra: str):
     try:
         return __import__(module)
     except ImportError:
-        raise ImportError(f"Install with: pip install dburnrate[{extra}]") from None
+        raise ImportError(f"Install with: pip install burnt[{extra}]") from None
 ```
 
 ---
@@ -739,11 +739,11 @@ def _require(module: str, extra: str):
 *Shift focus from static guessing to translating interactive test runs into production optimizations. Make the tool a first-class programmatic library.*
 
 ### 5.1 Top-Level Programmatic API (`tasks/p5-01-top-level-api.md`)
-- Expose `dburnrate.lint()`, `dburnrate.estimate()`, and `dburnrate.advise()` at the package root.
+- Expose `burnt.lint()`, `burnt.estimate()`, and `burnt.advise()` at the package root.
 - Ensure developers can easily import and use the tool inside Databricks Notebooks.
 
 ### 5.2 The Interactive-to-Production Advisor (`tasks/p5-02-interactive-advisor.md`)
-- `dburnrate advise --run-id <id>`
+- `burnt advise --run-id <id>`
 - Fetch actual execution metrics from an interactive test run (All-Purpose compute).
 - Feed metrics into the `WhatIf` engine to project costs onto Jobs Compute, Serverless, and Spot.
 - Generate actionable recommendations (e.g., downsizing clusters based on peak memory, suggesting Spot for stateless jobs).
@@ -823,7 +823,7 @@ uv run pip-audit
 
 ## Interaction Modes
 
-dburnrate targets five distinct usage contexts. All features must be available in all modes — the backend is the only variable.
+burnt targets five distinct usage contexts. All features must be available in all modes — the backend is the only variable.
 
 | # | Mode | Where code runs | Backend | Auth |
 |---|------|----------------|---------|------|
@@ -851,42 +851,42 @@ dburnrate targets five distinct usage contexts. All features must be available i
 ### Python API (all modes)
 
 ```python
-import dburnrate
+import burnt
 
 # Single SQL string or code snippet
-estimate = dburnrate.estimate("SELECT * FROM sales JOIN customers ON sales.cust_id = customers.id")
+estimate = burnt.estimate("SELECT * FROM sales JOIN customers ON sales.cust_id = customers.id")
 
 # File on disk (.sql, .py, .ipynb, .dbc)
-estimate = dburnrate.estimate_file("./queries/daily_etl.sql")
+estimate = burnt.estimate_file("./queries/daily_etl.sql")
 
 # Notebook by explicit path (Modes 1–4)
-estimate = dburnrate.estimate_notebook("/Workspace/Users/me/etl.ipynb")
+estimate = burnt.estimate_notebook("/Workspace/Users/me/etl.ipynb")
 
 # Current notebook — path auto-detected (Modes 3 and 5)
-estimate = dburnrate.estimate_current_notebook()
+estimate = burnt.estimate_current_notebook()
 
 # Per-cell breakdown of current notebook (Mode 5)
-cells = dburnrate.estimate_cells()      # list[CellEstimate]
+cells = burnt.estimate_cells()      # list[CellEstimate]
 for cell in cells:
     print(f"Cell {cell.index} ({cell.language}): {cell.estimated_dbu:.4f} DBU — {cell.summary}")
 
 # Rich table in notebook output (Mode 5)
-dburnrate.display()          # full notebook cost breakdown
-dburnrate.display(cell=5)    # single cell detail
+burnt.display()          # full notebook cost breakdown
+burnt.display(cell=5)    # single cell detail
 ```
 
 ### CLI (all modes, same commands)
 
 ```bash
-dburnrate estimate "SELECT ..."
-dburnrate estimate ./notebook.ipynb
-dburnrate estimate ./notebook.ipynb --breakdown    # per-cell table
-dburnrate estimate "queries/*.sql"                 # glob (batch)
-dburnrate estimate --self                          # current notebook/script (Modes 3, 5)
-dburnrate lint ./queries/
-dburnrate audit --days 30
-dburnrate waste --days 7
-dburnrate advise "SELECT ..." --current-sku ALL_PURPOSE
+burnt estimate "SELECT ..."
+burnt estimate ./notebook.ipynb
+burnt estimate ./notebook.ipynb --breakdown    # per-cell table
+burnt estimate "queries/*.sql"                 # glob (batch)
+burnt estimate --self                          # current notebook/script (Modes 3, 5)
+burnt lint ./queries/
+burnt audit --days 30
+burnt waste --days 7
+burnt advise "SELECT ..." --current-sku ALL_PURPOSE
 ```
 
 ### Mode 5: Current Notebook Path Detection
@@ -951,7 +951,7 @@ class CellEstimate:
     anti_patterns: list[AntiPattern]
 ```
 
-`dburnrate.estimate_cells()` returns `list[CellEstimate]` with a `.total` property summing the notebook. `dburnrate.display()` renders it as a rich table using `rich` (already a dep) or `displayHTML()` when inside Databricks.
+`burnt.estimate_cells()` returns `list[CellEstimate]` with a `.total` property summing the notebook. `burnt.display()` renders it as a rich table using `rich` (already a dep) or `displayHTML()` when inside Databricks.
 
 ---
 
@@ -990,12 +990,12 @@ Query-level models degrade rapidly (often >50% error on complex queries) and str
 
 # The "Developer's Best Friend" Programmatic UX
 
-A critical design shift for `dburnrate` is ensuring the Python API (`import dburnrate`) is actually useful to a Data Engineer, rather than just being architectural vanity. We explicitly reject the "string-only" API approach where users must copy-paste their 500-line queries into Python string literals to estimate them.
+A critical design shift for `burnt` is ensuring the Python API (`import burnt`) is actually useful to a Data Engineer, rather than just being architectural vanity. We explicitly reject the "string-only" API approach where users must copy-paste their 500-line queries into Python string literals to estimate them.
 
 Instead, the programmatic API is designed around three highly pragmatic workflows:
 
 ### 1. The "Circuit Breaker" Pattern
-For pipelines that dynamically generate SQL or DataFrames based on runtime parameters (e.g., date ranges, tenant IDs), developers can use `dburnrate.estimate(sql)` right before `spark.sql(sql)`. If the estimated cost exceeds a budget, the pipeline can alert Slack and halt execution, preventing runaway costs from dynamic code.
+For pipelines that dynamically generate SQL or DataFrames based on runtime parameters (e.g., date ranges, tenant IDs), developers can use `burnt.estimate(sql)` right before `spark.sql(sql)`. If the estimated cost exceeds a budget, the pipeline can alert Slack and halt execution, preventing runaway costs from dynamic code.
 
 ### 2. Context-Aware "End of Notebook" Advisor
-This is the "Holy Grail" workflow. When a developer finishes testing a notebook interactively on an All-Purpose cluster, they simply run `dburnrate.advise_current_session()` in the final cell. The tool natively inspects the `SparkSession`, analyzes the metrics of the queries that *just ran*, and outputs a production compute recommendation (e.g., "Schedule this on a `DS3_v2` Jobs cluster to save 80%"). Zero copy-pasting of Job IDs required.
+This is the "Holy Grail" workflow. When a developer finishes testing a notebook interactively on an All-Purpose cluster, they simply run `burnt.advise_current_session()` in the final cell. The tool natively inspects the `SparkSession`, analyzes the metrics of the queries that *just ran*, and outputs a production compute recommendation (e.g., "Schedule this on a `DS3_v2` Jobs cluster to save 80%"). Zero copy-pasting of Job IDs required.

@@ -35,9 +35,9 @@ This benchmark infrastructure must be in place before any estimation task can be
 tests/unit/estimators/test_static.py
 tests/unit/estimators/test_hybrid.py
 tests/conftest.py
-src/dburnrate/estimators/static.py
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/core/models.py
+src/burnt/estimators/static.py
+src/burnt/estimators/hybrid.py
+src/burnt/core/models.py
 
 # Reference
 files/06-TESTING-STRATEGY.md    # Full test strategy, accuracy targets, Hypothesis examples
@@ -100,7 +100,7 @@ def test_normalize_idempotent(sql): ...
 def databricks_client():
     settings = Settings()
     if not settings.workspace_url:
-        pytest.skip("No Databricks connection (set DBURNRATE_WORKSPACE_URL)")
+        pytest.skip("No Databricks connection (set BURNT_WORKSPACE_URL)")
     return DatabricksClient(settings)
 ```
 

@@ -1,43 +1,43 @@
-"""Core exceptions for dburnrate."""
+"""Core exceptions for burnt."""
 
 
-class DburnrateError(Exception):
-    """Base exception for all dburnrate errors."""
+class BurntError(Exception):
+    """Base exception for all burnt errors."""
 
     pass
 
 
-class ParseError(DburnrateError):
+class ParseError(BurntError):
     """Raised when parsing fails."""
 
     pass
 
 
-class ConfigError(DburnrateError):
+class ConfigError(BurntError):
     """Raised when configuration is invalid."""
 
     pass
 
 
-class PricingError(DburnrateError):
+class PricingError(BurntError):
     """Raised when pricing lookup fails."""
 
     pass
 
 
-class EstimationError(DburnrateError):
+class EstimationError(BurntError):
     """Raised when cost estimation fails."""
 
     pass
 
 
-class DatabricksConnectionError(DburnrateError):
+class DatabricksConnectionError(BurntError):
     """Raised when connection to Databricks workspace fails."""
 
     pass
 
 
-class DatabricksQueryError(DburnrateError):
+class DatabricksQueryError(BurntError):
     """Raised when a SQL statement execution fails on Databricks."""
 
     pass

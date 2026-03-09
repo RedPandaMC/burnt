@@ -1,4 +1,4 @@
-"""Configuration management for dburnrate."""
+"""Configuration management for burnt."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """Application settings from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_prefix="DBURNRATE_",
+        env_prefix="BURNT_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -31,16 +31,16 @@ class Settings(BaseSettings):
 
             with open(path, "rb") as f:
                 data = tomllib.load(f)
-            return cls(**data.get("dburnrate", {}))
+            return cls(**data.get("burnt", {}))
         else:
             with open(path, "rb") as f:
                 data = tomli.load(f)
-            return cls(**data.get("dburnrate", {}))
+            return cls(**data.get("burnt", {}))
 
 
 @dataclass(frozen=True)
 class Config:
-    """Programmatic configuration for dburnrate."""
+    """Programmatic configuration for burnt."""
 
     workspace_url: str | None = None
     token: str | None = None

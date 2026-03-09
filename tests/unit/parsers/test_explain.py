@@ -2,8 +2,8 @@
 
 import pytest
 
-from dburnrate.core.exceptions import ParseError
-from dburnrate.parsers.explain import parse_explain_cost
+from burnt.core.exceptions import ParseError
+from burnt.parsers.explain import parse_explain_cost
 
 # ---------------------------------------------------------------------------
 # Fixture plan strings (no network calls)

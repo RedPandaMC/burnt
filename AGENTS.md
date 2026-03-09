@@ -1,4 +1,4 @@
-# AGENTS.md - LLM Working Rules for dburnrate
+# AGENTS.md - LLM Working Rules for burnt
 
 > Auto-loaded by Claude Code. Governs all opencode sessions in this repo.
 > Roadmap and design: DESIGN.md | Tasks: tasks/*.md
@@ -7,9 +7,9 @@
 
 ## Project At a Glance
 
-**dburnrate** — Python package for pre-execution Databricks cost estimation.
+**burnt** — Python package for pre-execution Databricks cost estimation.
 - Stack: Python 3.12, uv, hatchling, pydantic v2, typer, rich, sqlglot
-- Source: `src/dburnrate/` | Tests: `tests/unit/` | CLI: `uv run dburnrate`
+- Source: `src/burnt/` | Tests: `tests/unit/` | CLI: `uv run burnt`
 - Status: Phases 1–3 complete (263 tests passing). Phase 4A (critical bug fixes) is next.
 
 > **March 2026 Audit:** The static estimator formula is mathematically wrong (960× overestimate), the hybrid estimator uses a phantom price ($0.20/DBU matches no real SKU), and EXPLAIN DBU constants are ~7,900× too high. Fix these before wiring the CLI. See `files/00-EXECUTIVE-SUMMARY.md` and DESIGN.md §"Critical Bugs".
@@ -29,7 +29,7 @@
 
 ### Required Pre-flight Checks
 1. Read DESIGN.md (§"Implementation Roadmap") and `ls tasks/*.md` to understand current priorities
-2. Check existing implementation in `src/dburnrate/` before adding new code
+2. Check existing implementation in `src/burnt/` before adding new code
 3. Look at existing tests in `tests/` for patterns and conventions
 
 ### Multi-Step Tasks
@@ -60,7 +60,7 @@ This repo uses **planner/executor/validator** pattern for AI-assisted developmen
 2. Update status to `status: in-progress` and add `agent: <your-model-id>`
 3. Read ONLY the files listed in the task's `context.files` section
 4. Implement, then run the task's `verification.commands` — ALL must pass
-5. **Integration check:** run `dburnrate estimate "SELECT 1"` and verify the new signal appears in output (not just unit tests passing)
+5. **Integration check:** run `burnt estimate "SELECT 1"` and verify the new signal appears in output (not just unit tests passing)
 6. **Benchmark check** (estimation tasks only): run against `tests/benchmarks/` and confirm estimates are within the phase tolerance (Phase 4: 10×, Phase 5: 3×, Phase 8: 2×)
 7. Write results to `handoff.result` in the task file
 8. Mark `status: done` or `status: blocked` (with reason)
@@ -181,7 +181,7 @@ Example: `feat: Add EXPLAIN COST parsing for cold-start estimation`
 ## Project Structure Reference
 
 ```
-src/dburnrate/
+src/burnt/
 ├── __init__.py           # Version info + top-level API
 ├── _compat.py            # Optional import helpers
 ├── cli/                  # Typer CLI
@@ -220,7 +220,7 @@ src/dburnrate/
 ├── forecast/             # Prophet forecasting (post-MVP) (FIXME: empty stub)
 └── py.typed              # PEP 561 marker
 ```
-src/dburnrate/
+src/burnt/
 ├── __init__.py           # Version info
 ├── _compat.py            # Optional import helpers
 ├── cli/                  # Typer CLI
@@ -292,6 +292,6 @@ uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 
 # CLI
-uv run dburnrate --help
-uv run dburnrate estimate "SELECT * FROM table"
+uv run burnt --help
+uv run burnt estimate "SELECT * FROM table"
 ```

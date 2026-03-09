@@ -1,6 +1,6 @@
 # CLI Workflows and CI/CD Integration
 
-> Comprehensive guide for using dburnrate in command-line workflows and CI/CD pipelines.
+> Comprehensive guide for using burnt in command-line workflows and CI/CD pipelines.
 
 ---
 
@@ -18,11 +18,11 @@
 
 The primary workflow for Data Engineers migrating code from interactive development to production orchestration.
 
-If you ran a workload on an expensive All-Purpose cluster during development, `dburnrate` can analyze the actual Spark execution metrics and recommend an optimized Jobs cluster configuration.
+If you ran a workload on an expensive All-Purpose cluster during development, `burnt` can analyze the actual Spark execution metrics and recommend an optimized Jobs cluster configuration.
 
 ```bash
 # Retrieve optimization advice for a specific notebook/job run
-uv run dburnrate advise --run-id 1234567890
+uv run burnt advise --run-id 1234567890
 ```
 
 *Example Output:*
@@ -46,7 +46,7 @@ Detect inefficient code patterns that spike Databricks DBUs or cause out-of-memo
 
 ```bash
 # Lint an entire directory of SQL, PySpark, and Notebooks
-uv run dburnrate lint ./src/pipelines/
+uv run burnt lint ./src/pipelines/
 ```
 
 *Example Output:*
@@ -64,37 +64,37 @@ Estimate the cost of a standalone file or direct query string.
 
 ```bash
 # Estimate a single SQL file
-uv run dburnrate estimate queries/daily_revenue.sql
+uv run burnt estimate queries/daily_revenue.sql
 
 # Estimate with specific cluster configuration
-uv run dburnrate estimate queries/daily_revenue.sql \
+uv run burnt estimate queries/daily_revenue.sql \
   --instance-type Standard_DS4_v2 \
   --num-workers 4
 
 # Direct SQL Input
-uv run dburnrate estimate "SELECT * FROM sales"
+uv run burnt estimate "SELECT * FROM sales"
 ```
 
 ---
 
 ## CI/CD Integration
 
-`dburnrate` is designed to run in GitHub Actions, GitLab CI, and Azure DevOps to catch expensive code and misconfigurations before they are deployed.
+`burnt` is designed to run in GitHub Actions, GitLab CI, and Azure DevOps to catch expensive code and misconfigurations before they are deployed.
 
 ### 1. The Linter Gate
 Fail the build if critical anti-patterns (like unbounded `collect()`) are introduced.
 ```bash
-uv run dburnrate lint ./notebooks/ --fail-on error
+uv run burnt lint ./notebooks/ --fail-on error
 ```
 
 ### 2. The Budget Gate
 Fail the build if the static cost projection of a Databricks Asset Bundle (DAB) exceeds the team's budget.
 ```bash
-uv run dburnrate estimate-job ./databricks.yml --max-budget 50.00
+uv run burnt estimate-job ./databricks.yml --max-budget 50.00
 ```
 
 ### 3. Output Formats for CI
 All commands support JSON output for easy parsing with `jq`.
 ```bash
-uv run dburnrate estimate "SELECT 1" --output json > estimate.json
+uv run burnt estimate "SELECT 1" --output json > estimate.json
 ```

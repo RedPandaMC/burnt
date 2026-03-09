@@ -21,21 +21,21 @@ created_by: planner
 ### Goal
 
 Two related enterprise blockers:
-1. **TableRegistry**: 8 hardcoded `system.*` paths in 3 files. Enterprise environments use curated governance views. Without a configurable registry, dburnrate fails with permissions errors on every enterprise deployment.
+1. **TableRegistry**: 8 hardcoded `system.*` paths in 3 files. Enterprise environments use curated governance views. Without a configurable registry, burnt fails with permissions errors on every enterprise deployment.
 2. **RuntimeBackend**: The package only works via REST from outside a cluster. 70% of Databricks usage is from notebooks inside the cluster, where `spark.sql()` is already available. Create a dual-mode backend and auto-detection.
 
 ### Files to read (executor reads ONLY these)
 
 ```
 # Required
-src/dburnrate/core/config.py
-src/dburnrate/core/__init__.py
-src/dburnrate/tables/billing.py
-src/dburnrate/tables/queries.py
-src/dburnrate/tables/compute.py
-src/dburnrate/tables/connection.py
-src/dburnrate/estimators/pipeline.py   # created in p4a-02
-src/dburnrate/__init__.py
+src/burnt/core/config.py
+src/burnt/core/__init__.py
+src/burnt/tables/billing.py
+src/burnt/tables/queries.py
+src/burnt/tables/compute.py
+src/burnt/tables/connection.py
+src/burnt/estimators/pipeline.py   # created in p4a-02
+src/burnt/__init__.py
 tests/unit/tables/
 
 # Reference
@@ -48,7 +48,7 @@ files/03-ENTERPRISE-SUPPORT.md   # Full TableRegistry design, config channels, c
 **TableRegistry** (from `files/03-ENTERPRISE-SUPPORT.md §3.2`):
 
 ```python
-# src/dburnrate/core/table_registry.py
+# src/burnt/core/table_registry.py
 from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
@@ -66,16 +66,16 @@ class TableRegistry:
 
     @classmethod
     def from_env(cls) -> "TableRegistry":
-        """Load overrides from DBURNRATE_TABLE_* environment variables."""
+        """Load overrides from BURNT_TABLE_* environment variables."""
         import os
         overrides = {}
         mapping = {
-            "DBURNRATE_TABLE_BILLING_USAGE": "billing_usage",
-            "DBURNRATE_TABLE_BILLING_LIST_PRICES": "billing_list_prices",
-            "DBURNRATE_TABLE_QUERY_HISTORY": "query_history",
-            "DBURNRATE_TABLE_COMPUTE_NODE_TYPES": "compute_node_types",
-            "DBURNRATE_TABLE_COMPUTE_CLUSTERS": "compute_clusters",
-            "DBURNRATE_TABLE_COMPUTE_NODE_TIMELINE": "compute_node_timeline",
+            "BURNT_TABLE_BILLING_USAGE": "billing_usage",
+            "BURNT_TABLE_BILLING_LIST_PRICES": "billing_list_prices",
+            "BURNT_TABLE_QUERY_HISTORY": "query_history",
+            "BURNT_TABLE_COMPUTE_NODE_TYPES": "compute_node_types",
+            "BURNT_TABLE_COMPUTE_CLUSTERS": "compute_clusters",
+            "BURNT_TABLE_COMPUTE_NODE_TIMELINE": "compute_node_timeline",
         }
         for env_key, attr in mapping.items():
             if val := os.environ.get(env_key):
@@ -88,7 +88,7 @@ All `tables/*.py` modules should accept `registry: TableRegistry = TableRegistry
 **RuntimeBackend** (from `files/02-ARCHITECTURE-GAPS.md §2.2`):
 
 ```python
-# src/dburnrate/runtime/__init__.py — Protocol
+# src/burnt/runtime/__init__.py — Protocol
 class RuntimeBackend(Protocol):
     def execute_sql(self, sql: str) -> list[dict[str, Any]]: ...
     def explain_cost(self, query: str) -> str: ...
@@ -137,10 +137,10 @@ def auto_backend() -> RuntimeBackend | None:
 **Top-level API** (from `files/02-ARCHITECTURE-GAPS.md §2.6` + DESIGN.md §"Interaction Modes"):
 
 ```python
-# src/dburnrate/__init__.py — add:
-from dburnrate.estimators.pipeline import EstimationPipeline
-from dburnrate.core.table_registry import TableRegistry
-from dburnrate.core.models import CellEstimate
+# src/burnt/__init__.py — add:
+from burnt.estimators.pipeline import EstimationPipeline
+from burnt.core.table_registry import TableRegistry
+from burnt.core.models import CellEstimate
 
 def estimate(query: str, cluster=None, registry=None, backend=None) -> CostEstimate:
     """Estimate cost of a SQL query or PySpark code string. Works in all 5 modes."""
@@ -196,23 +196,23 @@ class CellEstimate:
 
 ## Acceptance Criteria
 
-- [ ] `src/dburnrate/core/table_registry.py` exists with `TableRegistry` frozen dataclass
-- [ ] `TableRegistry.from_env()` reads `DBURNRATE_TABLE_*` env vars
+- [ ] `src/burnt/core/table_registry.py` exists with `TableRegistry` frozen dataclass
+- [ ] `TableRegistry.from_env()` reads `BURNT_TABLE_*` env vars
 - [ ] `tables/billing.py`, `tables/queries.py`, `tables/compute.py` all accept `registry` param
 - [ ] No hardcoded `system.billing.usage` etc. in table query strings (use `registry.*`)
-- [ ] `src/dburnrate/runtime/` package exists with `RuntimeBackend` Protocol, `SparkBackend`, `RestBackend`, `auto_backend()`
+- [ ] `src/burnt/runtime/` package exists with `RuntimeBackend` Protocol, `SparkBackend`, `RestBackend`, `auto_backend()`
 - [ ] `SparkBackend` raises `ImportError` with clear message if pyspark not installed
 - [ ] `SparkBackend` raises `RuntimeError` if no active SparkSession
 - [ ] `RestBackend` delegates to existing `DatabricksClient`
 - [ ] `auto_backend()` returns `SparkBackend` when `DATABRICKS_RUNTIME_VERSION` env var is set
-- [ ] `dburnrate.estimate("SELECT 1")` works from Python (top-level API)
-- [ ] `dburnrate.estimate_file("query.sql")` works
-- [ ] `dburnrate.estimate_notebook("/path/nb.ipynb")` works
-- [ ] `dburnrate.estimate_current_notebook()` works when `DATABRICKS_RUNTIME_VERSION` env var is set (mock in test)
-- [ ] `dburnrate.estimate_cells()` returns `list[CellEstimate]` for current notebook
-- [ ] `dburnrate.current_notebook_path()` returns None (not raises) when no notebook context
+- [ ] `burnt.estimate("SELECT 1")` works from Python (top-level API)
+- [ ] `burnt.estimate_file("query.sql")` works
+- [ ] `burnt.estimate_notebook("/path/nb.ipynb")` works
+- [ ] `burnt.estimate_current_notebook()` works when `DATABRICKS_RUNTIME_VERSION` env var is set (mock in test)
+- [ ] `burnt.estimate_cells()` returns `list[CellEstimate]` for current notebook
+- [ ] `burnt.current_notebook_path()` returns None (not raises) when no notebook context
 - [ ] `CellEstimate` dataclass exists in `core/models.py` with all required fields
-- [ ] `dburnrate.TableRegistry` exported from `__init__.py`
+- [ ] `burnt.TableRegistry` exported from `__init__.py`
 - [ ] All tests pass, zero lint errors
 
 ---
@@ -226,10 +226,10 @@ uv run pytest -m unit -v
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 # Top-level API works offline
-python -c "import dburnrate; r = dburnrate.estimate('SELECT 1'); print(r)"
+python -c "import burnt; r = burnt.estimate('SELECT 1'); print(r)"
 # Registry env var respected
-DBURNRATE_TABLE_BILLING_USAGE=governance.cost.v_billing python -c "
-from dburnrate.core.table_registry import TableRegistry
+BURNT_TABLE_BILLING_USAGE=governance.cost.v_billing python -c "
+from burnt.core.table_registry import TableRegistry
 r = TableRegistry.from_env()
 assert r.billing_usage == 'governance.cost.v_billing'
 print('OK')

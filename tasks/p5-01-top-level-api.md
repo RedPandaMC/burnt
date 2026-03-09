@@ -20,15 +20,15 @@ created_by: planner
 
 ### Goal
 
-Make `dburnrate` a first-class programmatic Python library, optimized for Data Engineers. We need to support the three core workflows: Circuit Breaker (`estimate`), Cost-Aware Unit Testing (`estimate_file`), and the Context-Aware Advisor (`advise_current_session`).
+Make `burnt` a first-class programmatic Python library, optimized for Data Engineers. We need to support the three core workflows: Circuit Breaker (`estimate`), Cost-Aware Unit Testing (`estimate_file`), and the Context-Aware Advisor (`advise_current_session`).
 
 ### Files to read
 
 ```
 # Required
-src/dburnrate/__init__.py
-src/dburnrate/estimators/pipeline.py
-src/dburnrate/parsers/antipatterns.py
+src/burnt/__init__.py
+src/burnt/estimators/pipeline.py
+src/burnt/parsers/antipatterns.py
 docs/programmatic-workflows.md
 ```
 
@@ -40,11 +40,11 @@ Currently `__init__.py` only exposes the version string. We need to expose the c
 
 ## Acceptance Criteria
 
-- [ ] Expose `dburnrate.lint(sql: str)` -> returns list of AntiPattern objects
-- [ ] Expose `dburnrate.lint_file(path: str)` -> reads file, runs lint
-- [ ] Expose `dburnrate.estimate(sql: str, cluster=None, registry=None)` -> returns CostEstimate
-- [ ] Expose `dburnrate.estimate_file(path: str, cluster=None, registry=None)` -> reads file, runs estimate
-- [ ] Expose `dburnrate.advise_current_session()` -> stub for now, raises NotImplementedError
+- [ ] Expose `burnt.lint(sql: str)` -> returns list of AntiPattern objects
+- [ ] Expose `burnt.lint_file(path: str)` -> reads file, runs lint
+- [ ] Expose `burnt.estimate(sql: str, cluster=None, registry=None)` -> returns CostEstimate
+- [ ] Expose `burnt.estimate_file(path: str, cluster=None, registry=None)` -> reads file, runs estimate
+- [ ] Expose `burnt.advise_current_session()` -> stub for now, raises NotImplementedError
 - [ ] Ensure `__all__` is properly defined in `__init__.py`
 - [ ] Add unit tests verifying these top-level imports and functions work
 
@@ -61,7 +61,7 @@ uv run ruff check src/ tests/
 
 ### Integration Check
 
-- [ ] Create a small test script `test_api.py` that runs `import dburnrate; print(dburnrate.lint("SELECT * FROM a,b"))` and verify it works without throwing import errors.
+- [ ] Create a small test script `test_api.py` that runs `import burnt; print(burnt.lint("SELECT * FROM a,b"))` and verify it works without throwing import errors.
 
 ---
 

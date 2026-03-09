@@ -1,4 +1,4 @@
-"""Unit tests for src/dburnrate/tables/compute.py."""
+"""Unit tests for src/burnt/tables/compute.py."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dburnrate.core.exceptions import DatabricksQueryError
-from dburnrate.core.models import ClusterConfig
-from dburnrate.tables.compute import (
+from burnt.core.exceptions import DatabricksQueryError
+from burnt.core.models import ClusterConfig
+from burnt.tables.compute import (
     _parse_int,
     get_cluster_config,
     get_node_timeline,

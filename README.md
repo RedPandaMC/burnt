@@ -2,14 +2,14 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="public/logo_text_dark.svg">
-  <img src="public/logo_text.svg" alt="dburnrate" width="400">
+  <img src="public/logo_text.svg" alt="burnt" width="400">
 </picture>
 
 **Pre-Orchestration FinOps & Cost Estimation for Databricks**
 
 Project job and query costs _before_ you run them.
 
-[![Tests](https://img.shields.io/badge/tests-263%20passing-brightgreen)](https://github.com/anomalyco/dburnrate/actions)
+[![Tests](https://img.shields.io/badge/tests-263%20passing-brightgreen)](https://github.com/anomalyco/burnt/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-purple)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -21,9 +21,9 @@ Project job and query costs _before_ you run them.
 
 ## What is this?
 
-`dburnrate` is an open-source tool designed to shift Databricks cost management left. Instead of waiting for the monthly bill, `dburnrate` predicts the cost of **Jobs, DABs (Databricks Asset Bundles), and SQL Queries** before they run.
+`burnt` is an open-source tool designed to shift Databricks cost management left. Instead of waiting for the monthly bill, `burnt` predicts the cost of **Jobs, DABs (Databricks Asset Bundles), and SQL Queries** before they run.
 
-Industry benchmarks show that **cluster configuration drives 70% of Databricks spend**. Rather than solely relying on query-level SQL analysis, `dburnrate` focuses on the **Qubika Cost Multiplier Model**: analyzing cluster configuration, compute types, and historical workload data to project costs at scale.
+Industry benchmarks show that **cluster configuration drives 70% of Databricks spend**. Rather than solely relying on query-level SQL analysis, `burnt` focuses on the **Qubika Cost Multiplier Model**: analyzing cluster configuration, compute types, and historical workload data to project costs at scale.
 
 ### Core Capabilities
 
@@ -36,8 +36,8 @@ Industry benchmarks show that **cluster configuration drives 70% of Databricks s
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/dburnrate
-cd dburnrate
+git clone https://github.com/your-org/burnt
+cd burnt
 uv sync
 ```
 
@@ -48,30 +48,30 @@ uv sync
 ### 1. Pre-Orchestration Job Estimation (Coming Soon)
 Estimate the cost of a Databricks Asset Bundle (DAB) before deploying:
 ```bash
-uv run dburnrate estimate-job ./databricks.yml
+uv run burnt estimate-job ./databricks.yml
 ```
 
 ### 2. SQL / PySpark Cost Estimation
 Estimate an individual query or file offline using static heuristics:
 ```bash
-uv run dburnrate estimate "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1"
-uv run dburnrate estimate ./notebooks/daily_revenue.sql
+uv run burnt estimate "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1"
+uv run burnt estimate ./notebooks/daily_revenue.sql
 ```
 
 ### 3. Native Databricks Runtime Integration
-If you are running `dburnrate` *inside* a Databricks notebook, it natively uses your active `SparkSession`—avoiding slow and expensive REST API roundtrips:
+If you are running `burnt` *inside* a Databricks notebook, it natively uses your active `SparkSession`—avoiding slow and expensive REST API roundtrips:
 ```python
-import dburnrate
+import burnt
 # Automatically detects current notebook and estimates the cost to run it
-estimate = dburnrate.estimate_current_notebook()
-dburnrate.display()
+estimate = burnt.estimate_current_notebook()
+burnt.display()
 ```
 
 ---
 
-## Anti-Pattern Detection (dburnrate lint)
+## Anti-Pattern Detection (burnt lint)
 
-`dburnrate` automatically warns you about expensive patterns in your SQL/PySpark code via AST parsing:
+`burnt` automatically warns you about expensive patterns in your SQL/PySpark code via AST parsing:
 
 ```
 ⚠  cross_join             CROSS JOIN creates O(n×m) rows — use INNER JOIN with ON clause
@@ -83,7 +83,7 @@ dburnrate.display()
 
 ## Architecture & Enterprise Readiness
 
-`dburnrate` is built for enterprise Databricks environments:
+`burnt` is built for enterprise Databricks environments:
 *   **Dual-Mode Runtime:** Automatically switches between external REST execution (via PAT) and internal SparkSession execution based on `DATABRICKS_RUNTIME_VERSION`.
 *   **Table Registry:** Supports customizable mapping for governance-restricted system table views (e.g., `governance.cost_management.v_billing_usage`).
 *   **Hybrid Estimation Pipeline:** Blends static analysis (Offline), Delta Metadata, `EXPLAIN COST` plans, and Historical Fingerprinting.

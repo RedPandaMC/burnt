@@ -1,7 +1,7 @@
 import pytest
 
-from dburnrate.core.exceptions import ParseError
-from dburnrate.parsers.sql import (
+from burnt.core.exceptions import ParseError
+from burnt.parsers.sql import (
     analyze_query,
     compute_complexity,
     detect_operations,

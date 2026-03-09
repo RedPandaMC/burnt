@@ -2,8 +2,8 @@
 
 import pytest
 
-from dburnrate.core.models import ClusterConfig, ExplainPlan, QueryRecord
-from dburnrate.estimators.hybrid import HybridEstimator
+from burnt.core.models import ClusterConfig, ExplainPlan, QueryRecord
+from burnt.estimators.hybrid import HybridEstimator
 
 
 @pytest.fixture

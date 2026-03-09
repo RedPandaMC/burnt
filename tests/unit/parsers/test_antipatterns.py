@@ -1,4 +1,4 @@
-from dburnrate.parsers.antipatterns import (
+from burnt.parsers.antipatterns import (
     AntiPattern,
     Severity,
     _detect_pyspark_antipatterns,

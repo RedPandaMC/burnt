@@ -21,23 +21,23 @@ created_by: planner
 ### Goal
 
 The hybrid estimator, EXPLAIN parser, Delta reader, and fingerprinting all exist but nothing connects them. The CLI uses only the static estimator. This task creates:
-1. `src/dburnrate/estimators/pipeline.py` — `EstimationPipeline` that orchestrates all tiers
-2. `src/dburnrate/tables/attribution.py` — billing × query history join (referenced in DESIGN.md but never implemented)
+1. `src/burnt/estimators/pipeline.py` — `EstimationPipeline` that orchestrates all tiers
+2. `src/burnt/tables/attribution.py` — billing × query history join (referenced in DESIGN.md but never implemented)
 
 ### Files to read (executor reads ONLY these)
 
 ```
 # Required
-src/dburnrate/estimators/hybrid.py
-src/dburnrate/estimators/static.py
-src/dburnrate/parsers/explain.py
-src/dburnrate/parsers/delta.py
-src/dburnrate/tables/connection.py
-src/dburnrate/tables/queries.py
-src/dburnrate/tables/billing.py
-src/dburnrate/core/models.py
-src/dburnrate/core/pricing.py
-src/dburnrate/cli/main.py
+src/burnt/estimators/hybrid.py
+src/burnt/estimators/static.py
+src/burnt/parsers/explain.py
+src/burnt/parsers/delta.py
+src/burnt/tables/connection.py
+src/burnt/tables/queries.py
+src/burnt/tables/billing.py
+src/burnt/core/models.py
+src/burnt/core/pricing.py
+src/burnt/cli/main.py
 tests/unit/estimators/
 
 # Reference
@@ -112,10 +112,10 @@ Note from R7: `system.query.history` covers SQL Warehouses + serverless only. Al
 
 ## Acceptance Criteria
 
-- [ ] `src/dburnrate/estimators/pipeline.py` exists with `EstimationPipeline` class
+- [ ] `src/burnt/estimators/pipeline.py` exists with `EstimationPipeline` class
 - [ ] `EstimationPipeline.estimate()` runs Tier 1 (static) offline with no backend
 - [ ] `EstimationPipeline.estimate()` gracefully skips Tier 2/3/4 if tier fails (logs warning, continues)
-- [ ] `src/dburnrate/tables/attribution.py` exists with `AttributionClient` class
+- [ ] `src/burnt/tables/attribution.py` exists with `AttributionClient` class
 - [ ] `AttributionClient.get_job_cost(job_id, run_id)` returns attributed DBU cost
 - [ ] `AttributionClient.get_warehouse_query_cost(statement_id)` returns duration-proportional DBU
 - [ ] `AttributionClient.get_historical_fingerprint_cost(fingerprint)` returns p50/p95 from history
@@ -135,7 +135,7 @@ uv run pytest -m unit -v
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 # Offline mode (no connection) must still work
-uv run dburnrate estimate "SELECT * FROM orders JOIN customers ON orders.id = customers.id"
+uv run burnt estimate "SELECT * FROM orders JOIN customers ON orders.id = customers.id"
 ```
 
 ### Expected output

@@ -62,6 +62,86 @@ wheels = [
 ]
 
 [[package]]
+name = "burnt"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "prophet" },
+    { name = "scikit-learn" },
+    { name = "sqlglot" },
+]
+forecasting = [
+    { name = "prophet" },
+]
+ml = [
+    { name = "scikit-learn" },
+]
+sql = [
+    { name = "sqlglot" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "pytest-randomly" },
+    { name = "pytest-timeout" },
+    { name = "pytest-xdist" },
+]
+lint = [
+    { name = "bandit" },
+    { name = "interrogate" },
+    { name = "pip-audit" },
+    { name = "ruff" },
+    { name = "vulture" },
+    { name = "xenon" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "burnt", extras = ["sql", "forecasting", "ml"], marker = "extra == 'all'" },
+    { name = "prophet", marker = "extra == 'forecasting'", specifier = ">=1.1" },
+    { name = "pydantic", specifier = ">=2.0,<3" },
+    { name = "pydantic-settings", specifier = ">=2.0" },
+    { name = "requests", specifier = ">=2.32.5" },
+    { name = "rich", specifier = ">=13.0" },
+    { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.3" },
+    { name = "sqlglot", marker = "extra == 'sql'", specifier = ">=26.0" },
+    { name = "typer", specifier = ">=0.15" },
+]
+provides-extras = ["sql", "forecasting", "ml", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = ">=6.130" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-cov", specifier = ">=6.0" },
+    { name = "pytest-mock", specifier = ">=3.14" },
+    { name = "pytest-randomly", specifier = ">=4.0" },
+    { name = "pytest-timeout", specifier = ">=2.3" },
+    { name = "pytest-xdist", specifier = ">=3.5" },
+]
+lint = [
+    { name = "bandit", extras = ["toml"], specifier = ">=1.9" },
+    { name = "interrogate", specifier = ">=1.7" },
+    { name = "pip-audit", specifier = ">=2.9" },
+    { name = "ruff", specifier = ">=0.8" },
+    { name = "vulture", specifier = ">=2.14" },
+    { name = "xenon", specifier = ">=0.9" },
+]
+
+[[package]]
 name = "cachecontrol"
 version = "0.14.4"
 source = { registry = "https://pypi.org/simple" }
@@ -354,86 +434,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/89/ed/54ecfa25fc145c58bf4f98090f7b6ffe5188d0759248c57dde44427ea239/cyclonedx_python_lib-11.6.0.tar.gz", hash = "sha256:7fb85a4371fa3a203e5be577ac22b7e9a7157f8b0058b7448731474d6dea7bf0", size = 1408147, upload-time = "2025-12-02T12:28:46.446Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/1b/534ad8a5e0f9470522811a8e5a9bc5d328fb7738ba29faf357467a4ef6d0/cyclonedx_python_lib-11.6.0-py3-none-any.whl", hash = "sha256:94f4aae97db42a452134dafdddcfab9745324198201c4777ed131e64c8380759", size = 511157, upload-time = "2025-12-02T12:28:44.158Z" },
-]
-
-[[package]]
-name = "dburnrate"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "prophet" },
-    { name = "scikit-learn" },
-    { name = "sqlglot" },
-]
-forecasting = [
-    { name = "prophet" },
-]
-ml = [
-    { name = "scikit-learn" },
-]
-sql = [
-    { name = "sqlglot" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "pytest-randomly" },
-    { name = "pytest-timeout" },
-    { name = "pytest-xdist" },
-]
-lint = [
-    { name = "bandit" },
-    { name = "interrogate" },
-    { name = "pip-audit" },
-    { name = "ruff" },
-    { name = "vulture" },
-    { name = "xenon" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dburnrate", extras = ["sql", "forecasting", "ml"], marker = "extra == 'all'" },
-    { name = "prophet", marker = "extra == 'forecasting'", specifier = ">=1.1" },
-    { name = "pydantic", specifier = ">=2.0,<3" },
-    { name = "pydantic-settings", specifier = ">=2.0" },
-    { name = "requests", specifier = ">=2.32.5" },
-    { name = "rich", specifier = ">=13.0" },
-    { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.3" },
-    { name = "sqlglot", marker = "extra == 'sql'", specifier = ">=26.0" },
-    { name = "typer", specifier = ">=0.15" },
-]
-provides-extras = ["sql", "forecasting", "ml", "all"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "hypothesis", specifier = ">=6.130" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-cov", specifier = ">=6.0" },
-    { name = "pytest-mock", specifier = ">=3.14" },
-    { name = "pytest-randomly", specifier = ">=4.0" },
-    { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "pytest-xdist", specifier = ">=3.5" },
-]
-lint = [
-    { name = "bandit", extras = ["toml"], specifier = ">=1.9" },
-    { name = "interrogate", specifier = ">=1.7" },
-    { name = "pip-audit", specifier = ">=2.9" },
-    { name = "ruff", specifier = ">=0.8" },
-    { name = "vulture", specifier = ">=2.14" },
-    { name = "xenon", specifier = ">=0.9" },
 ]
 
 [[package]]

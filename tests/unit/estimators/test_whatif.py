@@ -1,5 +1,5 @@
-from dburnrate.core.models import ClusterConfig, CostEstimate
-from dburnrate.estimators.whatif import (
+from burnt.core.models import ClusterConfig, CostEstimate
+from burnt.estimators.whatif import (
     SPEEDUP_FACTORS,
     apply_cluster_resize,
     apply_photon_scenario,

@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from dburnrate.core.models import ClusterConfig
-from dburnrate.estimators.static import CostEstimator, estimate_cost
+from burnt.core.models import ClusterConfig
+from burnt.estimators.static import CostEstimator, estimate_cost
 
 
 class TestCostEstimator:
@@ -67,7 +67,7 @@ class TestCostEstimator:
             ClusterConfig(instance_type="Standard_DS3_v2", sku="INVALID_SKU")
 
     def test_compute_confidence_no_tables(self):
-        from dburnrate.core.models import QueryProfile
+        from burnt.core.models import QueryProfile
 
         estimator = CostEstimator()
         profile = QueryProfile(sql="SELECT 1")
@@ -75,7 +75,7 @@ class TestCostEstimator:
         assert confidence == "low"
 
     def test_compute_confidence_high_complexity(self):
-        from dburnrate.core.models import OperationInfo, QueryProfile
+        from burnt.core.models import OperationInfo, QueryProfile
 
         estimator = CostEstimator()
         profile = QueryProfile(

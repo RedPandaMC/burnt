@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from dburnrate.core.exceptions import ParseError
-from dburnrate.parsers.delta import (
+from burnt.core.exceptions import ParseError
+from burnt.parsers.delta import (
     _parse_partition_columns,
     parse_describe_detail,
     read_delta_log,

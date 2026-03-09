@@ -20,15 +20,15 @@ created_by: planner
 
 ### Goal
 
-Build the "Developer's Best Friend" feature: `dburnrate advise`. Instead of trying to guess PySpark execution times statically, fetch the actual execution metrics from a recent interactive test run (via `system.query.history` or `lakeflow`) and run them through our `WhatIf` engine to recommend optimal production Job cluster configurations and calculate the savings.
+Build the "Developer's Best Friend" feature: `burnt advise`. Instead of trying to guess PySpark execution times statically, fetch the actual execution metrics from a recent interactive test run (via `system.query.history` or `lakeflow`) and run them through our `WhatIf` engine to recommend optimal production Job cluster configurations and calculate the savings.
 
 ### Files to read
 
 ```
 # Required
-src/dburnrate/estimators/whatif.py
-src/dburnrate/tables/queries.py
-src/dburnrate/cli/main.py
+src/burnt/estimators/whatif.py
+src/burnt/tables/queries.py
+src/burnt/cli/main.py
 ```
 
 ### Background
@@ -42,8 +42,8 @@ When a developer tests a notebook interactively, they typically run it on an All
 - [ ] Fetch the metrics (duration, read_bytes, spill, max_memory) for a specific `run_id` or `statement_id` from Databricks system tables.
 - [ ] Feed those metrics into the `whatif` engine to calculate the cost of running that exact workload on 1) Jobs Compute, 2) Serverless, and 3) Spot Instances.
 - [ ] Identify if peak memory utilization is low enough to recommend a smaller instance type.
-- [ ] CLI: Implement `dburnrate advise --run-id <id>` to print the Compute Migration Analysis table (as defined in `docs/cli-workflows.md`).
-- [ ] Programmatic: Ensure `dburnrate.advise(run_id="...")` returns the structured `AdvisoryReport`.
+- [ ] CLI: Implement `burnt advise --run-id <id>` to print the Compute Migration Analysis table (as defined in `docs/cli-workflows.md`).
+- [ ] Programmatic: Ensure `burnt.advise(run_id="...")` returns the structured `AdvisoryReport`.
 
 ---
 
@@ -58,7 +58,7 @@ uv run ruff check src/ tests/
 
 ### Integration Check
 
-- [ ] Run `dburnrate advise --run-id TEST12345` (mocking the databricks connection) and verify it prints the Compute Migration Analysis table and recommendations.
+- [ ] Run `burnt advise --run-id TEST12345` (mocking the databricks connection) and verify it prints the Compute Migration Analysis table and recommendations.
 
 ---
 

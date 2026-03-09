@@ -35,9 +35,9 @@ class DatabricksClient:
     def __init__(self, settings: Settings) -> None:
         """Initialise client from settings; raises DatabricksConnectionError if credentials missing."""
         if not settings.workspace_url:
-            raise DatabricksConnectionError("DBURNRATE_WORKSPACE_URL is not set")
+            raise DatabricksConnectionError("BURNT_WORKSPACE_URL is not set")
         if not settings.token:
-            raise DatabricksConnectionError("DBURNRATE_TOKEN is not set")
+            raise DatabricksConnectionError("BURNT_TOKEN is not set")
 
         self._base_url = settings.workspace_url.rstrip("/")
         self._session = requests.Session()
@@ -155,7 +155,7 @@ class DatabricksClient:
                     continue
                 if resp.status_code == 401:
                     raise DatabricksConnectionError(
-                        "Authentication failed - check DBURNRATE_TOKEN"
+                        "Authentication failed - check BURNT_TOKEN"
                     )
                 resp.raise_for_status()
                 return resp

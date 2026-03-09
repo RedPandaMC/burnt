@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dburnrate.core.models import ClusterConfig
-from dburnrate.estimators.pipeline import EstimationPipeline, create_pipeline
+from burnt.core.models import ClusterConfig
+from burnt.estimators.pipeline import EstimationPipeline, create_pipeline
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ class TestEstimationPipelineOffline:
 
 
 class TestEstimationPipelineWithBackend:
-    @patch("dburnrate.estimators.pipeline.DatabricksClient")
+    @patch("burnt.estimators.pipeline.DatabricksClient")
     def test_tier_2_delta_metadata(self, mock_client_class, cluster):
         """Pipeline attempts Delta metadata retrieval."""
         mock_client = MagicMock()
@@ -61,7 +61,7 @@ class TestEstimationPipelineWithBackend:
         assert result.estimated_dbu > 0
         mock_client.execute_sql.assert_called()
 
-    @patch("dburnrate.estimators.pipeline.DatabricksClient")
+    @patch("burnt.estimators.pipeline.DatabricksClient")
     def test_tier_3_explain_cost(self, mock_client_class, cluster):
         """Pipeline attempts EXPLAIN COST retrieval."""
         mock_client = MagicMock()
@@ -85,7 +85,7 @@ class TestEstimationPipelineWithBackend:
 
         assert result.estimated_dbu > 0
 
-    @patch("dburnrate.estimators.pipeline.DatabricksClient")
+    @patch("burnt.estimators.pipeline.DatabricksClient")
     def test_graceful_tier_failure(self, mock_client_class, cluster):
         """Pipeline continues when a tier fails."""
         mock_client = MagicMock()
@@ -107,10 +107,10 @@ class TestCreatePipeline:
         assert pipeline._backend is None
         assert pipeline._warehouse_id is None
 
-    @patch("dburnrate.estimators.pipeline.DatabricksClient")
+    @patch("burnt.estimators.pipeline.DatabricksClient")
     def test_create_pipeline_with_credentials(self, mock_client_class):
         """Factory creates backend-connected pipeline when credentials provided."""
-        from dburnrate.core.config import Settings
+        from burnt.core.config import Settings
 
         settings = Settings()
         settings.workspace_url = "https://test.cloud.databricks.com"

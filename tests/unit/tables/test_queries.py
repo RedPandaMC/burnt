@@ -1,4 +1,4 @@
-"""Unit tests for src/dburnrate/tables/queries.py."""
+"""Unit tests for src/burnt/tables/queries.py."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dburnrate.core.models import QueryRecord
-from dburnrate.tables.queries import (
+from burnt.core.models import QueryRecord
+from burnt.tables.queries import (
     _row_to_record,
     find_similar_queries,
     fingerprint_sql,

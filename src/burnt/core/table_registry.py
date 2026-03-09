@@ -16,7 +16,7 @@ class TableRegistry:
     """Registry of Databricks system table paths.
 
     This class provides a central configuration for all system table
-    paths used by dburnrate. In enterprise environments, these can be
+    paths used by burnt. In enterprise environments, these can be
     overridden to use curated governance views.
 
     Default paths follow the standard system table schema:
@@ -31,15 +31,15 @@ class TableRegistry:
     - system.storage.predictive_optimization_operations_history
 
     Environment variable overrides:
-    - DBURNRATE_TABLE_BILLING_USAGE
-    - DBURNRATE_TABLE_BILLING_LIST_PRICES
-    - DBURNRATE_TABLE_QUERY_HISTORY
-    - DBURNRATE_TABLE_COMPUTE_NODE_TYPES
-    - DBURNRATE_TABLE_COMPUTE_CLUSTERS
-    - DBURNRATE_TABLE_COMPUTE_NODE_TIMELINE
-    - DBURNRATE_TABLE_LACEFLOW_JOBS
-    - DBURNRATE_TABLE_LAKEFLOW_JOB_RUN_TIMELINE
-    - DBURNRATE_TABLE_PREDICTIVE_OPTIMIZATION
+    - BURNT_TABLE_BILLING_USAGE
+    - BURNT_TABLE_BILLING_LIST_PRICES
+    - BURNT_TABLE_QUERY_HISTORY
+    - BURNT_TABLE_COMPUTE_NODE_TYPES
+    - BURNT_TABLE_COMPUTE_CLUSTERS
+    - BURNT_TABLE_COMPUTE_NODE_TIMELINE
+    - BURNT_TABLE_LACEFLOW_JOBS
+    - BURNT_TABLE_LAKEFLOW_JOB_RUN_TIMELINE
+    - BURNT_TABLE_PREDICTIVE_OPTIMIZATION
 
     Example:
         >>> registry = TableRegistry()
@@ -67,7 +67,7 @@ class TableRegistry:
     def from_env(cls) -> TableRegistry:
         """Load table paths from environment variables.
 
-        Environment variables with prefix DBURNRATE_TABLE_ are used to
+        Environment variables with prefix BURNT_TABLE_ are used to
         override default table paths.
 
         Returns:
@@ -75,7 +75,7 @@ class TableRegistry:
 
         Example:
             >>> # In shell:
-            >>> export DBURNRATE_TABLE_BILLING_USAGE=governance.cost.v_billing
+            >>> export BURNT_TABLE_BILLING_USAGE=governance.cost.v_billing
             >>> # In Python:
             >>> registry = TableRegistry.from_env()
             >>> registry.billing_usage
@@ -84,15 +84,15 @@ class TableRegistry:
         overrides = {}
 
         env_mapping = {
-            "DBURNRATE_TABLE_BILLING_USAGE": "billing_usage",
-            "DBURNRATE_TABLE_BILLING_LIST_PRICES": "billing_list_prices",
-            "DBURNRATE_TABLE_QUERY_HISTORY": "query_history",
-            "DBURNRATE_TABLE_COMPUTE_NODE_TYPES": "compute_node_types",
-            "DBURNRATE_TABLE_COMPUTE_CLUSTERS": "compute_clusters",
-            "DBURNRATE_TABLE_COMPUTE_NODE_TIMELINE": "compute_node_timeline",
-            "DBURNRATE_TABLE_LAKEFLOW_JOBS": "lakeflow_jobs",
-            "DBURNRATE_TABLE_LAKEFLOW_JOB_RUN_TIMELINE": "lakeflow_job_run_timeline",
-            "DBURNRATE_TABLE_PREDICTIVE_OPTIMIZATION": "predictive_optimization",
+            "BURNT_TABLE_BILLING_USAGE": "billing_usage",
+            "BURNT_TABLE_BILLING_LIST_PRICES": "billing_list_prices",
+            "BURNT_TABLE_QUERY_HISTORY": "query_history",
+            "BURNT_TABLE_COMPUTE_NODE_TYPES": "compute_node_types",
+            "BURNT_TABLE_COMPUTE_CLUSTERS": "compute_clusters",
+            "BURNT_TABLE_COMPUTE_NODE_TIMELINE": "compute_node_timeline",
+            "BURNT_TABLE_LAKEFLOW_JOBS": "lakeflow_jobs",
+            "BURNT_TABLE_LAKEFLOW_JOB_RUN_TIMELINE": "lakeflow_job_run_timeline",
+            "BURNT_TABLE_PREDICTIVE_OPTIMIZATION": "predictive_optimization",
         }
 
         for env_key, attr_name in env_mapping.items():

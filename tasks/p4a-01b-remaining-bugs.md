@@ -26,10 +26,10 @@ Fix the remaining 4 bugs identified in the March 2026 audit that weren't in the 
 
 ```
 # Required
-src/dburnrate/estimators/static.py        # Bug 8
-src/dburnrate/forecast/prophet.py         # Bug 9
-src/dburnrate/cli/main.py                 # Bug 10
-src/dburnrate/tables/                     # Bug 11
+src/burnt/estimators/static.py        # Bug 8
+src/burnt/forecast/prophet.py         # Bug 9
+src/burnt/cli/main.py                 # Bug 10
+src/burnt/tables/                     # Bug 11
 
 # Reference
 files/01-CRITICAL-CODE-FIXES.md           # Full bug descriptions
@@ -53,7 +53,7 @@ Misclassifies SQL Warehouses, serverless, DLT pipelines, and AWS/GCP instances.
 File exists but contains no real implementation.
 
 **Bug 10 — No Graceful CLI Degradation:**
-If sqlglot isn't installed, `dburnrate estimate` crashes with ImportError instead of suggesting `uv sync --extra sql`.
+If sqlglot isn't installed, `burnt estimate` crashes with ImportError instead of suggesting `uv sync --extra sql`.
 
 **Bug 11 — Missing tables/attribution.py:**
 Referenced in DESIGN.md but doesn't exist. Required for calibration, historical cost lookups, and ML training data.
@@ -75,7 +75,7 @@ Referenced in DESIGN.md but doesn't exist. Required for calibration, historical 
 
 ### Bug 10: Add Graceful CLI Degradation
 - [ ] Add try/except around sqlglot import in CLI
-- [ ] Show friendly error: "sqlglot required: pip install dburnrate[sql]"
+- [ ] Show friendly error: "sqlglot required: pip install burnt[sql]"
 - [ ] Or use lazy import with helpful message
 
 ### Bug 11: Create tables/attribution.py
@@ -103,7 +103,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 
 # Test graceful degradation (uninstall sqlglot temporarily)
-uv run dburnrate estimate "SELECT 1"
+uv run burnt estimate "SELECT 1"
 ```
 
 ### Expected output
