@@ -10,7 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .core.models import ClusterConfig, CostEstimate
+from .core.instances import WorkloadProfile, get_cluster_json
+from .core.models import ClusterConfig, ClusterRecommendation, CostEstimate
 from .estimators.pipeline import EstimationPipeline
 from .parsers.antipatterns import AntiPattern, detect_antipatterns
 
@@ -114,10 +115,13 @@ def advise_current_session() -> Any:
 __all__ = [
     "AntiPattern",
     "ClusterConfig",
+    "ClusterRecommendation",
     "CostEstimate",
+    "WorkloadProfile",
     "advise_current_session",
     "estimate",
     "estimate_file",
+    "get_cluster_json",
     "lint",
     "lint_file",
 ]

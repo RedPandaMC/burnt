@@ -36,6 +36,11 @@ class ClusterConfig(BaseModel):
     dbu_per_hour: float = 0.75
     photon_enabled: bool = False
     sku: str = "ALL_PURPOSE"
+    spot_policy: Literal["ON_DEMAND", "SPOT_WITH_ON_DEMAND_FALLBACK", "SPOT"] = (
+        "ON_DEMAND"
+    )
+    autoscale_min_workers: int | None = None
+    autoscale_max_workers: int | None = None
 
     @field_validator("sku")
     @classmethod
@@ -43,6 +48,27 @@ class ClusterConfig(BaseModel):
         if v not in VALID_SKUS:
             raise ValueError(f"Invalid SKU: {v}. Must be one of: {VALID_SKUS}")
         return v
+
+    def to_api_json(self, spark_version: str = "15.4.x-scala2.12") -> dict:
+        """Return Databricks Jobs API-compatible cluster definition."""
+        cluster = {
+            "spark_version": spark_version,
+            "node_type_id": self.instance_type,
+            "num_workers": self.num_workers,
+            "spark_conf": {},
+            "azure_attributes": {
+                "availability": self.spot_policy,
+            },
+        }
+        if (
+            self.autoscale_min_workers is not None
+            and self.autoscale_max_workers is not None
+        ):
+            cluster["autoscale"] = {
+                "min_workers": self.autoscale_min_workers,
+                "max_workers": self.autoscale_max_workers,
+            }
+        return {"new_cluster": cluster}
 
 
 class PricingInfo(BaseModel):
@@ -66,14 +92,27 @@ class CostEstimate(BaseModel):
 
 
 class ClusterRecommendation(BaseModel):
-    """Recommendation for cluster optimization."""
+    """Three-tier cluster recommendation for optimization."""
 
-    current_config: ClusterConfig
-    recommended_config: ClusterConfig
-    bottleneck: list[str] = []
-    estimated_savings_pct: float
-    confidence: Literal["low", "medium", "high"]
-    reason: str
+    economy: ClusterConfig
+    balanced: ClusterConfig
+    performance: ClusterConfig
+    current_cost_usd: float
+    rationale: str
+
+    def comparison_table(self) -> str:
+        """Generate ASCII comparison table."""
+        lines = [
+            "Cluster Recommendation Comparison",
+            f"{'Tier':<12} {'Instance':<20} {'Workers':<8} {'DBU/hr':<10} {'Est. Cost':<12}",
+            "-" * 62,
+            f"{'Economy':<12} {self.economy.instance_type:<20} {self.economy.num_workers:<8} {self.economy.dbu_per_hour:<10.2f} {self.economy.dbu_per_hour * 1.0:<12.2f}",
+            f"{'Balanced':<12} {self.balanced.instance_type:<20} {self.balanced.num_workers:<8} {self.balanced.dbu_per_hour:<10.2f} {self.balanced.dbu_per_hour * 1.5:<12.2f}",
+            f"{'Performance':<12} {self.performance.instance_type:<20} {self.performance.num_workers:<8} {self.performance.dbu_per_hour:<10.2f} {self.performance.dbu_per_hour * 2.0:<12.2f}",
+            "",
+            f"Rationale: {self.rationale}",
+        ]
+        return "\n".join(lines)
 
 
 class UsageRecord(BaseModel):

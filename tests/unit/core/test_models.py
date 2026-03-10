@@ -118,16 +118,34 @@ class TestCostEstimate:
 
 class TestClusterRecommendation:
     def test_cluster_recommendation_creation(self):
-        current = ClusterConfig(num_workers=2)
-        recommended = ClusterConfig(num_workers=4)
+        economy = ClusterConfig(num_workers=2, instance_type="Standard_DS3_v2")
+        balanced = ClusterConfig(num_workers=4, instance_type="Standard_DS4_v2")
+        performance = ClusterConfig(num_workers=8, instance_type="Standard_DS5_v2")
         recommendation = ClusterRecommendation(
-            current_config=current,
-            recommended_config=recommended,
-            bottleneck=["cpu_bound"],
-            estimated_savings_pct=25.0,
-            confidence="medium",
-            reason="Underutilized CPU",
+            economy=economy,
+            balanced=balanced,
+            performance=performance,
+            current_cost_usd=10.0,
+            rationale="Underutilized CPU",
         )
-        assert recommendation.current_config.num_workers == 2
-        assert recommendation.recommended_config.num_workers == 4
-        assert recommendation.bottleneck == ["cpu_bound"]
+        assert recommendation.economy.num_workers == 2
+        assert recommendation.balanced.num_workers == 4
+        assert recommendation.performance.num_workers == 8
+        assert recommendation.current_cost_usd == 10.0
+
+    def test_cluster_recommendation_comparison_table(self):
+        economy = ClusterConfig(num_workers=2, instance_type="Standard_DS3_v2")
+        balanced = ClusterConfig(num_workers=4, instance_type="Standard_DS4_v2")
+        performance = ClusterConfig(num_workers=8, instance_type="Standard_DS5_v2")
+        recommendation = ClusterRecommendation(
+            economy=economy,
+            balanced=balanced,
+            performance=performance,
+            current_cost_usd=10.0,
+            rationale="Test workload",
+        )
+        table = recommendation.comparison_table()
+        assert "Economy" in table
+        assert "Balanced" in table
+        assert "Performance" in table
+        assert "Standard_DS3_v2" in table

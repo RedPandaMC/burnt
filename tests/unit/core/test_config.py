@@ -12,7 +12,8 @@ class TestSettings:
         assert settings.workspace_url is None
         assert settings.token is None
         assert settings.target_currency == "USD"
-        assert settings.pricing_source == "embedded"
+        assert settings.pricing_source == "api"
+        assert settings.cache_ttl_seconds == 3600.0
 
     def test_settings_from_env_vars(self, monkeypatch):
         monkeypatch.setenv(
@@ -71,7 +72,8 @@ class TestConfig:
         assert config.workspace_url is None
         assert config.token is None
         assert config.target_currency == "USD"
-        assert config.pricing_source == "embedded"
+        assert config.pricing_source == "api"
+        assert config.cache_ttl_seconds == 3600.0
 
     def test_config_is_frozen(self):
         from dataclasses import FrozenInstanceError

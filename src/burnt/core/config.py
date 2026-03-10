@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     workspace_url: str | None = None
     token: str | None = None
     target_currency: str = "USD"
-    pricing_source: str = "embedded"
+    pricing_source: str = "api"
+    cache_ttl_seconds: float = 3600.0
 
     @classmethod
     def from_toml(cls, path: Path) -> "Settings":
@@ -45,7 +46,8 @@ class Config:
     workspace_url: str | None = None
     token: str | None = None
     target_currency: str = "USD"
-    pricing_source: str = "embedded"
+    pricing_source: str = "api"
+    cache_ttl_seconds: float = 3600.0
 
     def to_settings(self) -> Settings:
         """Convert Config to Settings."""
@@ -54,4 +56,5 @@ class Config:
             token=self.token,
             target_currency=self.target_currency,
             pricing_source=self.pricing_source,
+            cache_ttl_seconds=self.cache_ttl_seconds,
         )
