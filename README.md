@@ -9,7 +9,7 @@
 
 Project job and query costs _before_ you run them.
 
-[![Tests](https://img.shields.io/badge/tests-294%20passing-brightgreen)](https://github.com/anomalyco/burnt/actions)
+[![Tests](https://img.shields.io/badge/tests-352%20passing-brightgreen)](https://github.com/anomalyco/burnt/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-purple)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -114,7 +114,7 @@ backend = burnt.runtime.auto_backend()
 | Phase | Status | Focus |
 |-------|--------|-------|
 | 1-3 | ✅ Done | Foundation, System Tables, EXPLAIN parser |
-| 4 | 🔄 Active | Databricks-Native Runtime & Core Math Fixes |
+| 4 | ✅ Done | Bug fixes, WhatIfBuilder |
 | 5 | ⏳ Planned | Pre-Orchestration Job Cost Projection (DABs) |
 | 6 | ⏳ Planned | Query-Level Estimation Wiring |
 
