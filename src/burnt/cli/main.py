@@ -233,20 +233,71 @@ def lint(
 @app.command()
 def advise(
     run_id: str = typer.Option(
-        ..., "--run-id", help="Databricks Job Run ID or Statement ID to analyze"
+        None, "--run-id", help="Databricks Job Run ID to analyze"
+    ),
+    statement_id: str = typer.Option(
+        None, "--statement-id", help="SQL statement ID from query history"
+    ),
+    self: bool = typer.Option(False, "--self", help="Analyze current notebook session"),
+    output: str = typer.Option(
+        "table", "--output", "-o", help="Output format: table, json, text"
     ),
 ):
-    """Analyze a recent interactive test run and recommend an optimized Jobs Cluster configuration."""
-    console.print(
-        f"[bold blue]Analyzing execution metrics for run: {run_id}[/bold blue]"
-    )
-    console.print(
-        "[yellow]Note: The Interactive Advisor is currently in active development.[/yellow]"
-    )
-    console.print(
-        "This command will soon connect to system.lakeflow.job_run_timeline to fetch actual memory/CPU metrics."
-    )
-    raise typer.Exit(0)
+    """
+    Analyze a recent interactive test run and recommend an optimized Jobs Cluster configuration.
+
+    Use --self to analyze current notebook session, or --run-id/--statement-id for historical runs.
+    """
+    from burnt import advise as burnt_advise
+    from burnt import advise_current_session
+
+    try:
+        if self:
+            console.print(
+                "[bold blue]Analyzing current notebook session...[/bold blue]"
+            )
+            advice = advise_current_session()
+        elif run_id or statement_id:
+            console.print(
+                f"[bold blue]Analyzing execution metrics for {'run ' + run_id if run_id else 'statement ' + statement_id}[/bold blue]"
+            )
+            advice = burnt_advise(run_id=run_id, statement_id=statement_id)
+        else:
+            console.print(
+                "[red]Error:[/red] Either --self, --run-id, or --statement-id must be provided"
+            )
+            console.print(
+                "Use 'burnt advise --self' for current notebook, or 'burnt advise --run-id X' for historical runs"
+            )
+            raise typer.Exit(1)
+
+        if output == "json":
+            import json
+
+            console.print(json.dumps(advice.model_dump(), indent=2))
+        elif output == "text":
+            console.print(advice.comparison_table())
+            if advice.insights:
+                console.print("\n💡 Insights:")
+                for insight in advice.insights:
+                    console.print(f"• {insight}")
+            console.print("\nRecommended Cluster (paste into Job definition):")
+            console.print(advice.recommended.model_dump_json(indent=2))
+        else:
+            advice.display()
+
+    except NotImplementedError as e:
+        console.print(f"[red]Not implemented yet:[/red] {e}")
+        raise typer.Exit(1) from e
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        console.print(
+            "[yellow]Make sure you're running in a Databricks environment or have proper credentials.[/yellow]"
+        )
+        raise typer.Exit(1) from e
+    except Exception as e:
+        console.print(f"[red]Unexpected error:[/red] {e}")
+        raise typer.Exit(1) from e
 
 
 @app.command()

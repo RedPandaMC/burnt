@@ -44,5 +44,7 @@ def test_estimate_file(tmp_path):
 
 
 def test_advise_current_session_stubbed():
-    with pytest.raises(NotImplementedError):
+    # Note: advise_current_session() is now implemented and will raise
+    # RuntimeError when not in Databricks context instead of NotImplementedError
+    with pytest.raises(RuntimeError, match="No Databricks execution context"):
         burnt.advise_current_session()

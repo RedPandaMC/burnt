@@ -106,10 +106,45 @@ def advise_current_session() -> Any:
 
     (Context-Aware "End of Notebook" Advisor)
     """
-    raise NotImplementedError(
-        "advise_current_session() is under active development. "
-        "It will require the runtime backend to be fully integrated."
-    )
+    from .advisor.session import advise_current_session as _advise_current_session
+
+    return _advise_current_session()
+
+
+def advise(
+    run_id: str | None = None,
+    statement_id: str | None = None,
+    job_id: str | None = None,
+) -> Any:
+    """
+    Analyze a historical run and recommend optimized cluster configuration.
+
+    Args:
+        run_id: Databricks Job Run ID to analyze
+        statement_id: SQL statement ID from query history
+        job_id: Job ID for analyzing multiple runs (not yet implemented)
+
+    Returns:
+        AdvisoryReport with cost comparisons and cluster recommendation
+    """
+    from .advisor.session import advise as _advise
+
+    return _advise(run_id=run_id, statement_id=statement_id, job_id=job_id)
+
+
+def right_size(profile: Any) -> Any:
+    """
+    Right-size cluster configuration based on workload profile.
+
+    Args:
+        profile: WorkloadProfile with memory, CPU, and data characteristics
+
+    Returns:
+        ClusterConfig recommendation
+    """
+    from .core.instances import get_cluster_config
+
+    return get_cluster_config(profile)
 
 
 __all__ = [
@@ -118,10 +153,12 @@ __all__ = [
     "ClusterRecommendation",
     "CostEstimate",
     "WorkloadProfile",
+    "advise",
     "advise_current_session",
     "estimate",
     "estimate_file",
     "get_cluster_json",
     "lint",
     "lint_file",
+    "right_size",
 ]
