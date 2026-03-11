@@ -228,10 +228,10 @@ flowchart LR
     TIP --> JSON
     JSON --> PROD
     
-    style IDEV fill:#e1f5fe,stroke:#01579b
-    style PORD fill:#e8f5e9,stroke:#2e7d32
-    style AD fill:#fff3e0,stroke:#e65100
-    style JSON fill:#f3e5f5,stroke:#7b1fa2
+    style IDEV fill:#f0f0f0,stroke:#333333
+    style PORD fill:#f0f0f0,stroke:#333333
+    style AD fill:#f0f0f0,stroke:#333333
+    style JSON fill:#f0f0f0,stroke:#333333
 ```
 
 ### Package Structure
