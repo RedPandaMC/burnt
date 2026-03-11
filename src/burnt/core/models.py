@@ -1,7 +1,9 @@
 """Pydantic models for burnt."""
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -83,12 +85,21 @@ class PricingInfo(BaseModel):
 class CostEstimate(BaseModel):
     """Cost estimate for a query or workload."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     estimated_dbu: float
     estimated_cost_usd: float | None = None
     estimated_cost_eur: float | None = None
     confidence: Literal["low", "medium", "high"] = "low"
     breakdown: dict[str, float] = {}
     warnings: list[str] = []
+    _cluster: ClusterConfig | None = None
+
+    def what_if(self) -> WhatIfBuilder:
+        """Start a what-if scenario builder from this estimate."""
+        from ..estimators.whatif import WhatIfBuilder
+
+        return WhatIfBuilder(self, self._cluster)
 
 
 class ClusterRecommendation(BaseModel):
@@ -172,3 +183,104 @@ class ExplainPlan(BaseModel):
     stats_complete: bool = False
     raw_plan: str = ""
     operations: list[OperationInfo] = []
+
+
+class AggregatedMetrics(BaseModel):
+    """Aggregated metrics from multiple job runs."""
+
+    job_id: str
+    num_runs: int
+    avg_duration_ms: float
+    avg_peak_memory_pct: float
+    avg_peak_cpu_pct: float
+    max_spill_bytes: int
+    duration_variability_pct: float
+    memory_variability_pct: float
+    last_run_metrics: dict[str, Any] = {}
+
+
+class WhatIfModification(BaseModel):
+    """A single modification applied in a what-if scenario."""
+
+    name: str
+    cost_multiplier: float
+    is_verified: bool = False
+    rationale: str
+    trade_offs: list[str] = []
+
+
+class WhatIfResult(BaseModel):
+    """Result of comparing original vs projected cost after modifications."""
+
+    original: CostEstimate
+    projected: CostEstimate
+    modifications: list[WhatIfModification]
+    total_savings_pct: float
+    recommended_cluster: ClusterConfig | None = None
+
+    def summary(self) -> str:
+        """One-line summary description."""
+        original_cost = self.original.estimated_cost_usd or 0
+        projected_cost = self.projected.estimated_cost_usd or 0
+        return (
+            f"{', '.join(m.name for m in self.modifications)}: "
+            f"${original_cost:.2f} → ${projected_cost:.2f} ({self.total_savings_pct:+.1f}%)"
+        )
+
+    def comparison_table(self) -> str:
+        """Generate ASCII comparison table."""
+        original_cost = self.original.estimated_cost_usd or 0
+        projected_cost = self.projected.estimated_cost_usd or 0
+
+        lines = [
+            "What-If Comparison",
+            f"{'Metric':<20} {'Original':<15} {'Projected':<15}",
+            "-" * 50,
+            f"{'DBU':<20} {self.original.estimated_dbu:<15.2f} {self.projected.estimated_dbu:<15.2f}",
+            f"{'Cost (USD)':<20} {original_cost:<15.2f} {projected_cost:<15.2f}",
+            f"{'Savings %':<20} {'—':<15} {self.total_savings_pct:<15.1f}",
+            "",
+            "Modifications:",
+        ]
+        for mod in self.modifications:
+            verified = "✓" if mod.is_verified else "≈"
+            lines.append(
+                f"  {verified} {mod.name}: {mod.cost_multiplier:.2f}x - {mod.rationale}"
+            )
+
+        return "\n".join(lines)
+
+    def get_verified_multipliers(self) -> list[str]:
+        """Get list of verified modification names."""
+        return [m.name for m in self.modifications if m.is_verified]
+
+    def get_estimated_multipliers(self) -> list[str]:
+        """Get list of estimated modification names."""
+        return [m.name for m in self.modifications if not m.is_verified]
+
+
+class MultiScenarioResult(BaseModel):
+    """Result of comparing multiple what-if scenarios."""
+
+    scenarios: list[tuple[str, WhatIfResult]]
+
+    def get_results(self) -> list[WhatIfResult]:
+        """Get list of WhatIfResult objects."""
+        return [r for _, r in self.scenarios]
+
+    def comparison_table(self) -> str:
+        """Generate ASCII comparison table for all scenarios."""
+        if not self.scenarios:
+            return "No scenarios to compare."
+
+        lines = [
+            "Scenario Comparison",
+            f"{'Scenario':<20} {'Cost (USD)':<15} {'Savings %':<15}",
+            "-" * 50,
+        ]
+
+        for name, result in self.scenarios:
+            cost = result.projected.estimated_cost_usd or 0
+            lines.append(f"{name:<20} {cost:<15.2f} {result.total_savings_pct:<15.1f}")
+
+        return "\n".join(lines)

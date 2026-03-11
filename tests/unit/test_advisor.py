@@ -5,7 +5,13 @@ from unittest.mock import Mock, patch
 import pytest
 
 from burnt.advisor.report import AdvisoryReport, ComputeScenario
-from burnt.advisor.session import advise, advise_current_session
+from burnt.advisor.session import (
+    _calculate_confidence,
+    _fetch_metrics_from_job,
+    _lookup_job_id_by_name,
+    advise,
+    advise_current_session,
+)
 from burnt.core.models import ClusterConfig, ClusterRecommendation
 
 
@@ -236,11 +242,10 @@ class TestSessionAdvisor:
             assert report.baseline.tradeoff == "(Historical run)"
 
     def test_advise_with_job_id_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="advise\\(job_id=\\.\\.\\.\\)"):
-            advise(job_id="test-job")
+        pass  # Now implemented
 
     def test_advise_no_parameters(self):
-        with pytest.raises(ValueError, match="Either run_id or statement_id"):
+        with pytest.raises(RuntimeError, match="No Databricks execution context"):
             advise()
 
 
@@ -283,6 +288,183 @@ class TestErrorMessages:
 
         with pytest.raises(RuntimeError, match="Failed to fetch metrics"):
             advise(run_id="test-run", backend=mock_backend)
+
+
+class TestJobIdAnalysis:
+    @patch("burnt.advisor.session._auto_backend_or_error")
+    def test_advise_with_job_id(self, mock_auto_backend):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = [
+            {
+                "job_id": "test-job",
+                "run_id": "run-1",
+                "start_time": "2024-01-01T00:00:00Z",
+                "end_time": "2024-01-01T00:01:00Z",
+                "dbu_total": 5.0,
+                "cost_usd": 0.25,
+                "duration_ms": 60000,
+            },
+            {
+                "job_id": "test-job",
+                "run_id": "run-2",
+                "start_time": "2024-01-02T00:00:00Z",
+                "end_time": "2024-01-02T00:01:30Z",
+                "dbu_total": 6.0,
+                "cost_usd": 0.30,
+                "duration_ms": 90000,
+            },
+            {
+                "job_id": "test-job",
+                "run_id": "run-3",
+                "start_time": "2024-01-03T00:00:00Z",
+                "end_time": "2024-01-03T00:00:45Z",
+                "dbu_total": 4.0,
+                "cost_usd": 0.20,
+                "duration_ms": 45000,
+            },
+        ]
+        mock_auto_backend.return_value = mock_backend
+
+        with patch("burnt.advisor.session.get_cluster_config") as mock_get_cluster:
+            mock_get_cluster.return_value = ClusterConfig(
+                instance_type="Standard_DS3_v2",
+                num_workers=3,
+                dbu_per_hour=0.75,
+                sku="JOBS_COMPUTE",
+            )
+
+            report = advise(job_id="test-job", backend=mock_backend)
+
+            assert isinstance(report, AdvisoryReport)
+            assert report.baseline.compute_type == "Jobs Compute"
+            assert report.num_runs_analyzed == 3
+            assert report.confidence_level in ["high", "medium", "low"]
+            assert "Based on 3 runs" in report.baseline.tradeoff
+
+    @patch("burnt.advisor.session._auto_backend_or_error")
+    def test_advise_job_id_not_found(self, mock_auto_backend):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = []
+        mock_auto_backend.return_value = mock_backend
+
+        with pytest.raises(ValueError, match="No runs found for job_id"):
+            advise(job_id="nonexistent-job", backend=mock_backend)
+
+    @patch("burnt.advisor.session._auto_backend_or_error")
+    def test_advise_job_id_error(self, mock_auto_backend):
+        mock_backend = Mock()
+        mock_backend.execute_sql.side_effect = Exception("Permission denied")
+        mock_auto_backend.return_value = mock_backend
+
+        with pytest.raises(RuntimeError, match="Failed to fetch job metrics"):
+            advise(job_id="test-job", backend=mock_backend)
+
+    def test_calculate_confidence(self):
+        assert _calculate_confidence(1) == "low"
+        assert _calculate_confidence(2) == "medium"
+        assert _calculate_confidence(4) == "medium"
+        assert _calculate_confidence(5) == "high"
+        assert _calculate_confidence(10) == "high"
+
+    @patch("burnt.advisor.session._auto_backend_or_error")
+    def test_fetch_metrics_from_job(self, mock_auto_backend):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = [
+            {
+                "job_id": "test-job",
+                "run_id": "run-1",
+                "start_time": "2024-01-01T00:00:00Z",
+                "end_time": "2024-01-01T00:01:00Z",
+                "dbu_total": 5.0,
+                "cost_usd": 0.25,
+                "duration_ms": 60000,
+            },
+            {
+                "job_id": "test-job",
+                "run_id": "run-2",
+                "start_time": "2024-01-02T00:00:00Z",
+                "end_time": "2024-01-02T00:01:00Z",
+                "dbu_total": 5.0,
+                "cost_usd": 0.25,
+                "duration_ms": 60000,
+            },
+        ]
+        mock_auto_backend.return_value = mock_backend
+
+        metrics = _fetch_metrics_from_job(mock_backend, "test-job")
+
+        assert metrics["job_id"] == "test-job"
+        assert metrics["num_runs"] == 2
+        assert metrics["avg_duration_ms"] == 60000.0
+        assert metrics["duration_variability_pct"] == 0.0
+        assert "last_run" in metrics
+
+
+class TestJobNameLookup:
+    def test_lookup_job_id_by_name_found(self):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = [
+            {"job_id": "abc-123", "job_name": "daily-etl"}
+        ]
+
+        job_id = _lookup_job_id_by_name(mock_backend, "daily-etl")
+
+        assert job_id == "abc-123"
+
+    def test_lookup_job_id_by_name_not_found(self):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = []
+
+        with pytest.raises(ValueError, match="Job 'unknown' not found"):
+            _lookup_job_id_by_name(mock_backend, "unknown")
+
+    def test_lookup_job_id_by_name_multiple_matches(self):
+        mock_backend = Mock()
+        mock_backend.execute_sql.return_value = [
+            {"job_id": "abc-123", "job_name": "daily-etl"},
+            {"job_id": "def-456", "job_name": "daily-etl"},
+        ]
+
+        with pytest.raises(ValueError, match="Multiple jobs match"):
+            _lookup_job_id_by_name(mock_backend, "daily-etl")
+
+    @patch("burnt.advisor.session._auto_backend_or_error")
+    def test_advise_with_job_name(self, mock_auto_backend):
+        mock_backend = Mock()
+        mock_backend.execute_sql.side_effect = [
+            [{"job_id": "abc-123", "job_name": "daily-etl"}],
+            [
+                {
+                    "job_id": "abc-123",
+                    "run_id": "run-1",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-01-01T00:01:00Z",
+                    "dbu_total": 5.0,
+                    "cost_usd": 0.25,
+                    "duration_ms": 60000,
+                }
+            ],
+        ]
+        mock_auto_backend.return_value = mock_backend
+
+        with patch("burnt.advisor.session.get_cluster_config") as mock_get_cluster:
+            mock_get_cluster.return_value = ClusterConfig(
+                instance_type="Standard_DS3_v2",
+                num_workers=3,
+                dbu_per_hour=0.75,
+                sku="JOBS_COMPUTE",
+            )
+
+            report = advise(job_name="daily-etl", backend=mock_backend)
+
+            assert isinstance(report, AdvisoryReport)
+            assert report.baseline.compute_type == "Jobs Compute"
+
+    def test_advise_mutually_exclusive(self):
+        mock_backend = Mock()
+
+        with pytest.raises(ValueError, match="Only one of"):
+            advise(run_id="x", job_name="y", backend=mock_backend)
 
 
 if __name__ == "__main__":

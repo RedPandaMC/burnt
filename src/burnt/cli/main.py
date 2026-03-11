@@ -238,6 +238,12 @@ def advise(
     statement_id: str = typer.Option(
         None, "--statement-id", help="SQL statement ID from query history"
     ),
+    job_id: str = typer.Option(
+        None, "--job-id", help="Databricks Job ID to analyze (multiple runs)"
+    ),
+    job_name: str = typer.Option(
+        None, "--job-name", help="Databricks Job name to analyze (looks up job ID)"
+    ),
     self: bool = typer.Option(False, "--self", help="Analyze current notebook session"),
     output: str = typer.Option(
         "table", "--output", "-o", help="Output format: table, json, text"
@@ -246,7 +252,8 @@ def advise(
     """
     Analyze a recent interactive test run and recommend an optimized Jobs Cluster configuration.
 
-    Use --self to analyze current notebook session, or --run-id/--statement-id for historical runs.
+    Use --self to analyze current notebook session, --job-name or --job-id for job analysis,
+    or --run-id/--statement-id for single historical runs.
     """
     from burnt import advise as burnt_advise
     from burnt import advise_current_session
@@ -257,6 +264,25 @@ def advise(
                 "[bold blue]Analyzing current notebook session...[/bold blue]"
             )
             advice = advise_current_session()
+        elif job_id:
+            console.print(
+                f"[bold blue]Analyzing job {job_id} (multiple runs)...[/bold blue]"
+            )
+            advice = burnt_advise(job_id=job_id)
+            if advice.num_runs_analyzed:
+                console.print(
+                    f"[dim]Based on {advice.num_runs_analyzed} runs - {advice.confidence_level} confidence[/dim]"
+                )
+        elif job_name:
+            console.print(f"[dim]Looking up job '{job_name}'...[/dim]")
+            advice = burnt_advise(job_name=job_name)
+            if advice.num_runs_analyzed:
+                console.print(
+                    f"[bold blue]Analyzing job {job_name} ({advice.num_runs_analyzed} runs)...[/bold blue]"
+                )
+                console.print(
+                    f"[dim]Based on {advice.num_runs_analyzed} runs - {advice.confidence_level} confidence[/dim]"
+                )
         elif run_id or statement_id:
             console.print(
                 f"[bold blue]Analyzing execution metrics for {'run ' + run_id if run_id else 'statement ' + statement_id}[/bold blue]"
@@ -264,10 +290,12 @@ def advise(
             advice = burnt_advise(run_id=run_id, statement_id=statement_id)
         else:
             console.print(
-                "[red]Error:[/red] Either --self, --run-id, or --statement-id must be provided"
+                "[red]Error:[/red] Either --self, --job-id, --run-id, or --statement-id must be provided"
             )
             console.print(
-                "Use 'burnt advise --self' for current notebook, or 'burnt advise --run-id X' for historical runs"
+                "Use 'burnt advise --self' for current notebook, "
+                "'burnt advise --job-id X' for job analysis, "
+                "or 'burnt advise --run-id X' for historical runs"
             )
             raise typer.Exit(1)
 

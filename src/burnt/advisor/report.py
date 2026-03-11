@@ -8,9 +8,8 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from burnt.core.models import ClusterConfig, ClusterRecommendation
-else:
-    # Import at runtime for Pydantic model validation
-    from burnt.core.models import ClusterConfig, ClusterRecommendation
+
+from burnt.core.models import ClusterConfig, ClusterRecommendation  # noqa: TC001
 
 
 class ComputeScenario(BaseModel):
@@ -31,7 +30,9 @@ class AdvisoryReport(BaseModel):
     recommended: ClusterConfig  # Best cluster config with to_api_json()
     recommendation: ClusterRecommendation  # economy/balanced/performance tiers
     insights: list[str]  # e.g., "Peak memory 14%, downsize DS4→DS3"
-    run_metrics: dict[str, Any]  # Raw metrics from the analyzed run
+    run_metrics: dict[str, Any] = {}  # Raw metrics from the analyzed run
+    num_runs_analyzed: int | None = None  # Number of runs analyzed (for job_id)
+    confidence_level: str | None = None  # "high", "medium", "low"
 
     def display(self) -> None:
         """Render rich table. Uses displayHTML() in Databricks, rich.Table otherwise."""

@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from .core.instances import WorkloadProfile, get_cluster_json
-from .core.models import ClusterConfig, ClusterRecommendation, CostEstimate
+from .core.models import (
+    ClusterConfig,
+    ClusterRecommendation,
+    CostEstimate,
+    MultiScenarioResult,
+    WhatIfModification,
+    WhatIfResult,
+)
 from .estimators.pipeline import EstimationPipeline
 from .parsers.antipatterns import AntiPattern, detect_antipatterns
 
@@ -115,6 +122,7 @@ def advise(
     run_id: str | None = None,
     statement_id: str | None = None,
     job_id: str | None = None,
+    job_name: str | None = None,
 ) -> Any:
     """
     Analyze a historical run and recommend optimized cluster configuration.
@@ -122,14 +130,17 @@ def advise(
     Args:
         run_id: Databricks Job Run ID to analyze
         statement_id: SQL statement ID from query history
-        job_id: Job ID for analyzing multiple runs (not yet implemented)
+        job_id: Job ID for analyzing multiple runs
+        job_name: Job name to analyze (looks up job ID first)
 
     Returns:
         AdvisoryReport with cost comparisons and cluster recommendation
     """
     from .advisor.session import advise as _advise
 
-    return _advise(run_id=run_id, statement_id=statement_id, job_id=job_id)
+    return _advise(
+        run_id=run_id, statement_id=statement_id, job_id=job_id, job_name=job_name
+    )
 
 
 def right_size(profile: Any) -> Any:
@@ -147,18 +158,58 @@ def right_size(profile: Any) -> Any:
     return get_cluster_config(profile)
 
 
+def what_if(dbu: float, sku: str = "ALL_PURPOSE") -> Any:
+    """
+    Start a what-if scenario from raw parameters.
+
+    Args:
+        dbu: Estimated DBU consumption
+        sku: Databricks SKU (ALL_PURPOSE, JOBS_COMPUTE, etc.)
+
+    Returns:
+        WhatIfBuilder for fluent scenario building
+    """
+    from .core.pricing import get_dbu_rate
+
+    rate = get_dbu_rate(sku)
+    estimate = CostEstimate(
+        estimated_dbu=dbu,
+        estimated_cost_usd=round(dbu * float(rate), 4),
+        confidence="low",
+    )
+    return estimate.what_if()
+
+
+def compare(builder: Any) -> WhatIfResult | MultiScenarioResult:
+    """
+    Compare what-if scenarios.
+
+    Args:
+        builder: A WhatIfBuilder instance
+
+    Returns:
+        WhatIfResult for single scenario, MultiScenarioResult for multiple
+    """
+    return builder.compare()
+
+
 __all__ = [
     "AntiPattern",
     "ClusterConfig",
     "ClusterRecommendation",
     "CostEstimate",
+    "MultiScenarioResult",
+    "WhatIfModification",
+    "WhatIfResult",
     "WorkloadProfile",
     "advise",
     "advise_current_session",
+    "compare",
     "estimate",
     "estimate_file",
     "get_cluster_json",
     "lint",
     "lint_file",
     "right_size",
+    "what_if",
 ]
