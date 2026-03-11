@@ -215,10 +215,7 @@ flowchart TB
         
         AD[Compute Migration Analysis]
         
-        TABLE[| Compute Type | Est Cost | Savings |]
-        ROW1[| All-Purpose  | $45.12  | —       |]
-        ROW2[| Jobs Compute | $18.25  | -60%    |]
-        ROW3[| Serverless   | $28.50  | -37%    |]
+        COST[Cost Comparison Table<br/>All-Purpose: $45.12<br/>Jobs Compute: $18.25 (-60%)<br/>Serverless: $28.50 (-37%)]
         
         TIP[💡 Peak memory 14%<br/>Downsize DS4_v2 → DS3_v2<br/>for additional 50% savings]
         
@@ -230,16 +227,15 @@ flowchart TB
     end
     
     NB -->|analyze| AD
-    AD --> TABLE
-    TABLE --> ROW1 & ROW2 & ROW3
-    ROW2 --> TIP
+    AD --> COST
+    COST --> TIP
     TIP --> JSON
     JSON -->|copy JSON into Job definition| PROD
     
     style IDEV fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style PORD fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style AD fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style TABLE fill:#fff,stroke:#333
+    style COST fill:#fff,stroke:#333
     style JSON fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style TIP fill:#fff9c4,stroke:#f9a825
 ```
