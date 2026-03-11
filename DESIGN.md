@@ -209,35 +209,29 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 ### The Core Loop: Interactive → Production
 
 ```mermaid
-flowchart TB
-    subgraph IDEV[INTERACTIVE DEVELOPMENT<br/>All-Purpose Cluster $0.55/DBU]
-        NB["# Last cell<br/>import burnt<br/>advice = burnt.advise_current_session()<br/>advice.display()"]
-        
-        AD[Compute Migration Analysis]
-        
-        COST[Cost Comparison Table<br/>All-Purpose: $45.12<br/>Jobs Compute: $18.25 minus 60%<br/>Serverless: $28.50 minus 37%]
-        
-        TIP[💡 Peak memory 14%<br/>Downsize DS4_v2 → DS3_v2<br/>for additional 50% savings]
-        
-        JSON[advice.to_api_json()<br/>→ Databricks Job JSON]
+flowchart LR
+    subgraph IDEV[Interactive Development]
+        NB[Notebook Cell]
+        AD[Advisory Report]
+        COST[Cost Table]
+        TIP[Downsize Tip]
+        JSON[API JSON]
     end
     
-    subgraph PORD[PRODUCTION ORCHESTRATION<br/>Jobs Compute $0.30/DBU]
-        PROD[Optimized Job<br/>scheduled, monitored]
+    subgraph PORD[Production]
+        PROD[Optimized Job]
     end
     
-    NB -->|analyze| AD
+    NB --> AD
     AD --> COST
     COST --> TIP
     TIP --> JSON
-    JSON -->|copy JSON into Job definition| PROD
+    JSON --> PROD
     
-    style IDEV fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style PORD fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style AD fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style COST fill:#fff,stroke:#333
-    style JSON fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style TIP fill:#fff9c4,stroke:#f9a825
+    style IDEV fill:#e1f5fe,stroke:#01579b
+    style PORD fill:#e8f5e9,stroke:#2e7d32
+    style AD fill:#fff3e0,stroke:#e65100
+    style JSON fill:#f3e5f5,stroke:#7b1fa2
 ```
 
 ### Package Structure
