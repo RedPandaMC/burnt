@@ -18,16 +18,7 @@ Sprint 5: ML & Forecasting ───────── Feature extraction, class
 
 | Task | Status | What | Blocked By |
 |------|--------|------|------------|
-| `s1-01-runtime-backend` | todo | SparkBackend + RestBackend + auto_backend() | — |
-| `s1-02-instance-catalog` | todo | Azure VM catalog + right_size() + API JSON | — |
-| `s1-03-advisor` | todo | advise_current_session() + CLI | s1-01, s1-02 |
-
-### Sprint 2: The Developer Experience
-
-| Task | Status | What | Blocked By |
-|------|--------|------|------------|
-| `s2-01-whatif-builder` | todo | Fluent WhatIfBuilder with chaining | s1-02 |
-| `s2-02-remaining-bugs` | todo | Bugs 8-11 (SKU, prophet, CLI, attribution) | — |
+| `s2-02-remaining-bugs` | done | Fix 39+ bugs across codebase | — |
 | `s2-03-benchmark-dataset` | todo | TPC-DS queries + known costs for validation | — |
 
 ### Sprint 3: Estimation Accuracy
