@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from burnt.core.models import ClusterConfig, ClusterRecommendation
-
-from burnt.core.models import ClusterConfig, ClusterRecommendation  # noqa: TC001
+from burnt.core.models import ClusterConfig, ClusterRecommendation
 
 
 class ComputeScenario(BaseModel):
@@ -152,9 +149,9 @@ class AdvisoryReport(BaseModel):
         for scenario in self.scenarios:
             savings_color = (
                 "green"
-                if scenario.savings_pct < 0
-                else "red"
                 if scenario.savings_pct > 0
+                else "red"
+                if scenario.savings_pct < 0
                 else "black"
             )
             savings_text = (

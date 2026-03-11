@@ -75,7 +75,7 @@ def estimate(
     """
     if cluster is None:
         cluster = ClusterConfig(
-            instance_type="Standard_DS3_v2", num_workers=2, dbu_per_hour=1.5
+            instance_type="Standard_DS3_v2", num_workers=2, dbu_per_hour=0.75
         )
 
     pipeline = EstimationPipeline()

@@ -78,10 +78,12 @@ class CostEstimator:
         self, profile: QueryProfile | None
     ) -> Literal["low", "medium", "high"]:
         if profile is None:
-            return "medium"
+            return "low"
         if not profile.tables:
             return "low"
         if profile.complexity_score > 50:
+            return "low"
+        if profile.complexity_score > 20:
             return "medium"
         return "high"
 

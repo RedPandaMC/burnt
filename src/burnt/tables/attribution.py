@@ -81,7 +81,13 @@ def attribute_costs_to_queries(
         ]
 
         for query in matching_queries:
-            fp = query.statement_text[:50] if query.statement_text else "unknown"
+            from .queries import fingerprint_sql
+
+            fp = (
+                fingerprint_sql(query.statement_text)
+                if query.statement_text
+                else "unknown"
+            )
 
             if fp not in attribution:
                 attribution[fp] = QueryAttribution(
@@ -289,11 +295,10 @@ def _time_overlaps(
 
 def _parse_datetime(dt_str: str | None) -> datetime:
     """Parse various datetime formats from Databricks."""
+    import re
+
     if dt_str is None:
         raise ValueError("Cannot parse None datetime")
     dt_str = dt_str.replace("Z", "+00:00")
-    if "." in dt_str:
-        base, rest = dt_str.rsplit(".", 1)
-        rest = rest[:6].ljust(6, "0")
-        dt_str = f"{base}.{rest}"
+    dt_str = re.sub(r"(\.\d{6})\d*", r"\1", dt_str)
     return datetime.fromisoformat(dt_str)

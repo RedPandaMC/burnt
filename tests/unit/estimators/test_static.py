@@ -85,7 +85,7 @@ class TestCostEstimator:
             complexity_score=60,
         )
         confidence = estimator._compute_confidence(profile)
-        assert confidence == "medium"
+        assert confidence == "low"
 
 
 class TestEstimateCost:

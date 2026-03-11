@@ -65,26 +65,23 @@ def estimate(
 
     settings = Settings()
     if workspace_url:
-        settings.workspace_url = workspace_url
-
-    pipeline = EstimationPipeline(
-        backend=None,
-        warehouse_id=warehouse_id,
-    )
+        settings = Settings(workspace_url=workspace_url)
 
     if warehouse_id and settings.workspace_url and settings.token:
         try:
-            from ..tables.connection import DatabricksClient
+            from ..estimators.pipeline import create_pipeline
 
-            pipeline = EstimationPipeline(
-                backend=DatabricksClient(settings),
-                warehouse_id=warehouse_id,
-            )
+            pipeline = create_pipeline(settings=settings, warehouse_id=warehouse_id)
         except Exception as e:
             console.print(
                 f"[yellow]Warning: Failed to connect to Databricks ({e}). Using offline estimation.[/yellow]"
             )
             pipeline = EstimationPipeline(backend=None, warehouse_id=None)
+    else:
+        pipeline = EstimationPipeline(
+            backend=None,
+            warehouse_id=None,
+        )
 
     try:
         result = pipeline.estimate(query, cluster)
@@ -104,12 +101,31 @@ def estimate(
             signal = warning.replace("Signal:", "").strip()
             break
 
-    if currency != "USD" and result.estimated_cost_usd:
-        estimator = CostEstimator(cluster=cluster, target_currency=currency)
-        result = estimator.estimate(query)
+    estimated_cost_usd = result.estimated_cost_usd
+    if currency != "USD" and estimated_cost_usd:
+        from datetime import date
+        from decimal import Decimal
 
-    dbu_rate_decimal = get_dbu_rate(cluster.sku)
-    estimated_cost_usd = round(float(result.estimated_dbu) * float(dbu_rate_decimal), 4)
+        from ..core.exchange import FrankfurterProvider
+
+        exchange = FrankfurterProvider()
+        estimated_cost_usd = round(
+            float(
+                exchange.get_rate_for_amount(
+                    Decimal(str(estimated_cost_usd)),
+                    date.today(),
+                    "USD",
+                    currency,
+                )
+            ),
+            4,
+        )
+
+    if estimated_cost_usd is None:
+        dbu_rate_decimal = get_dbu_rate(cluster.sku)
+        estimated_cost_usd = round(
+            float(result.estimated_dbu) * float(dbu_rate_decimal), 4
+        )
 
     if output == "json":
         import json

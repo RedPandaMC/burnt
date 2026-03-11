@@ -49,8 +49,8 @@ def normalize_sql(sql: str) -> str:
     sql = re.sub(r"\s+", " ", sql).strip().upper()
     # Replace string literals
     sql = re.sub(r"'[^']*'", "?", sql)
-    # Replace numeric literals (not inside identifiers)
-    sql = re.sub(r"\b\d+(\.\d+)?\b", "?", sql)
+    # Replace numeric literals (not inside identifiers - avoid matching table_v2)
+    sql = re.sub(r"(?<![a-zA-Z_])\d+(\.\d+)?(?![a-zA-Z_])", "?", sql)
     # Collapse IN-lists: IN (?, ?, ?) -> IN (?)
     sql = re.sub(r"IN\s*\(\s*\?(?:\s*,\s*\?)*\s*\)", "IN (?)", sql)
     return sql
@@ -69,6 +69,8 @@ def get_query_history(
 
     Returns up to 10,000 most recent records ordered by start_time descending.
     """
+    if not isinstance(days, int) or days <= 0:
+        raise ValueError(f"days must be a positive integer, got {days}")
     safe_warehouse_id = _sanitize_id(warehouse_id, "warehouse_id")
     sql = f"""
         SELECT {_HISTORY_COLUMNS}

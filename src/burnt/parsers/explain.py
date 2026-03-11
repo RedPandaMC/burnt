@@ -42,8 +42,7 @@ _SECTION_PATTERN = re.compile(
 # Matches a Statistics(...) block, capturing size and optional row count.
 _STATS_PATTERN = re.compile(
     r"Statistics\(sizeInBytes=(?P<size_val>[\d.]+)\s*(?P<size_unit>[KMGTiB]+)"
-    r"(?:,\s*rowCount=(?P<row_val>[\d.E+]+)\s*(?P<row_unit>[KMB]?))?\)",
-    re.IGNORECASE,
+    r"(?:,\s*rowCount=(?P<row_val>[\d.E+]+)\s*(?P<row_unit>[KMB]?))?\)"
 )
 
 # Detects join type names.
@@ -86,7 +85,15 @@ _OP_TABLE: dict[str, tuple[str, int]] = {
 
 def _size_to_bytes(val: str, unit: str) -> int:
     """Convert a size string and unit to bytes."""
-    multiplier = _SIZE_MULTIPLIERS.get(unit, 1)
+    import logging
+
+    logger = logging.getLogger(__name__)
+    multiplier = _SIZE_MULTIPLIERS.get(unit)
+    if multiplier is None:
+        logger.warning(
+            f"Unknown size unit '{unit}', defaulting to bytes. This may cause incorrect size calculations."
+        )
+        return int(float(val))
     return int(float(val) * multiplier)
 
 

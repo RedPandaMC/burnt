@@ -121,9 +121,6 @@ def advise(
             "Either run_id, statement_id, job_id, or job_name must be provided"
         )
 
-    if backend is None:
-        backend = _auto_backend_or_error()
-
     # 1. Fetch metrics from system tables
     metrics = _fetch_metrics_from_history(backend, run_id, statement_id)
 
@@ -227,6 +224,12 @@ def _project_scenarios(
     """Project costs for different compute scenarios."""
     scenarios = []
 
+    def _calc_savings_pct(baseline: float, cost: float) -> float:
+        """Calculate savings percentage, guarding against zero baseline."""
+        if baseline <= 0:
+            return 0.0
+        return ((baseline - cost) / baseline) * 100
+
     # Jobs Compute scenario
     jobs_compute_cost = baseline_cost * (
         0.30 / 0.55
@@ -236,7 +239,7 @@ def _project_scenarios(
             compute_type="Jobs Compute",
             sku="JOBS_COMPUTE",
             estimated_cost_usd=jobs_compute_cost,
-            savings_pct=((baseline_cost - jobs_compute_cost) / baseline_cost) * 100,
+            savings_pct=_calc_savings_pct(baseline_cost, jobs_compute_cost),
             tradeoff="Recommended",
         )
     )
@@ -269,9 +272,9 @@ def _project_scenarios(
     scenarios.append(
         ComputeScenario(
             compute_type="SQL Serverless",
-            sku="SERVERLESS",
+            sku="SERVERLESS_JOBS",
             estimated_cost_usd=serverless_cost,
-            savings_pct=((baseline_cost - serverless_cost) / baseline_cost) * 100,
+            savings_pct=_calc_savings_pct(baseline_cost, serverless_cost),
             tradeoff="Fastest cold start",
         )
     )
@@ -283,7 +286,7 @@ def _project_scenarios(
             compute_type="Jobs Compute + Spot",
             sku="JOBS_COMPUTE",
             estimated_cost_usd=spot_cost,
-            savings_pct=((baseline_cost - spot_cost) / baseline_cost) * 100,
+            savings_pct=_calc_savings_pct(baseline_cost, spot_cost),
             tradeoff="Max savings (interruptible)",
         )
     )
@@ -465,17 +468,19 @@ def _fetch_metrics_from_history(
         ) from e
 
 
-def _lookup_job_id_by_name(backend: Backend, job_name: str) -> str:
+def _lookup_job_id_by_name(backend: Backend, job_name: str) -> str | None:
     """Look up job_id from job_name via system.lakeflow.jobs."""
     from burnt.core.table_registry import TableRegistry
+    from burnt.tables.connection import _sanitize_id
 
     registry = TableRegistry()
     table_path = registry.lakeflow_jobs
 
+    safe_job_name = _sanitize_id(job_name, "job_name")
     sql = f"""
         SELECT job_id, job_name
         FROM {table_path}
-        WHERE job_name = '{job_name}'
+        WHERE job_name = '{safe_job_name}'
         LIMIT 2
     """
 

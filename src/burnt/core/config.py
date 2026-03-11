@@ -25,18 +25,11 @@ class Settings(BaseSettings):
     @classmethod
     def from_toml(cls, path: Path) -> "Settings":
         """Load settings from a TOML file."""
-        try:
-            import tomli
-        except ImportError:
-            import tomllib
+        import tomllib
 
-            with open(path, "rb") as f:
-                data = tomllib.load(f)
-            return cls(**data.get("burnt", {}))
-        else:
-            with open(path, "rb") as f:
-                data = tomli.load(f)
-            return cls(**data.get("burnt", {}))
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("burnt", {}))
 
 
 @dataclass(frozen=True)

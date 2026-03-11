@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 
 
 class OperationInfo(BaseModel):
@@ -26,7 +26,18 @@ class QueryProfile(BaseModel):
     complexity_score: float = 0.0
 
 
-VALID_SKUS = {"ALL_PURPOSE", "JOBS_COMPUTE", "SQL_ENDPOINT", "DLT", "SERVERLESS"}
+VALID_SKUS = {
+    "ALL_PURPOSE",
+    "JOBS_COMPUTE",
+    "SERVERLESS_JOBS",
+    "SERVERLESS_NOTEBOOKS",
+    "SQL_CLASSIC",
+    "SQL_PRO",
+    "SQL_SERVERLESS",
+    "DLT_CORE",
+    "DLT_PRO",
+    "DLT_ADVANCED",
+}
 
 
 class ClusterConfig(BaseModel):
@@ -93,7 +104,7 @@ class CostEstimate(BaseModel):
     confidence: Literal["low", "medium", "high"] = "low"
     breakdown: dict[str, float] = {}
     warnings: list[str] = []
-    _cluster: ClusterConfig | None = None
+    _cluster: ClusterConfig | None = PrivateAttr(default=None)
 
     def what_if(self) -> WhatIfBuilder:
         """Start a what-if scenario builder from this estimate."""

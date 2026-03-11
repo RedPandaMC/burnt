@@ -72,26 +72,6 @@ def apply_photon_scenario(
         warnings=warnings,
     )
 
-    savings_pct = (
-        ((estimate.estimated_cost_usd or 0) - new_cost)
-        / (estimate.estimated_cost_usd or 1)
-        * 100
-    )
-
-    warnings = list(estimate.warnings)
-    if savings_pct < 0:
-        warnings.append(
-            f"Photon increases cost by {-savings_pct:.1f}% for {query_type}"
-        )
-
-    return CostEstimate(
-        estimated_dbu=round(new_dbu, 2),
-        estimated_cost_usd=round(new_cost, 4),
-        confidence="medium",
-        breakdown={**estimate.breakdown, "photon": True, "speedup": speedup},
-        warnings=warnings,
-    )
-
 
 def apply_cluster_resize(
     estimate: CostEstimate,
