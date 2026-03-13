@@ -19,7 +19,7 @@ superseded_by: s2-05-cli-api-redesign
 
 ## Context
 
-This task has been merged into `s6-02-cli-api-redesign` which covers:
+This task has been merged into `s2-05a-cli-api-redesign` which covers:
 - Full CLI redesign (check, init, tutorial, cache, rules)
 - Python API changes (simulate, add_scenario)
 - Config file support (.burnt.yaml, pyproject.toml)
@@ -29,7 +29,7 @@ This task has been merged into `s6-02-cli-api-redesign` which covers:
 
 ## See Instead
 
-[ tasks/s6-02-cli-api-redesign.md ](./s6-02-cli-api-redesign.md)
+[tasks/s2-05a-cli-api-redesign.md](./s2-05a-cli-api-redesign.md)
 
 ---
 
@@ -38,5 +38,5 @@ This task has been merged into `s6-02-cli-api-redesign` which covers:
 ```yaml
 status: superseded
 completed_by: planner
-superseded_by: s6-02-cli-api-redesign
+superseded_by: s2-05a-cli-api-redesign
 ```

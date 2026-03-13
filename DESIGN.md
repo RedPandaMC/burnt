@@ -52,80 +52,73 @@ They see: "Switch to `Standard_DS3_v2` Jobs Compute with 3 workers. Estimated co
 
 | Component | State | Notes |
 |-----------|-------|-------|
-| Anti-pattern detection (`lint`) | **Working** | AST-based via sqlglot, CLI + API |
-| Static cost estimation | **Working** | Linear throughput model (bugs 1-7 fixed) |
+| Anti-pattern detection (`check`) | **Working** | AST-based via sqlglot, CLI + API |
+| Static cost estimation | **Working** | Linear throughput model |
 | EstimationPipeline (4-tier) | **Scaffolded** | Tiers wired but no backend to feed them |
 | EXPLAIN COST parser | **Working** | Parses plan text into structured `ExplainPlan` |
 | Delta metadata parser | **Working** | `DESCRIBE DETAIL` → `DeltaTableInfo` |
 | Query fingerprinting | **Working** | SHA-256 normalization pipeline |
 | System table clients | **Working** | billing, queries, compute modules |
-| What-if scenarios | **Working** | Fluent WhatIfBuilder with cluster/data_source/spark_config contexts |
+| Simulation scenarios | **Working** | Fluent `Simulation` builder with cluster/data_source/spark_config contexts |
 | RuntimeBackend | **Working** | SparkBackend + RestBackend with auto_backend() detection |
 | Instance catalog | **Working** | 23 Azure VM types, DBU rates, `get_cluster_json()` |
 | `advise_current_session()` | **Working** | Analyzes current SparkSession and recommends cluster config |
-| Fluent `WhatIfBuilder` | **Working** | Context-based method chaining with data source layer |
 | Data source scenarios | **Working** | Delta format, Liquid Clustering, caching, partitioning |
 | Spark config scenarios | **Working** | Shuffle partitions, AQE, broadcast thresholds |
 | Comparison groups | **Working** | Side-by-side multi-scenario comparison |
 | Cost transparency | **Working** | Verified vs estimated multiplier flags |
 | Cluster right-sizer | **Working** | `get_cluster_json()` outputs Databricks API JSON |
-| Benchmark dataset | **Missing** | 352 tests verify types/edges, not accuracy |
+| Benchmark dataset | **Working** | 5 SQL queries, expected_costs.json, monotonicity + Hypothesis tests |
+| CLI redesign | **Pending** | `check`/`init`/`tutorial`/`cache`/`rules` — see s2-05a |
+| Simulation API | **Pending** | Rename WhatIfBuilder → Simulation, `.simulate()` entry point — see s2-05a |
 
-**Test count:** 352 passing | **Lint:** clean | **Security:** bandit clean
+**Lint:** clean | **Security:** bandit clean
 
 ### What Works Today
 
-```bash
-# Lint for anti-patterns (working)
-uv run burnt lint ./notebooks/
-
-# Static cost estimate (working, low confidence)
-uv run burnt estimate "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1"
-
-# Advise current session (working in Databricks)
-uv run burnt advise --self
-```
-
-### What Doesn't Work Yet
-
 ```python
-# The flagship workflow — WORKING
+# The flagship workflow
 import burnt
 advice = burnt.advise_current_session()
 advice.display()
 
-# Fluent what-if with data source layer — WORKING
-estimate.what_if().cluster().enable_photon().compare()
+# Simulation (what-if) scenarios — fluent builder
+estimate = burnt.estimate("SELECT customer_id, SUM(amount) FROM orders GROUP BY 1")
+result = estimate.simulate().cluster().enable_photon().compare()
 
-# Data source optimization scenarios
-estimate.what_if().data_source().to_delta_format().enable_liquid_clustering(["date"]).compare()
-
-# Spark config optimization
-estimate.what_if().spark_config().with_shuffle_partitions(200).compare()
-
-# Multiple scenarios with top-level modifications (baseline auto-added)
+# Data source optimization
 result = (
-    estimate.what_if()
-    .cluster().enable_photon()  # Applied to ALL scenarios including Baseline
+    estimate.simulate()
+    .data_source().to_delta_format().enable_liquid_clustering(["date"]).compare()
+)
+
+# Multiple scenarios
+result = (
+    estimate.simulate()
+    .cluster().enable_photon()
     .scenarios([
         ("Downsize", lambda b: b.cluster().to_instance("DS3_v2")),
-        ("Full", lambda b: (
-            b.cluster().to_instance("DS3_v2")
-            .data_source().to_delta_format()
-        )),
+        ("Full", lambda b: b.cluster().to_instance("DS3_v2").data_source().to_delta_format()),
     ])
     .compare()
 )
 result.display()
-# Result: 3 scenarios (Baseline with photon, Downsize with photon+downsize, Full with all)
-
-# Using 3-letter aliases (requires explicit import)
-from burnt.whatif.aliases import clsr, data, conf
-estimate.what_if().clsr().enable_photon().compare()  # .clsr() = .cluster()
 
 # Cluster right-sizing
 profile = burnt.WorkloadProfile(peak_memory_pct=50.0)
 print(burnt.get_cluster_json(profile))  # → Databricks API JSON
+```
+
+### What Doesn't Work Yet
+
+```bash
+# New CLI commands (pending s2-05a)
+burnt check ./notebooks/   # renamed from lint
+burnt init
+burnt tutorial
+burnt cache show
+burnt cache clear
+burnt rules
 ```
 
 ---
@@ -148,15 +141,15 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 
 ### Sprint 2: The Developer Experience
 
-> **Goal:** Bring back "cuts like butter" — fluent what-if with data source layer, right-sizing JSON, graceful degradation.
+> **Goal:** Lint rules, benchmark infrastructure, and CLI/API redesign.
 
 | Task | File | What |
 |------|------|------|
-| `s2-01b` | WhatIfBuilder | Fluent chaining with contexts: `.cluster()`, `.data_source()`, `.spark_config()` |
-| `s2-02` | Remaining bugs | Fixed 39+ bugs across codebase |
-| `s2-03` | Benchmark dataset | TPC-DS queries + known costs for accuracy validation |
+| `s2-03` | Benchmark dataset | ✅ done — 5 queries, expected costs, monotonicity + Hypothesis tests |
+| `s2-04` | AST lint rules | In progress — 7 of 12 rules, 5 remaining |
+| `s2-05a` | CLI/API redesign | `check`/`init`/`tutorial`/`cache`/`rules`; remove `estimate`/`advise`/`whatif` CLI; rename `WhatIfBuilder` → `Simulation` |
 
-**Acceptance:** `estimate.what_if().cluster().enable_photon().compare()` returns before/after. Data source scenarios (Delta, Liquid Clustering, caching) work. Comparison groups available. Cost transparency inline. `right_size()` outputs Databricks API JSON.
+**Acceptance:** `burnt check ./src/` lints for anti-patterns. `burnt init` sets up `.burnt.yaml`. `estimate.simulate().cluster().enable_photon().compare()` works. All 12 lint rules fire correctly.
 
 ### Sprint 3: Estimation Accuracy
 
@@ -271,7 +264,7 @@ src/burnt/
 │   ├── static.py           # Complexity-based offline estimation
 │   ├── hybrid.py          # Blended EXPLAIN + Delta + history
 │   ├── pipeline.py        # 4-tier orchestrator
-│   └── whatif.py          # WhatIfBuilder + cluster/data_source/spark_config builders
+│   └── simulation.py      # Simulation + cluster/data_source/spark_config builders (was: whatif.py)
 ├── advisor/                # Sprint 1
 │   ├── __init__.py
 │   ├── session.py          # advise_current_session() implementation
@@ -279,7 +272,7 @@ src/burnt/
 ├── forecast/
 │   └── prophet.py          # Time-series forecasting [requires: forecasting]
 └── cli/
-    └── main.py             # Typer CLI: estimate, lint, advise
+    └── main.py             # Typer CLI: check, init, tutorial, cache, rules
 ```
 
 ### Interaction Modes
@@ -300,11 +293,11 @@ burnt operates in 5 modes. The backend is the only variable — all features are
 |---------|:------:|:------:|:------:|:------:|:------:|
 | `estimate("SELECT ...")` | Static | Hybrid | Hybrid | Hybrid | Hybrid |
 | `estimate_file("file.sql")` | Static | Hybrid | Hybrid | Hybrid | Hybrid |
-| `lint()` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `lint()` / `lint_file()` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `advise(run_id=)` | — | ✓ | ✓ | ✓ | ✓ |
 | `advise_current_session()` | — | — | ✓ | — | ✓ |
-| `right_size(run_id=)` | — | ✓ | ✓ | ✓ | ✓ |
-| `what_if()` builder | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `right_size(profile)` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `estimate.simulate()` builder | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `.to_api_json()` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `.display()` rich output | — | — | — | — | ✓ |
 
@@ -326,8 +319,8 @@ advice.display()  # Rich HTML table in notebook UI
 # Get the Databricks API JSON for the recommended cluster
 print(advice.recommended.to_api_json())
 
-# Explore what-if scenarios from the advice
-advice.what_if().enable_photon().use_spot().compare().display()
+# Explore simulation scenarios from the advice
+advice.simulate().enable_photon().use_spot().compare().display()
 ```
 
 ### Workflow 2: Circuit Breaker
@@ -361,24 +354,20 @@ def test_no_oom_risks():
     assert len(errors) == 0
 ```
 
-### Fluent What-If Builder
+### Fluent Simulation Builder
 
-The what-if builder chains naturally with explicit context methods for cluster, data source, and spark config scenarios:
+The simulation builder chains naturally with explicit context methods for cluster, data source, and spark config scenarios:
 
 ```python
 estimate = burnt.estimate("SELECT ...")
 
 # Single scenario - method chaining
-result = estimate.what_if().cluster().enable_photon().compare()
+result = estimate.simulate().cluster().enable_photon().compare()
 result.display()  # "Photon: $12.50 → $8.30 (-34%), requires 2.7× speedup to break even"
-
-# Single scenario - function pattern
-result = burnt.compare(estimate.what_if().cluster().enable_photon())
-result.display()  # Same result as method chaining
 
 # Data source optimization (Delta, Liquid Clustering, caching)
 result = (
-    estimate.what_if()
+    estimate.simulate()
     .data_source()
     .to_delta_format()
     .enable_liquid_clustering(keys=["date", "customer_id"])
@@ -389,7 +378,7 @@ result.display()  # Shows cost transparency with verified/estimated flags
 
 # Spark config optimization
 result = (
-    estimate.what_if()
+    estimate.simulate()
     .spark_config()
     .with_shuffle_partitions(200)
     .with_aqe_enabled()
@@ -399,76 +388,55 @@ result.display()
 
 # Multiple scenarios with top-level modifications applied to all
 result = (
-    estimate.what_if()
+    estimate.simulate()
     .cluster().enable_photon()  # Applied to ALL scenarios including Baseline
     .scenarios([
-        ("Downsize", lambda b: b.cluster().to_instance("DS3_v2")),  # Photon + downsize
+        ("Downsize", lambda b: b.cluster().to_instance("DS3_v2")),
         ("Full", lambda b: (
             b.cluster().to_instance("DS3_v2")
-            .data_source().to_delta_format()
-        )),  # Photon + downsize + Delta
-    ])
-    .compare()
-)
-result.display()
-# Result: 3 scenarios (Baseline with photon, Downsize with photon+downsize, Full with all)
-
-# Multiple scenarios with no top-level mods (baseline auto-added)
-result = (
-    estimate.what_if()
-    .scenarios([
-        ("Photon Only", lambda b: b.cluster().enable_photon()),
-        ("Full", lambda b: (
-            b.cluster().enable_photon().to_instance("DS3_v2")
             .data_source().to_delta_format()
         )),
     ])
     .compare()
 )
 result.display()
-# Result: 3 scenarios (Baseline auto-added, Photon Only, Full)
+# Result: 3 scenarios (Baseline with photon, Downsize+photon, Full)
 
-# Start from raw parameters
+# Multiple scenarios with no top-level mods (baseline auto-added)
 result = (
-    burnt.what_if(dbu=10.0, sku="ALL_PURPOSE")
-    .cluster()
-    .to_serverless()
+    estimate.simulate()
+    .scenarios([
+        ("Photon Only", lambda b: b.cluster().enable_photon()),
+        ("Full", lambda b: b.cluster().enable_photon().to_instance("DS3_v2").data_source().to_delta_format()),
+    ])
     .compare()
 )
 result.display()
 
-# Using 3-letter aliases (requires explicit import)
-from burnt.whatif.aliases import clsr, data, conf
-result = estimate.what_if().clsr().enable_photon().compare()  # .clsr() = .cluster()
+# Using 3-letter aliases
+from burnt.simulate.aliases import wrap
+result = wrap(estimate.simulate()).clsr.enable_photon
 ```
 
 **Key design points:**
 
+- **Entry point**: `estimate.simulate()` → returns `Simulation` builder
 - **Explicit contexts**: `.cluster()`, `.data_source()`, `.spark_config()` for clear category separation
 - **Cost transparency**: Each modification shows `is_verified` flag with source reference
 - **Discovery**: `.options()` prints available options directly to console
-- **Data source focus**: Delta format, Liquid Clustering, caching, partitioning optimizations
-- **Multi-scenario comparison**: `.scenarios([...])` with top-level mods applied to all
-- **Baseline auto-added**: First scenario is always "Baseline" (no typing required)
-- **3-letter aliases**: `clsr`, `data`, `conf` for cluster, data_source, spark_config (explicit import)
-- **No join strategies**: Kept simple to avoid complexity in Sprint 2
+- **Multi-scenario comparison**: `.scenarios([...])` or `.add_scenario(name)` with top-level mods applied to all
+- **Baseline auto-added**: First scenario is always "Baseline"
+- **3-letter aliases**: `clsr`, `data`, `conf` via `wrap()` from `burnt.simulate.aliases`
 
 ### Cluster Right-Sizing with API JSON
 
 ```python
 import burnt
 
-# Right-size from a recent run
-rec = burnt.right_size(run_id="abc123")
-
-# Three tiers: economy / balanced / performance
-print(rec.economy.summary())
-print(rec.balanced.to_api_json())  # ← Paste directly into Databricks Job definition
-print(rec.performance.summary())
-
-# Or right-size from an estimate
-estimate = burnt.estimate("SELECT ...")
-rec = estimate.right_size()
+# Right-size from a workload profile
+profile = burnt.WorkloadProfile(peak_memory_pct=14.0, peak_cpu_pct=30.0)
+cluster = burnt.right_size(profile)
+print(cluster.to_api_json())  # ← Paste directly into Databricks Job definition
 ```
 
 **Databricks API JSON output:**
@@ -494,44 +462,32 @@ rec = estimate.right_size()
 
 ## CLI
 
+The CLI is for **static analysis and tooling only**. Cost estimation, simulation, and advising are Python API features.
+
 ```bash
-# Lint (working today)
-burnt lint ./notebooks/
+# Check for anti-patterns (renamed from lint)
+burnt check ./notebooks/
+burnt check ./src/jobs/daily_agg.py --fail-on warning
 
-# Estimate (working today, static only)
-burnt estimate "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1"
+# Project setup
+burnt init                 # creates .burnt.yaml, updates .gitignore
+burnt tutorial             # generates examples/ notebooks
 
-# Advise (working today)
-burnt advise --run-id 1234567890
-burnt advise --self  # current notebook/job
+# Cache management
+burnt cache show
+burnt cache clear
 
-# Right-size (working today)
-burnt right-size --run-id 1234567890 --output json
+# Lint rules management
+burnt rules                # interactive TUI to enable/disable rules
 
-# What-if (working today)
-burnt what-if "SELECT ..." --cluster --photon --instance Standard_DS3_v2 --workers 3
-
-# Using 3-letter aliases (default import, no explicit import needed)
-burnt what-if "SELECT ..." --clsr --photon --instance Standard_DS3_v2  # --clsr = --cluster
-burnt what-if "SELECT ..." --data --delta --liquid-clustering "date,customer_id"  # --data = --data-source
-burnt what-if "SELECT ..." --conf --shuffle-partitions 200 --aqe-enabled  # --conf = --spark-config
-
-# Multiple scenarios (baseline auto-added as Scenario 1)
-burnt what-if "SELECT ..." \
-  --scenario "Photon Only" --clsr --photon \
-  --scenario "Full Opt" --clsr --photon --instance DS3_v2 --data --delta
-
-# Multiple scenarios with auto-generated names (Scenario 1, 2, 3)
-burnt what-if "SELECT ..." \
-  --scenario --clsr --photon \
-  --scenario --clsr --instance DS3_v2 \
-  --scenario --clsr --photon --instance DS3_v2 --data --delta
-
-# Top-level modifications apply to all scenarios (including baseline)
-burnt what-if "SELECT ..." --clsr --photon \
-  --scenario --instance DS3_v2 \
-  --scenario --data --delta
+# Version
+burnt --version
 ```
+
+**Commands removed from CLI** (use Python API instead):
+- `burnt estimate` → `burnt.estimate("SELECT ...")`
+- `burnt advise` → `burnt.advise_current_session()` / `burnt.advise(run_id=...)`
+- `burnt whatif` → `estimate.simulate().cluster().enable_photon().compare()`
 
 ---
 
@@ -610,11 +566,11 @@ Data source optimizations can significantly impact DBU consumption through impro
 | **Column Pruning** | 0.5-0.7x (estimated) | Reduced I/O from reading fewer columns |
 | **File Skipping** | 0.5-0.8x (estimated) | Delta stats-based file skipping |
 
-**Key insight:** Data source optimizations are **workload-dependent**. The what-if builder applies estimated multipliers with clear disclaimers about when they apply.
+**Key insight:** Data source optimizations are **workload-dependent**. The simulation builder applies estimated multipliers with clear disclaimers about when they apply.
 
 ### Cost Transparency
 
-The WhatIfBuilder displays cost transparency inline, showing:
+The `Simulation` builder displays cost transparency inline, showing:
 
 - **Verified multipliers**: From official Databricks benchmarks
 - **Estimated multipliers**: From research and industry data
@@ -745,7 +701,7 @@ No existing tool provides pre-execution cost estimation from code + what-if mode
 
 ## Cost Optimization Scenarios
 
-Based on comprehensive research into Databricks and Spark optimization patterns, the following scenarios are available in the WhatIfBuilder:
+Based on comprehensive research into Databricks and Spark optimization patterns, the following scenarios are available in the `Simulation` builder:
 
 ### Join Strategy Optimizations
 
@@ -806,7 +762,7 @@ AQE is enabled by default (DBR 10.4+) and provides dynamic optimizations:
 
 ## Fluent Builder Design
 
-The WhatIfBuilder follows established Pythonic patterns from popular libraries.
+The `Simulation` builder follows established Pythonic patterns from popular libraries.
 
 ### Why Method Chaining?
 
@@ -836,16 +792,16 @@ burnt uses **method-based chaining** rather than property-based for:
 ### Design Recommendations Applied
 
 ```python
-class WhatIfBuilder:
-    def enable_photon(self, query_type: str = "complex_join") -> "WhatIfBuilder":
+class Simulation:
+    def enable_photon(self, query_type: str = "complex_join") -> "Simulation":
         """Enable Photon optimization for the query."""
         ...
 
-    def downsize_to(self, instance_type: str, num_workers: int | None = None) -> "WhatIfBuilder":
+    def downsize_to(self, instance_type: str, num_workers: int | None = None) -> "Simulation":
         """Downsize cluster to specified instance type."""
         ...
 
-    def use_spot(self, fallback: bool = True) -> "WhatIfBuilder":
+    def use_spot(self, fallback: bool = True) -> "Simulation":
         """Use spot instances with on-demand fallback."""
         ...
 ```
@@ -907,4 +863,4 @@ uv run interrogate src/ -v             # Docstrings
 9. **Explicit categorization** — cluster, data source, and spark config scenarios are clearly separated
 10. **Cost transparency** — verified vs estimated multipliers shown inline
 
-*Document version: 2.4 | Added research findings and cost optimization scenarios | March 2026*
+*Document version: 2.5 | Tasks lead: CLI redesign (check/init/tutorial/cache/rules), API rename (WhatIfBuilder→Simulation, what_if()→simulate()) | March 2026*

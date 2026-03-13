@@ -6,7 +6,7 @@
 
 ```yaml
 id: s2-04-ast-lint-rules
-status: todo
+status: in-progress
 phase: 2
 priority: high
 agent: ~
@@ -20,52 +20,122 @@ created_by: planner
 
 ### Goal
 
-Implement comprehensive AST-based lint rules for PySpark, SQL, and Spark Declarative Pipelines (SDP) based on the research document at `tasks/research/lint_research.md`. These rules catch the most frequent performance killers like UDFs, collect() calls, and inefficient data reading patterns—without requiring a live Spark session.
+Implement comprehensive AST-based lint rules for PySpark, SQL, and Spark Declarative Pipelines (SDP). These rules catch frequent performance killers without requiring a live Spark session.
 
 ### Files to read
 
 ```
 # Required
-src/burnt/parsers/antipatterns.py    # Current implementation
-src/burnt/parsers/pyspark.py         # Python AST parsing
-src/burnt/parsers/sql.py             # SQL parsing
+src/burnt/parsers/antipatterns.py    # Current implementation (string-based PySpark, sqlglot SQL)
+src/burnt/parsers/pyspark.py         # Python AST parsing (PySparkVisitor — use this!)
+src/burnt/parsers/sql.py             # SQL parsing (sqlglot)
 tests/unit/parsers/test_antipatterns.py
 
 # Reference
-tasks/research/lint_research.md      # Research document
-DESIGN.md                            # Architecture context
+tasks/research/lint_research.md
+DESIGN.md
 ```
 
 ### Background
 
-The research document identifies three levels of lint rules. This task focuses on **Level 1: Syntax and Structure Rules (AST-Based)** which can be verified by parsing Python or SQL code into an Abstract Syntax Tree without requiring a live Spark session.
+**Current state (as of sprint 2):**
 
-**Rules to implement:**
+`_detect_pyspark_antipatterns()` in `antipatterns.py` uses **string matching** (e.g. `".collect()" in source`), not the `PySparkVisitor` AST from `parsers/pyspark.py`. It needs to be rewritten to use the AST visitor for correctness and to enable the remaining rules.
 
-| Rule | Severity | Description |
-|------|----------|-------------|
-| `select_star` | ERROR | Flag SELECT * in SQL or .select("*") in PySpark |
-| `python_udf` | ERROR | Warn on use of udf() - check for equivalent native functions |
-| `pandas_udf` | WARNING | Use of pandas_udf instead of native functions preferred |
-| `collect_without_limit` | ERROR | collect() without limit() can OOM the driver |
-| `toPandas` | ERROR | toPandas() brings all data to driver |
-| `count_without_filter` | WARNING | count() triggers full job - use estimated row count |
-| `withColumn_in_loop` | WARNING | .withColumn() in loop creates deep plan - use withColumns() |
-| `repartition_one` | WARNING | repartition(1) causes single partition bottleneck |
-| `jdbc_incomplete_partition` | ERROR | JDBC read missing partitionColumn/numPartitions/lowerBound/upperBound |
-| `sdp_prohibited_ops` | ERROR | collect(), count(), toPandas() in @dp.table/@dp.materialized_view |
-| `cross_join` | WARNING | CROSS JOIN without explicit ON - check for cartesian product |
+`_detect_sql_antipatterns()` correctly uses sqlglot AST via `detect_operations()`.
+
+---
+
+## Rules Status
+
+| Rule | Severity | Status | Notes |
+|------|----------|--------|-------|
+| `cross_join` | WARNING | ✅ done | SQL, sqlglot AST |
+| `select_star` | ERROR | ⚠️ done (severity wrong) | Implemented as `select_star_no_limit` at INFO, spec says ERROR |
+| `order_by_no_limit` | WARNING | ✅ done | Not in original spec, good addition |
+| `collect_without_limit` | ERROR | ⚠️ done (string-based) | Works but uses `in source` not AST |
+| `python_udf` | ERROR | ⚠️ done (severity wrong) | Implemented at WARNING, spec says ERROR; string-based (`@udf in source`) |
+| `toPandas` | ERROR | ⚠️ done (severity wrong) | Implemented at WARNING, spec says ERROR; string-based |
+| `repartition_one` | WARNING | ⚠️ done (string-based) | Correct severity; string-based |
+| `pandas_udf` | WARNING | ❌ not done | Warn when `@pandas_udf` used instead of native Spark functions |
+| `count_without_filter` | WARNING | ❌ not done | `.count()` with no preceding `.filter()` or `.where()` |
+| `withColumn_in_loop` | WARNING | ❌ not done | `.withColumn()` inside a for/while loop → use `.withColumns()` |
+| `jdbc_incomplete_partition` | ERROR | ❌ not done | JDBC read missing partitionColumn/numPartitions/lowerBound/upperBound |
+| `sdp_prohibited_ops` | ERROR | ❌ not done | `collect()`, `count()`, `toPandas()` inside `@dp.table` / `@dp.materialized_view` |
+
+---
+
+## Remaining Work
+
+### 1. Fix severity mismatches (small but important)
+
+- `select_star` → change from INFO to ERROR and rename pattern name from `select_star_no_limit` to `select_star` (check test impact)
+- `python_udf` → change from WARNING to ERROR
+- `toPandas` → change from WARNING to ERROR
+
+### 2. Migrate PySpark detection to use `PySparkVisitor`
+
+Rewrite `_detect_pyspark_antipatterns()` to parse with `ast.parse()` via `PySparkVisitor` instead of string matching. The `PySparkVisitor` in `parsers/pyspark.py` already tracks method calls and decorators — extend it to produce `AntiPattern` objects.
+
+This unblocks `count_without_filter` and `withColumn_in_loop` (which require understanding code structure, not just substring presence).
+
+### 3. Add missing rules
+
+**`pandas_udf` (WARNING):**
+```python
+# Detects: @pandas_udf decorated functions — suggest native Spark alternatives
+# False positive guard: if used alongside UDF replacement, don't flag both
+```
+
+**`count_without_filter` (WARNING):**
+```python
+# Detects: .count() call without a preceding .filter() or .where() in the chain
+# e.g. df.count()  ← flag
+# e.g. df.filter(...).count()  ← ok
+```
+
+**`withColumn_in_loop` (WARNING):**
+```python
+# Detects: .withColumn() call inside a for or while loop body
+# Requires AST loop detection: visit For/While nodes, check for withColumn in body
+```
+
+**`jdbc_incomplete_partition` (ERROR):**
+```python
+# Detects: spark.read.format("jdbc").load() or spark.read.jdbc(...)
+# without ALL of: partitionColumn, numPartitions, lowerBound, upperBound
+# String scan for format("jdbc") + option() calls, check all 4 keys present
+```
+
+**`sdp_prohibited_ops` (ERROR):**
+```python
+# Detects: collect(), count(), toPandas() inside functions decorated with
+# @dp.table or @dp.materialized_view (Delta Live Tables / DLT pipeline functions)
+# Requires: detect @dp.table/@dp.materialized_view decorators, then check body
+```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] All 11 lint rules implemented with proper AST-based detection
-- [ ] Rules work for both SQL and PySpark code
+- [x] `cross_join` detected (SQL)
+- [x] `select_star_no_limit` detected (SQL)  ← rename to `select_star` + change severity to ERROR
+- [x] `order_by_no_limit` detected (SQL)
+- [x] `collect_without_limit` detected (PySpark)  ← migrate to AST
+- [x] `python_udf` detected (PySpark)  ← change severity to ERROR + migrate to AST
+- [x] `toPandas` detected (PySpark)  ← change severity to ERROR + migrate to AST
+- [x] `repartition_one` detected (PySpark)  ← migrate to AST
+- [ ] `pandas_udf` implemented (WARNING)
+- [ ] `count_without_filter` implemented (WARNING)
+- [ ] `withColumn_in_loop` implemented (WARNING)
+- [ ] `jdbc_incomplete_partition` implemented (ERROR)
+- [ ] `sdp_prohibited_ops` implemented (ERROR)
+- [ ] All PySpark rules use `PySparkVisitor` AST, not string matching
+- [ ] Severity values match the table above
 - [ ] No false positives on valid code patterns
 - [ ] All existing tests pass
-- [ ] New unit tests added for each rule
-- [ ] Lint passes on the implementation itself
+- [ ] New unit tests for each new rule
+- [ ] Lint passes: `uv run ruff check src/ tests/`
 
 ---
 
@@ -74,13 +144,13 @@ The research document identifies three levels of lint rules. This task focuses o
 ### Commands
 
 ```bash
-uv run pytest -m unit -v
-uv run ruff check src/ tests/
+uv run pytest tests/unit/parsers/test_antipatterns.py -v
+uv run ruff check src/burnt/parsers/ tests/unit/parsers/
 ```
 
 ### Integration Check
 
-- [ ] Run `burnt lint` on sample PySpark/SQL files and confirm rules are detected
+- [ ] Run `burnt lint` on sample PySpark/SQL files and confirm all rules fire correctly
 
 ---
 
@@ -89,9 +159,9 @@ uv run ruff check src/ tests/
 ### Result
 
 ```yaml
-status: todo
+status: in-progress
 ```
 
 ### Blocked reason
 
-[If blocked, explain exactly what is missing.]
+Not blocked. 7 of 12 rules exist but 5 are string-based and 3 have wrong severity. Pick up from "Remaining Work" above.

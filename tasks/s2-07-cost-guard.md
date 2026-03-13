@@ -1,0 +1,211 @@
+# Task: Cost Guard — CostBudgetExceeded Exception and raise_if_exceeds()
+
+---
+
+## Metadata
+
+```yaml
+id: s2-07-cost-guard
+status: todo
+phase: 2
+priority: high
+agent: ~
+blocked_by: [s2-05a-cli-api-redesign]
+created_by: planner
+```
+
+---
+
+## Context
+
+### Goal
+
+Add a production-safety guard to `CostEstimate` that lets users assert cost is within
+budget — either as a CI check or as a chainable guard in notebooks. The pattern mirrors
+`requests.Response.raise_for_status()`: returns `self` on success, raises on failure.
+
+### Files to read
+
+```
+# Required
+src/burnt/core/exceptions.py
+src/burnt/core/models.py      ← CostEstimate lives here
+src/burnt/__init__.py
+
+# Reference
+tasks/s2-05a-cli-api-redesign.md
+```
+
+### Background
+
+The goal is to make cost safety feel idiomatic Python, not a separate assertion step.
+
+**Patterns this enables:**
+
+```python
+# Chainable guard (most common)
+result = (
+    burnt.estimate(sql)
+    .raise_if_exceeds(50.0)          # raises if cost > $50
+    .simulate()
+    .cluster().enable_photon()
+    .compare()
+)
+
+# Inspectable exception
+try:
+    burnt.estimate(sql).raise_if_exceeds(50.0, label="daily_agg")
+except burnt.CostBudgetExceeded as e:
+    print(f"Cost: ${e.estimate.estimated_cost_usd:.2f}")
+    print(f"Confidence: {e.estimate.confidence}")
+    print(f"Breakdown: {e.estimate.breakdown}")
+    notify_oncall()
+
+# In pytest — use plain assert (more idiomatic)
+estimate = burnt.estimate(sql)
+assert estimate.estimated_cost_usd < 50.0
+
+# With label for multi-query pipelines
+for query, label in queries:
+    burnt.estimate(query).raise_if_exceeds(20.0, label=label)
+```
+
+**Edge case — no pricing data:** If `estimated_cost_usd` is `None` (pricing not
+available), `raise_if_exceeds()` should issue a `warnings.warn()` but NOT raise.
+This prevents false failures when running in offline/no-credentials mode.
+
+---
+
+## Part 1: `CostBudgetExceeded` exception
+
+Add to `src/burnt/core/exceptions.py`:
+
+```python
+class CostBudgetExceeded(BurntError):
+    """Raised when estimated cost exceeds the user-specified budget."""
+
+    def __init__(self, estimate: "CostEstimate", budget_usd: float, label: str = ""):
+        self.estimate = estimate      # full CostEstimate for post-catch inspection
+        self.budget_usd = budget_usd
+        self.label = label
+        msg = (
+            f"Estimated cost ${estimate.estimated_cost_usd:.2f} exceeds "
+            f"budget ${budget_usd:.2f}"
+        )
+        if label:
+            msg += f" ({label})"
+        super().__init__(msg)
+```
+
+Note: `CostEstimate` is imported inside `__init__` or via `TYPE_CHECKING` to avoid
+circular imports.
+
+---
+
+## Part 2: `CostEstimate.raise_if_exceeds()`
+
+Add method to `CostEstimate` in `src/burnt/core/models.py`:
+
+```python
+def raise_if_exceeds(self, budget_usd: float, label: str = "") -> "CostEstimate":
+    """Raise CostBudgetExceeded if estimated cost exceeds budget_usd.
+
+    Returns self if under budget (chainable).
+    Issues a warning (does not raise) if estimated_cost_usd is None.
+    """
+    import warnings
+    from burnt.core.exceptions import CostBudgetExceeded
+
+    if self.estimated_cost_usd is None:
+        warnings.warn(
+            f"Cannot check budget: estimated_cost_usd is None"
+            + (f" for {label!r}" if label else ""),
+            stacklevel=2,
+        )
+        return self
+
+    if self.estimated_cost_usd > budget_usd:
+        raise CostBudgetExceeded(self, budget_usd, label)
+
+    return self
+```
+
+---
+
+## Part 3: Export `CostBudgetExceeded`
+
+In `src/burnt/__init__.py`:
+- Import `CostBudgetExceeded` from `burnt.core.exceptions`
+- Add to `__all__`
+
+Users should be able to catch it as `burnt.CostBudgetExceeded`.
+
+---
+
+## Acceptance Criteria
+
+- [ ] `CostBudgetExceeded` defined in `core/exceptions.py` with `estimate`, `budget_usd`, `label` attributes
+- [ ] `CostBudgetExceeded` exported from `burnt` namespace
+- [ ] `CostEstimate.raise_if_exceeds(50.0)` raises `CostBudgetExceeded` when cost > 50.0
+- [ ] `CostEstimate.raise_if_exceeds(50.0)` returns `self` when cost ≤ 50.0
+- [ ] Chaining works: `.raise_if_exceeds(50.0).simulate()` proceeds when under budget
+- [ ] `label` appears in exception message when provided
+- [ ] `raise_if_exceeds()` on an estimate with `estimated_cost_usd=None` warns and returns self (does not raise)
+- [ ] `e.estimate` on the caught exception gives access to full `CostEstimate`
+- [ ] Unit tests cover: over-budget raises, under-budget returns self, None cost warns, label in message
+
+---
+
+## Verification
+
+```bash
+uv run pytest -m unit -v
+uv run ruff check src/ tests/
+
+# Smoke test
+python -c "
+import burnt, warnings
+
+# Under budget — returns self
+e = burnt.estimate('SELECT 1')
+e2 = e.raise_if_exceeds(9999.0)
+assert e2 is e
+
+# Over budget — raises
+try:
+    e.raise_if_exceeds(0.001)
+    assert False, 'Should have raised'
+except burnt.CostBudgetExceeded as ex:
+    print('Caught:', ex)
+    print('estimate:', ex.estimate)
+    print('budget_usd:', ex.budget_usd)
+
+# Label in message
+try:
+    e.raise_if_exceeds(0.001, label='test_query')
+except burnt.CostBudgetExceeded as ex:
+    assert 'test_query' in str(ex)
+    print('label OK')
+
+print('All cost guard checks passed')
+"
+```
+
+### Integration Check
+
+- [ ] `burnt.CostBudgetExceeded` is importable
+- [ ] `CostEstimate.raise_if_exceeds(budget).simulate().cluster().enable_photon().compare()` works end-to-end when under budget
+
+---
+
+## Handoff
+
+### Result
+
+```yaml
+status: todo
+```
+
+### Blocked reason
+
+Blocked on s2-05a (requires `CostEstimate` model to be stable with `simulate()` method).

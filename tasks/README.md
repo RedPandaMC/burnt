@@ -7,19 +7,21 @@ This directory is the **handoff protocol** between Planner agents and Executor a
 ## Sprint Roadmap
 
 ```
-Sprint 1: The Core Loop ─────────── Get advise_current_session() working
-Sprint 2: The Developer Experience ─ Fluent what-if, right-sizing JSON, bug fixes
+Sprint 1: The Core Loop ─────────── Get advise_current_session() working  [complete]
+Sprint 2: The Developer Experience ─ Lint rules, benchmarks, CLI/API redesign  [in-progress]
 Sprint 3: Estimation Accuracy ────── Wire all 4 tiers, total cost (DBU + VM)
 Sprint 4: Production Hardening ───── Error handling, caching, observability
 Sprint 5: ML & Forecasting ───────── Feature extraction, classification, Prophet
 ```
 
-### Sprint 1: The Core Loop
+### Sprint 2: The Developer Experience
 
 | Task | Status | What | Blocked By |
 |------|--------|------|------------|
-| `s2-02-remaining-bugs` | done | Fix 39+ bugs across codebase | — |
-| `s2-03-benchmark-dataset` | todo | TPC-DS queries + known costs for validation | — |
+| `s2-03-benchmark-dataset` | done | 5 reference queries, monotonicity + Hypothesis tests, integration fixtures | — |
+| `s2-04-ast-lint-rules` | in-progress | 7 of 12 rules done; 5 missing + severity fixes + AST migration needed | — |
+| `s2-05a-cli-api-redesign` | todo | CLI check/init/tutorial/cache/rules; remove estimate/advise/whatif; rename WhatIf→Simulation | — |
+| `s2-05b-simulate-api` | superseded | Merged into s2-05a | — |
 
 ### Sprint 3: Estimation Accuracy
 
@@ -50,29 +52,20 @@ Sprint 5: ML & Forecasting ───────── Feature extraction, class
 ## Dependency Graph
 
 ```
-s1-01 (RuntimeBackend) ──┬──→ s1-03 (Advisor) ──→ [Sprint 1 Complete]
-s1-02 (Instance Catalog) ┘         │
-       │                           │
-       └──→ s2-01 (WhatIfBuilder)  │
-                                   │
-s2-02 (Bug fixes) ─────────────────┤
-s2-03 (Benchmarks) ────────────────┤──→ [Sprint 2 Complete]
-                                   │
-s1-01 ──→ s3-01 (Delta) ──→ s3-02 (Fingerprint) ──→ s3-03 (Pipeline) ──→ [Sprint 3]
-                                                           │
-                                              s4-01 (Errors) ──→ s4-02 (Cache)
-                                                           │──→ s4-03 (Observability)
-                                                           │
-                                              s5-01 (Features) ──→ s5-02 (ML)
-                                                              ──→ s5-03 (Prophet)
+[Sprint 1 Complete]
+       │
+s2-03 (Benchmarks) ──done──┐
+s2-04 (Lint Rules) ─partial─┤──→ [Sprint 2 Complete]
+s2-05a (CLI/API) ───todo────┘
+       │
+s3-01 (Delta) ──→ s3-02 (Fingerprint) ──→ s3-03 (Pipeline) ──→ [Sprint 3]
+                                                 │
+                                    s4-01 (Errors) ──→ s4-02 (Cache)
+                                                 │──→ s4-03 (Observability)
+                                                 │
+                                    s5-01 (Features) ──→ s5-02 (ML)
+                                                    ──→ s5-03 (Prophet)
 ```
-
-**Critical path to flagship feature:**
-```
-s1-01 + s1-02 (parallel) → s1-03 = advise_current_session() working
-```
-
-Only 2 tasks (parallel) before the core feature is unblocked. Compare to old plan: 5 serial tasks.
 
 ---
 
