@@ -9,7 +9,7 @@
 
 Project job and query costs _before_ you run them.
 
-[![Tests](https://img.shields.io/badge/tests-352%20passing-brightgreen)](https://github.com/anomalyco/burnt/actions)
+[![Tests](https://img.shields.io/badge/tests-406%20passing-brightgreen)](https://github.com/anomalyco/burnt/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-purple)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -145,7 +145,7 @@ backend = burnt.runtime.auto_backend()
 | Sprint | Status | Focus |
 |--------|--------|-------|
 | 1 | ✅ Done | RuntimeBackend, instance catalog, `advise_current_session()` |
-| 2 | 🔄 In progress | CLI redesign, display mixin, `burnt doctor`, offline mode fix, `ClusterProfile` |
+| 2 | 🔄 In progress | Display mixin ✓, cost guard (partial) ✓; CLI redesign, `burnt doctor`, offline mode fix, `ClusterProfile` pending |
 | 3 | 📋 Planned | Estimation accuracy — partition pruning, spill risk, photon eligibility, `EstimationTrace` |
 | 4 | 📋 Planned | Production hardening — error handling, caching, cost anomaly detection, tag attribution |
 | 4.5 | 📋 Planned | ML research spike — model selection, forecast target, training data requirements |
@@ -163,6 +163,8 @@ backend = burnt.runtime.auto_backend()
 | What-if simulation builder | `estimate.simulate().cluster().enable_photon().compare()` |
 | Cluster right-sizing | `burnt.right_size(profile)` |
 | Databricks API JSON output | `cluster_config.to_api_json()` |
+| Cost guard (circuit breaker) | `estimate.raise_if_exceeds(50.0)` |
+| Display mixin / markdown export | `estimate.to_markdown()`, `result.to_markdown()` |
 | Dual-mode runtime | Auto-detects SparkBackend / RestBackend / offline |
 | 4-tier estimation pipeline | Static → Delta → EXPLAIN → Historical fingerprints |
 | System table clients | billing, query history, compute, attribution |
@@ -178,7 +180,7 @@ For architecture details, research findings, and full sprint specs, see [`DESIGN
 We use `uv` for fast package management.
 
 ```bash
-uv run pytest -m unit -v          # 294 unit tests
+uv run pytest -m unit -v          # 388 unit tests
 uv run ruff check src/ tests/     # lint
 uv run ruff format src/ tests/    # format
 uv run bandit -c pyproject.toml -r src/  # security audit

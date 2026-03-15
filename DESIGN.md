@@ -74,7 +74,8 @@ They see: "Switch to `Standard_DS3_v2` Jobs Compute with 3 workers. Estimated co
 | `burnt doctor` | **Pending** | Permission audit for 7 system tables — see s2-08 |
 | `ClusterConfig.from_databricks_json()` | **Pending** | Jobs API JSON → ClusterConfig — see s2-11 |
 | `ClusterProfile` | **Pending** | Extended cluster context (spark_version, tags, pool) — see s2-12 |
-| Display mixin + `.to_markdown()` | **Pending** | Shared rendering for all result types — see s2-06 |
+| Display mixin + `.to_markdown()` | **Working** | `_DisplayMixin` base class; `.display()`, `.to_markdown()`, `.comparison_table()` — see s2-06 |
+| Cost guard — `raise_if_exceeds()` | **Partial** | `raise_if_exceeds()` implemented on `CostEstimate`; `warn_if_exceeds()` pending — see s2-07 |
 | Partition pruning | **Pending** | WHERE clause × partition selectivity — see s3-04 |
 | Spill risk scoring | **Pending** | Cluster memory vs shuffle bytes — see s3-05 |
 | Photon eligibility scoring | **Pending** | AST-based 0–100 score — see s3-06 |
@@ -122,16 +123,16 @@ profile = burnt.WorkloadProfile(peak_memory_pct=50.0)
 print(burnt.get_cluster_json(profile))  # → Databricks API JSON
 ```
 
-### What Doesn't Work Yet
+### Still Pending
 
 ```bash
-# New CLI commands (pending s2-05a)
-burnt check ./notebooks/   # renamed from lint
-burnt init
-burnt tutorial
-burnt cache show
-burnt cache clear
-burnt rules
+# Environment health check — s2-08 (stub only)
+burnt doctor
+
+# Not yet implemented
+burnt.ClusterConfig.from_databricks_json(...)  # s2-11
+burnt.cost_by_tag("team", days=30)             # s4-06
+burnt.detect_idle_clusters()                    # s4-07
 ```
 
 ---
@@ -161,8 +162,8 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 | `s2-03` | ✅ Benchmark dataset — 5 queries, expected costs, monotonicity + Hypothesis tests |
 | `s2-04` | AST lint rules — 7 of 12 rules done, 5 remaining |
 | `s2-05a` | CLI/API redesign — `check`/`init`/`tutorial`/`cache`/`rules`; rename `WhatIfBuilder` → `Simulation` |
-| `s2-06` | Display mixin — `_DisplayMixin` base class, `.to_markdown()`, progress feedback |
-| `s2-07` | Cost guard — `raise_if_exceeds()` / `warn_if_exceeds()` guard utilities |
+| ✅ `s2-06` | Display mixin — `_DisplayMixin` base class, `.to_markdown()`, progress feedback |
+| 🔄 `s2-07` | Cost guard — `raise_if_exceeds()` implemented; `warn_if_exceeds()` pending |
 | `s2-08` | `burnt doctor` — environment health check, system table permission audit |
 | `s2-09` | `--output json` flag on `check` command |
 | `s2-10` | Offline mode fix — suppress dollar amounts when no backend; show complexity only |
