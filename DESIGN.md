@@ -69,8 +69,21 @@ They see: "Switch to `Standard_DS3_v2` Jobs Compute with 3 workers. Estimated co
 | Cost transparency | **Working** | Verified vs estimated multiplier flags |
 | Cluster right-sizer | **Working** | `get_cluster_json()` outputs Databricks API JSON |
 | Benchmark dataset | **Working** | 5 SQL queries, expected_costs.json, monotonicity + Hypothesis tests |
-| CLI redesign | **Pending** | `check`/`init`/`tutorial`/`cache`/`rules` — see s2-05a |
+| CLI redesign | **Pending** | `check`/`init`/`tutorial`/`cache`/`rules`/`doctor`/`generate-policy` — see s2-05a |
 | Simulation API | **Pending** | Rename WhatIfBuilder → Simulation, `.simulate()` entry point — see s2-05a |
+| `burnt doctor` | **Pending** | Permission audit for 7 system tables — see s2-08 |
+| `ClusterConfig.from_databricks_json()` | **Pending** | Jobs API JSON → ClusterConfig — see s2-11 |
+| `ClusterProfile` | **Pending** | Extended cluster context (spark_version, tags, pool) — see s2-12 |
+| Display mixin + `.to_markdown()` | **Pending** | Shared rendering for all result types — see s2-06 |
+| Partition pruning | **Pending** | WHERE clause × partition selectivity — see s3-04 |
+| Spill risk scoring | **Pending** | Cluster memory vs shuffle bytes — see s3-05 |
+| Photon eligibility scoring | **Pending** | AST-based 0–100 score — see s3-06 |
+| EstimationTrace | **Pending** | Tier-by-tier transparency on CostEstimate — see s3-09 |
+| Cost anomaly detection | **Pending** | MAD-based billing anomalies — see s4-05 |
+| Tag cost attribution | **Pending** | `cost_by_tag()` — see s4-06 |
+| Idle cluster alerting | **Pending** | CPU threshold + auto-termination advice — see s4-07 |
+| ML architecture (3-layer) | **Pending** | Transfer function + regressor + calibration — see s5-00 to s5-04 |
+| Sprint 6 analytics features | **Pending** | 10 new capabilities — see s6-01 to s6-10 |
 
 **Lint:** clean | **Security:** bandit clean
 
@@ -141,51 +154,102 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 
 ### Sprint 2: The Developer Experience
 
-> **Goal:** Lint rules, benchmark infrastructure, and CLI/API redesign.
+> **Goal:** Lint rules, benchmark infrastructure, CLI/API redesign, and UX foundations.
 
-| Task | File | What |
-|------|------|------|
-| `s2-03` | Benchmark dataset | ✅ done — 5 queries, expected costs, monotonicity + Hypothesis tests |
-| `s2-04` | AST lint rules | In progress — 7 of 12 rules, 5 remaining |
-| `s2-05a` | CLI/API redesign | `check`/`init`/`tutorial`/`cache`/`rules`; remove `estimate`/`advise`/`whatif` CLI; rename `WhatIfBuilder` → `Simulation` |
+| Task | What |
+|------|------|
+| `s2-03` | ✅ Benchmark dataset — 5 queries, expected costs, monotonicity + Hypothesis tests |
+| `s2-04` | AST lint rules — 7 of 12 rules done, 5 remaining |
+| `s2-05a` | CLI/API redesign — `check`/`init`/`tutorial`/`cache`/`rules`; rename `WhatIfBuilder` → `Simulation` |
+| `s2-06` | Display mixin — `_DisplayMixin` base class, `.to_markdown()`, progress feedback |
+| `s2-07` | Cost guard — `raise_if_exceeds()` / `warn_if_exceeds()` guard utilities |
+| `s2-08` | `burnt doctor` — environment health check, system table permission audit |
+| `s2-09` | `--output json` flag on `check` command |
+| `s2-10` | Offline mode fix — suppress dollar amounts when no backend; show complexity only |
+| `s2-11` | `ClusterConfig.from_databricks_json()` factory method |
+| `s2-12` | `ClusterProfile` — extended cluster config with `spark_version`, `custom_spark_conf`, tags |
+| `s2-13` | Advisory → Simulation integration — `AdvisoryReport.simulate()` passes real metrics |
 
-**Acceptance:** `burnt check ./src/` lints for anti-patterns. `burnt init` sets up `.burnt.yaml`. `estimate.simulate().cluster().enable_photon().compare()` works. All 12 lint rules fire correctly.
+**Acceptance:** `burnt check ./src/` lints for anti-patterns. Offline mode shows complexity + warnings without dollar amounts. `ClusterConfig.from_databricks_json()` round-trips correctly.
 
 ### Sprint 3: Estimation Accuracy
 
-> **Goal:** Wire all 4 estimation tiers into the pipeline with real data flow.
+> **Goal:** Wire all 4 estimation tiers; add accuracy-critical estimators.
 
-| Task | File | What |
-|------|------|------|
-| `s3-01` | Delta scan integration | `DESCRIBE DETAIL` feeds scan size into estimator |
-| `s3-02` | Fingerprint lookup | Historical query matching feeds p50/p95 into estimator |
-| `s3-03` | Pipeline hardening | Total cost (DBU + VM), confidence calibration, signal logging |
+| Task | What |
+|------|------|
+| `s3-01` | Delta scan integration — `DESCRIBE DETAIL` feeds scan size into estimator |
+| `s3-02` | Fingerprint lookup + fuzzy match — AST edit distance ≤ 3; lower confidence weight |
+| `s3-03` | Pipeline hardening — total cost (DBU + VM), confidence calibration, signal logging |
+| `s3-04` | Partition pruning estimation — WHERE clause selectivity × scan bytes |
+| `s3-05` | Spill risk scoring — `spill_ratio = shuffle_bytes / executor_memory`; pool-aware warnings |
+| `s3-06` | Photon eligibility scoring — AST-based 0–100 score calibrates `enable_photon()` multiplier |
+| `s3-07` | OPTIMIZE/VACUUM cost estimation — file rewrite cost + storage savings |
+| `s3-08` | Notebook cell-level cost breakdown — hotspot detection, PySpark action attribution |
+| `s3-09` | `EstimationTrace` — tier-by-tier transparency attached to `CostEstimate` |
 
-**Acceptance:** Connected-mode estimates use Delta metadata + EXPLAIN + history. Estimates include VM costs for classic compute. Accuracy within 10× on benchmark dataset.
+**Acceptance:** Connected-mode estimates use Delta metadata + EXPLAIN + history. Partition-filtered queries show accurate scan fractions. Spill risk appears as a warning on undersized clusters.
 
 ### Sprint 4: Production Hardening
 
 > **Goal:** Make it reliable for daily use in enterprise notebooks and CI/CD.
 
-| Task | File | What |
-|------|------|------|
-| `s4-01` | Error handling | Graceful failures, typed exceptions, helpful messages |
-| `s4-02` | Caching + perf | TTL cache on `DESCRIBE DETAIL`, connection pooling |
-| `s4-03` | Observability | Structured logging, `--debug` flag, timing metrics |
+| Task | What |
+|------|------|
+| `s4-01` | Error handling — graceful failures, typed exceptions, helpful messages |
+| `s4-02` | Caching + perf — event-driven cache invalidation via `DESCRIBE HISTORY`; TTL fallback |
+| `s4-03` | Observability — structured logging, `--debug` flag, timing metrics |
+| `s4-04` | Table registry — enterprise governance view mapping |
+| `s4-05` | Cost anomaly detection — MAD-based z-score on billing data; dual-input API |
+| `s4-06` | Tag cost attribution — `cost_by_tag(tag_key, days)`; untagged bucket reporting |
+| `s4-07` | Idle cluster alerting — CPU threshold check; auto-termination recommendations |
 
-**Acceptance:** No unhandled exceptions in any interaction mode. `DESCRIBE DETAIL` cached for 5 min. `--debug` shows estimation tier progression.
+**Acceptance:** No unhandled exceptions. Event-driven cache invalidation prevents stale estimates after table mutations. `cost_by_tag()` and `detect_anomalies()` work with direct or pre-queried billing data.
 
-### Sprint 5: ML Models & Forecasting (Future)
+### Sprint 4.5: ML Research Phase
 
-> **Goal:** Push accuracy from 10× to 2×.
+> **Goal:** Answer open questions before committing to an ML architecture.
 
-| Task | File | What |
-|------|------|------|
-| `s5-01` | Feature extraction | ExplainPlan + Delta + cluster → feature vector |
-| `s5-02` | Classification model | Cost bucket classifier (low/med/high/very-high) |
-| `s5-03` | Prophet forecasting | Per-SKU time-series cost projection |
+| Task | What |
+|------|------|
+| `s4p5-01` | ML research — fingerprint recurrence rate, forecast target, model selection, training data requirements, structural break handling |
 
-**Acceptance:** ML model achieves <2× error on holdout set. Prophet forecasts within 15% MAPE.
+**Output:** Written research report in `docs/ml-research-report.md`; DESIGN.md ML section updated with decisions.
+
+### Sprint 5: ML Models & Cost Projection
+
+> **Goal:** Three-layer ML architecture; push accuracy from 3× to 2×.
+
+| Task | What |
+|------|------|
+| `s5-00` | Listener infrastructure — SparkMeasure integration for session metrics |
+| `s5-01` | Feature extraction — ExplainPlan + Delta + cluster → normalised feature vector |
+| `s5-02` | Transfer function — physics-based source→target cluster scaling (Amdahl's Law) |
+| `s5-03` | Cost regressor — `HistGradientBoostingRegressor` on `log1p(dbu)` |
+| `s5-04` | Cost projection + calibration — per-run DBU → daily/monthly/yearly; EMA bias correction |
+| `s5-05` | Streaming cost projection — `cost_per_hour` + `cost_per_gb`; growth scenarios |
+| `s5-06` | UC lineage cost propagation — downstream impact of table growth via Lineage API |
+
+**Architecture:** Layer 1 (base model) + Layer 2 (transfer function) + Layer 3 (calibration loop). See `tasks/r7-ml-architecture-v4.md`.
+
+**Acceptance:** `advise_current_session()` returns `JobCostProjection` with daily/monthly/yearly breakdown. Streaming jobs get `StreamingCostProjection`.
+
+### Sprint 6: Net-New Analytics Capabilities
+
+> **Goal:** New analytical features beyond estimation — governance, FinOps, and proactive cost intelligence.
+
+| Task | What |
+|------|------|
+| `s6-01` | Schema change cost impact — downstream query cost delta from column adds/drops/renames |
+| `s6-02` | Cluster policy generator — cost-ceiling → Databricks Cluster Policy JSON (offline) |
+| `s6-03` | Freshness vs cost tradeoff — wasted runs when consumers read less often than job runs |
+| `s6-04` | Cross-workspace benchmarking — per-workspace efficiency score (0–100) with 5 metrics |
+| `s6-05` | Commitment plan advisor — DCU breakeven analysis; 1yr vs 3yr with under-utilisation risk |
+| `s6-06` | DLT pipeline cost decomposition — per-table Bronze/Silver/Gold cost attribution |
+| `s6-07` | Warehouse auto-scaling analysis — idle cluster-hours, queue time, min/max recommendations |
+| `s6-08` | Spot interruption cost model — historical preemption rate → realistic spot TCO |
+| `s6-09` | Query regression detector — fingerprint-based regression with probable cause heuristics |
+| `s6-10` | Storage tiering recommendations — cold table detection; cool/archive savings estimate |
 
 ### Accuracy Targets by Sprint
 
@@ -193,7 +257,7 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 |--------|--------|--------|
 | 1-2 | Within **10×** of actual | Static + what-if heuristics |
 | 3 | Within **3×** of actual | Full pipeline with Delta + EXPLAIN + history |
-| 5 | Within **2×** of actual | ML models trained on historical data |
+| 5 | Within **2×** of actual | Three-layer ML model trained on historical data |
 
 ---
 
@@ -231,48 +295,72 @@ flowchart LR
 
 ```
 src/burnt/
-├── __init__.py              # Top-level API: estimate, lint, advise, right_size
+├── __init__.py              # Top-level API: estimate, lint, advise, right_size, cost_by_tag, …
 ├── _compat.py               # Optional import helpers
 ├── core/
-│   ├── models.py            # Pydantic models (CostEstimate, ClusterConfig, etc.)
+│   ├── models.py            # Pydantic models (CostEstimate, ClusterConfig, ClusterProfile, …)
 │   ├── config.py            # pydantic-settings with env vars
 │   ├── pricing.py           # DBU rate lookups by SKU
-│   ├── exchange.py         # USD/EUR/GBP/JPY/CNY via frankfurter.app
+│   ├── exchange.py          # USD/EUR/GBP/JPY/CNY via frankfurter.app
 │   ├── protocols.py         # Protocol classes for extensibility
 │   ├── table_registry.py    # Enterprise governance view mapping
-│   └── instances.py        # Azure instance catalog + right-sizer
-├── runtime/                 # Sprint 1
+│   ├── instances.py         # Azure instance catalog + right-sizer
+│   ├── policy.py            # Cluster policy generator (s6-02)
+│   ├── _display.py          # _DisplayMixin base class (s2-06)
+│   └── _progress.py         # Progress feedback during estimation (s2-06)
+├── runtime/
 │   ├── __init__.py
-│   ├── backend.py          # Backend protocol
-│   ├── spark_backend.py    # In-cluster via SparkSession
-│   ├── rest_backend.py     # External via REST API + PAT
-│   └── auto.py             # auto_backend() detection
+│   ├── backend.py           # Backend protocol
+│   ├── spark_backend.py     # In-cluster via SparkSession
+│   ├── rest_backend.py      # External via REST API + PAT
+│   └── auto.py              # auto_backend() detection
 ├── parsers/
-│   ├── sql.py              # SQLGlot analysis
-│   ├── pyspark.py          # Python AST analysis
-│   ├── notebooks.py        # .ipynb + .dbc parsing
-│   ├── antipatterns.py     # Anti-pattern detection
-│   ├── explain.py          # EXPLAIN COST parser
-│   └── delta.py            # DESCRIBE DETAIL parser
+│   ├── sql.py               # SQLGlot analysis
+│   ├── pyspark.py           # Python AST analysis
+│   ├── notebooks.py         # .ipynb, .dbc, .py (COMMAND-delimited) parsing
+│   ├── antipatterns.py      # Anti-pattern detection
+│   ├── explain.py           # EXPLAIN COST parser
+│   └── delta.py             # DESCRIBE DETAIL parser
 ├── tables/
-│   ├── billing.py          # system.billing.*
-│   ├── queries.py          # system.query.history
-│   ├── compute.py         # system.compute.*
-│   ├── attribution.py      # Cost attribution joins
-│   └── connection.py      # DatabricksClient
+│   ├── billing.py           # system.billing.*
+│   ├── queries.py           # system.query.history + fingerprinting + fuzzy match
+│   ├── compute.py           # system.compute.*
+│   ├── attribution.py       # Cost attribution joins
+│   ├── connection.py        # DatabricksClient (connection pooling + event-driven cache)
+│   ├── anomaly.py           # detect_anomalies() — MAD-based (s4-05)
+│   ├── tags.py              # cost_by_tag() — tag attribution (s4-06)
+│   ├── idle.py              # detect_idle_clusters() (s4-07)
+│   ├── lineage.py           # estimate_lineage_impact() via UC Lineage API (s5-06)
+│   ├── schema.py            # schema_impact() (s6-01)
+│   ├── benchmark.py         # workspace_benchmark() (s6-04)
+│   ├── commitment.py        # commitment_advisor() (s6-05)
+│   ├── dlt.py               # dlt_decomposition() (s6-06)
+│   ├── warehouse.py         # warehouse_scaling_analysis() (s6-07)
+│   ├── spot.py              # spot_analysis() (s6-08)
+│   ├── regression.py        # detect_query_regressions() (s6-09)
+│   ├── storage.py           # storage_analysis() (s6-10)
+│   └── freshness.py         # freshness_analysis() (s6-03)
 ├── estimators/
-│   ├── static.py           # Complexity-based offline estimation
-│   ├── hybrid.py          # Blended EXPLAIN + Delta + history
-│   ├── pipeline.py        # 4-tier orchestrator
-│   └── simulation.py      # Simulation + cluster/data_source/spark_config builders (was: whatif.py)
-├── advisor/                # Sprint 1
+│   ├── static.py            # Complexity-based offline estimation
+│   ├── hybrid.py            # Blended EXPLAIN + Delta + history
+│   ├── pipeline.py          # 4-tier orchestrator + EstimationTrace
+│   ├── simulation.py        # Simulation + cluster/data_source/spark_config builders
+│   ├── partition.py         # Partition pruning selectivity (s3-04)
+│   ├── spill.py             # Spill risk scoring (s3-05)
+│   ├── photon.py            # Photon eligibility scorer (s3-06)
+│   ├── streaming.py         # Streaming cost projection (s5-05)
+│   ├── projection.py        # Job cost projection daily/monthly/yearly (s5-04)
+│   ├── transfer.py          # Source→target cluster transfer function (s5-02)
+│   ├── ml.py                # HistGBR cost regressor (s5-03)
+│   └── calibration.py       # EMA bias correction (s5-04)
+├── advisor/
 │   ├── __init__.py
-│   ├── session.py          # advise_current_session() implementation
-│   └── report.py           # AdvisoryReport model + display
+│   ├── session.py           # advise_current_session() implementation
+│   └── report.py            # AdvisoryReport model + display
 ├── forecast/
-│   └── prophet.py          # Time-series forecasting [requires: forecasting]
+│   └── prophet.py           # Time-series forecasting (model TBD via s4p5-01 research)
 └── cli/
-    └── main.py             # Typer CLI: check, init, tutorial, cache, rules
+    └── main.py              # Typer CLI: check, init, tutorial, cache, rules, doctor, generate-policy
 ```
 
 ### Interaction Modes
@@ -810,15 +898,28 @@ class Simulation:
 
 ## System Tables Reference
 
-| Table | What | Retention |
-|-------|------|-----------|
-| `system.billing.usage` | DBU consumption per SKU | 365 days |
-| `system.billing.list_prices` | Historical pricing | Indefinite |
-| `system.query.history` | Query execution metrics | 365 days |
-| `system.compute.node_types` | Instance → hardware specs | Current |
-| `system.compute.node_timeline` | Minute-by-minute utilization | 90 days |
-| `system.lakeflow.jobs` | Job metadata (SCD2) | Indefinite |
-| `system.lakeflow.job_run_timeline` | Per-run duration breakdown | 365 days |
+| Table | What | Retention | Used by |
+|-------|------|-----------|---------|
+| `system.billing.usage` | DBU consumption per SKU | 365 days | Cost attribution, anomaly detection, tag attribution, commitment advisor |
+| `system.billing.list_prices` | Historical pricing | Indefinite | Dollar amount calculation |
+| `system.query.history` | Query execution metrics | 365 days | Fingerprint lookup, regression detection, freshness analysis, storage analysis |
+| `system.compute.node_types` | Instance → hardware specs | Current | Instance catalog refresh |
+| `system.compute.node_timeline` | Minute-by-minute utilization | 90 days | Idle cluster detection, spot interruption analysis |
+| `system.compute.warehouse_events` | SQL warehouse scale events | 90 days | Warehouse scaling analysis (s6-07) |
+| `system.lakeflow.jobs` | Job metadata (SCD2) | Indefinite | Job analysis, freshness tradeoff |
+| `system.lakeflow.job_run_timeline` | Per-run duration breakdown | 365 days | Job run cost attribution |
+| `system.lakeflow.pipeline_event_log` | DLT update events per dataset | 365 days | DLT cost decomposition (s6-06) |
+| `system.access.audit` | Workspace audit events | 365 days | Schema change detection (s6-01) |
+| `{catalog}.INFORMATION_SCHEMA.TABLES` | Table sizes and types | Current | Storage tiering analysis (s6-10) |
+| `{catalog}.INFORMATION_SCHEMA.COLUMNS` | Column definitions | Current | Schema change impact (s6-01) |
+
+### Coverage Gaps
+
+`system.query.history` captures: SQL Warehouses, serverless notebooks/jobs.
+Does NOT capture: all-purpose clusters, classic Jobs, DLT pipelines, PySpark DataFrames on classic compute.
+
+UC Lineage API tracks SQL-based lineage only. PySpark `df.read()` / `df.write()` are untracked.
+Features that depend on lineage (s5-06, s6-01, s6-03) emit coverage warnings when this gap may affect results.
 
 ---
 
@@ -863,4 +964,4 @@ uv run interrogate src/ -v             # Docstrings
 9. **Explicit categorization** — cluster, data source, and spark config scenarios are clearly separated
 10. **Cost transparency** — verified vs estimated multipliers shown inline
 
-*Document version: 2.5 | Tasks lead: CLI redesign (check/init/tutorial/cache/rules), API rename (WhatIfBuilder→Simulation, what_if()→simulate()) | March 2026*
+*Document version: 3.0 | March 2026 | Sprints 2–6 fully specced; Sprint 5 updated to three-layer ML architecture; Sprint 6 adds 10 net-new analytics capabilities*
