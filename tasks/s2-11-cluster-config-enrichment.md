@@ -1,4 +1,4 @@
-# Task: ClusterConfig Factory + ClusterProfile
+# Task: ClusterConfig Factory + ClusterProfile + Default Currency
 
 ---
 
@@ -96,6 +96,39 @@ Simulation builder internals that accept `ClusterConfig` should be updated to ac
 
 ---
 
+### Part 3: Default Currency Configuration
+
+Allow users to set a default currency for cost budget checks that will be used when `raise_if_exceeds()` is called without an explicit currency parameter. This is useful for organizations that bill in non-USD currencies.
+
+```python
+# Set default currency (module-level)
+burnt.set_default_currency("EUR")
+
+# Now raise_if_exceeds uses EUR by default
+burnt.estimate(sql).raise_if_exceeds(50.0)  # checks against 50 EUR
+
+# Can still override per-call
+burnt.estimate(sql).raise_if_exceeds(50.0, currency="USD")
+```
+
+**Implementation:** Store default currency in a module-level variable. If no currency is provided to `raise_if_exceeds()`, use the default.
+
+```python
+# src/burnt/__init__.py
+_default_currency: str = "USD"
+
+def set_default_currency(currency: str) -> None:
+    """Set the default currency for cost budget checks."""
+    global _default_currency
+    _default_currency = currency.upper()
+
+def get_default_currency() -> str:
+    """Get the current default currency."""
+    return _default_currency
+```
+
+---
+
 ## Acceptance Criteria
 
 ### ClusterConfig factory
@@ -122,6 +155,15 @@ Simulation builder internals that accept `ClusterConfig` should be updated to ac
 - [ ] All existing tests still pass
 - [ ] Lint passes: `uv run ruff check src/ tests/`
 
+### Default Currency
+
+- [ ] `burnt.set_default_currency()` function exists and updates module-level default
+- [ ] `burnt.get_default_currency()` returns current default
+- [ ] `raise_if_exceeds(budget)` uses default currency when currency param not provided
+- [ ] `raise_if_exceeds(budget, currency="EUR")` overrides default for that call
+- [ ] Default starts at "USD" for backward compatibility
+- [ ] Currency is validated against supported currencies
+
 ---
 
 ## Verification
@@ -135,6 +177,12 @@ uv run ruff check src/ tests/
 
 - [ ] `from burnt import ClusterConfig; c = ClusterConfig.from_databricks_json({"node_type_id": "Standard_DS4_v2", "num_workers": 4}); assert c.dbu_per_hour == 1.5`
 - [ ] `from burnt import ClusterProfile; p = ClusterProfile.from_databricks_json({"node_type_id": "Standard_DS4_v2", "spark_version": "15.4.x-photon-scala2.12", "num_workers": 4}); assert p.spark_version == "15.4.x-photon-scala2.12"; assert p.config.photon_enabled is True`
+
+### Default Currency Integration Check
+
+- [ ] `burnt.set_default_currency("EUR"); assert burnt.get_default_currency() == "EUR"`
+- [ ] After setting EUR, `burnt.estimate("SELECT 1").raise_if_exceeds(50.0)` checks against EUR
+- [ ] Can still override: `.raise_if_exceeds(50.0, currency="USD")` uses USD regardless of default
 
 ---
 

@@ -1,5 +1,8 @@
+import warnings
+
 import pytest
 
+from burnt import CostBudgetExceeded
 from burnt.core.models import (
     ClusterConfig,
     ClusterRecommendation,
@@ -149,3 +152,52 @@ class TestClusterRecommendation:
         assert "Balanced" in table
         assert "Performance" in table
         assert "Standard_DS3_v2" in table
+
+
+class TestCostBudgetExceeded:
+    def test_raise_if_exceeds_under_budget_returns_self(self):
+        estimate = CostEstimate(estimated_dbu=10.0, estimated_cost_usd=5.0)
+        result = estimate.raise_if_exceeds(50.0)
+        assert result is estimate
+
+    def test_raise_if_exceeds_over_budget_raises(self):
+        estimate = CostEstimate(estimated_dbu=100.0, estimated_cost_usd=50.0)
+        with pytest.raises(CostBudgetExceeded):
+            estimate.raise_if_exceeds(10.0)
+
+    def test_raise_if_exceeds_over_budget_exception_attributes(self):
+        estimate = CostEstimate(estimated_dbu=100.0, estimated_cost_usd=50.0)
+        with pytest.raises(CostBudgetExceeded) as exc_info:
+            estimate.raise_if_exceeds(10.0)
+        assert exc_info.value.estimate is estimate
+        assert exc_info.value.budget == 10.0
+        assert exc_info.value.currency == "USD"
+
+    def test_raise_if_exceeds_label_in_message(self):
+        estimate = CostEstimate(estimated_dbu=100.0, estimated_cost_usd=50.0)
+        with pytest.raises(CostBudgetExceeded) as exc_info:
+            estimate.raise_if_exceeds(10.0, label="daily_agg")
+        assert "daily_agg" in str(exc_info.value)
+
+    def test_raise_if_exceeds_none_cost_warns_and_returns_self(self):
+        estimate = CostEstimate(estimated_dbu=10.0)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = estimate.raise_if_exceeds(50.0)
+            assert result is estimate
+            assert len(w) == 1
+            assert "estimated_cost_usd is None" in str(w[0].message)
+
+    def test_raise_if_exceeds_none_cost_with_label_warns(self):
+        estimate = CostEstimate(estimated_dbu=10.0)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            estimate.raise_if_exceeds(50.0, label="test_query")
+            assert len(w) == 1
+            assert "test_query" in str(w[0].message)
+
+    def test_raise_if_exceeds_chaining(self):
+        estimate = CostEstimate(estimated_dbu=10.0, estimated_cost_usd=5.0)
+        result = estimate.raise_if_exceeds(50.0)
+        assert result is estimate
+        assert result.estimated_cost_usd == 5.0

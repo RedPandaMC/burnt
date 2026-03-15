@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from .core.exceptions import CostBudgetExceeded
 from .core.models import (
     ClusterConfig,
     ClusterRecommendation,
@@ -56,7 +57,11 @@ def estimate(
 
     if isinstance(query, Path):
         source = _load_file(query)
-    elif isinstance(query, str) and Path(query).suffix in _FILE_EXTENSIONS and Path(query).exists():
+    elif (
+        isinstance(query, str)
+        and Path(query).suffix in _FILE_EXTENSIONS
+        and Path(query).exists()
+    ):
         source = _load_file(Path(query))
     else:
         source = str(query)
@@ -166,6 +171,7 @@ __all__ = [
     "AntiPattern",
     "ClusterConfig",
     "ClusterRecommendation",
+    "CostBudgetExceeded",
     "CostEstimate",
     "MultiSimulationResult",
     "Simulation",
@@ -174,11 +180,34 @@ __all__ = [
     "WorkloadProfile",
     "advise",
     "estimate",
+    "get_default_currency",
     "right_size",
+    "set_default_currency",
 ]
+
+_default_currency: str = "USD"
 
 # WorkloadProfile imported lazily to avoid heavy dependency at module level
 try:
     from .core.instances import WorkloadProfile
 except ImportError:
     WorkloadProfile = None  # type: ignore[assignment, misc]
+
+
+def set_default_currency(currency: str) -> None:
+    """Set the default currency for cost budget checks.
+
+    Args:
+        currency: Currency code (USD, EUR, etc.)
+    """
+    global _default_currency
+    _default_currency = currency.upper()
+
+
+def get_default_currency() -> str:
+    """Get the current default currency for cost budget checks.
+
+    Returns:
+        Currency code (defaults to USD)
+    """
+    return _default_currency

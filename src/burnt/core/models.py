@@ -147,9 +147,67 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
         return Simulation(self, self._cluster)
 
-    def raise_if_exceeds(self, budget_usd: float, label: str = "") -> None:
-        """Raise CostBudgetExceeded if cost exceeds budget. Implemented in s2-07."""
-        raise NotImplementedError("raise_if_exceeds() will be implemented in s2-07")
+    def raise_if_exceeds(
+        self, budget: float, label: str = "", currency: str | None = None
+    ) -> "CostEstimate":
+        """Raise CostBudgetExceeded if cost exceeds budget. Returns self if under budget.
+
+        Args:
+            budget: Budget amount (in the specified currency).
+            label: Optional label for identifying this check in pipelines.
+            currency: Currency for the budget (USD, EUR, etc.). Uses default currency if not provided.
+
+        Returns:
+            self if under budget (chainable).
+
+        Raises:
+            CostBudgetExceeded: If estimated cost exceeds the budget.
+        """
+        import warnings
+        from datetime import date
+        from decimal import Decimal
+
+        from burnt import get_default_currency
+        from burnt.core.exceptions import CostBudgetExceeded
+        from burnt.core.exchange import FrankfurterProvider
+
+        if currency is None:
+            currency = get_default_currency()
+
+        if self.estimated_cost_usd is None:
+            warnings.warn(
+                "Cannot check budget: estimated_cost_usd is None"
+                + (f" for {label!r}" if label else ""),
+                stacklevel=2,
+            )
+            return self
+
+        estimate_currency = "USD"
+        if self.estimated_cost_eur is not None:
+            estimate_currency = "EUR"
+
+        if currency != estimate_currency:
+            exchange = FrankfurterProvider()
+            converted = exchange.get_rate_for_amount(
+                Decimal(str(budget)),
+                date.today(),
+                from_curr=currency,
+                to_curr=estimate_currency,
+            )
+            compare_budget = float(converted)
+        else:
+            compare_budget = budget
+
+        estimate_cost = (
+            self.estimated_cost_eur
+            if estimate_currency == "EUR"
+            else self.estimated_cost_usd
+        )
+
+        if estimate_cost is not None and estimate_cost > compare_budget:
+            raise CostBudgetExceeded(self, budget, label, currency=currency)
+
+        return self
 
     def comparison_table(self) -> str:
         """Generate ASCII comparison table."""

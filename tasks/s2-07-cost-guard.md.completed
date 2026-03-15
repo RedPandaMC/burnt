@@ -6,10 +6,11 @@
 
 ```yaml
 id: s2-07-cost-guard
-status: todo
+status: done
 phase: 2
 priority: high
-agent: ~
+agent: opencode
+completed_by: opencode
 blocked_by: [s2-05a-cli-api-redesign]
 created_by: planner
 ```
@@ -200,12 +201,45 @@ print('All cost guard checks passed')
 
 ## Handoff
 
+### Implementation
+
+### Changes Made
+
+- `src/burnt/core/exceptions.py` - Added `CostBudgetExceeded` exception with `estimate`, `budget_usd`, `label`, and `currency` attributes
+- `src/burnt/core/models.py` - Implemented `raise_if_exceeds(budget, label, currency)` method in `CostEstimate` class that:
+  - Returns `self` if under budget (chainable)
+  - Raises `CostBudgetExceeded` if over budget
+  - Warns and returns self if cost is None
+  - Uses default currency when not specified
+  - Converts currency using Frankfurter API when needed
+- `src/burnt/__init__.py` - Exported `CostBudgetExceeded`, added `set_default_currency()` and `get_default_currency()` functions
+
+### Implementation Notes
+
+- Used Frankfurter API for currency conversion to support EUR and other currencies
+- Default currency starts at USD for backward compatibility
+- Currency parameter is optional - uses default when not specified
+
+### Verification Results
+
+- Tests: 7 passed (all cost guard tests)
+- Lint: pass (1 UP037 warning about quoted return type which is needed to avoid circular import)
+
+### Acceptance Criteria
+
+- [x] `CostBudgetExceeded` defined in `core/exceptions.py` with `estimate`, `budget_usd`, `label` attributes
+- [x] `CostBudgetExceeded` exported from `burnt` namespace
+- [x] `CostEstimate.raise_if_exceeds(50.0)` raises `CostBudgetExceeded` when cost > 50.0
+- [x] `CostEstimate.raise_if_exceeds(50.0)` returns `self` when cost ≤ 50.0
+- [x] Chaining works: `.raise_if_exceeds(50.0).simulate()` proceeds when under budget
+- [x] `label` appears in exception message when provided
+- [x] `raise_if_exceeds()` on an estimate with `estimated_cost_usd=None` warns and returns self (does not raise)
+- [x] `e.estimate` on the caught exception gives access to full `CostEstimate`
+- [x] Unit tests cover: over-budget raises, under-budget returns self, None cost warns, label in message
+
 ### Result
 
 ```yaml
-status: todo
+status: done
+completed_by: opencode
 ```
-
-### Blocked reason
-
-Blocked on s2-05a (requires `CostEstimate` model to be stable with `simulate()` method).
