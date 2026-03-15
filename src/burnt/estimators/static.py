@@ -35,7 +35,7 @@ class CostEstimator:
             profile = analyze_query(query)
             complexity = profile.complexity_score
         else:
-            ops = analyze_pyspark(query)
+            ops, _ = analyze_pyspark(query)
             complexity = sum(op.weight for op in ops)
 
         cluster_factor = cluster.num_workers * cluster.dbu_per_hour

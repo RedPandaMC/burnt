@@ -7,42 +7,42 @@ from burnt.parsers.pyspark import PYSPARK_WEIGHTS, PySparkVisitor, analyze_pyspa
 class TestAnalyzePySpark:
     def test_analyze_pyspark_simple(self):
         code = "df.select('name').show()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert len(ops) == 0
 
     def test_analyze_pyspark_groupby(self):
         code = "df.groupBy('dept').count().show()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "groupBy" for op in ops)
 
     def test_analyze_pyspark_join(self):
         code = "df1.join(df2, 'id').show()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "join" for op in ops)
 
     def test_analyze_pyspark_crossjoin(self):
         code = "df1.crossJoin(df2).show()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "crossJoin" for op in ops)
 
     def test_analyze_pyspark_collect(self):
         code = "results = df.collect()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "collect" for op in ops)
 
     def test_analyze_pyspark_toPandas(self):
         code = "pandas_df = df.toPandas()"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "toPandas" for op in ops)
 
     def test_analyze_pyspark_repartition(self):
         code = "df.repartition(10).write.parquet('output')"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "repartition" for op in ops)
 
     def test_analyze_pyspark_repartition_one(self):
         code = "df.repartition(1).write.parquet('output')"
-        ops = analyze_pyspark(code)
+        ops, _ = analyze_pyspark(code)
         assert any(op.name == "repartition" and op.weight == 15 for op in ops)
 
     def test_analyze_pyspark_invalid_syntax(self):
