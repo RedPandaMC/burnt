@@ -6,9 +6,12 @@ from decimal import Decimal  # noqa: TC003 — used in pydantic field type
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+from tabulate import tabulate
+
+from ._display import _DisplayMixin
 
 if TYPE_CHECKING:
-    from .estimators.simulation import Simulation
+    from burnt.estimators.simulation import Simulation
 
 
 class OperationInfo(BaseModel):
@@ -65,8 +68,8 @@ class ClusterConfig(BaseModel):
             raise ValueError(f"Invalid SKU: {v}. Must be one of: {VALID_SKUS}")
         return v
 
-    def to_api_json(self, spark_version: str = "15.4.x-scala2.12") -> dict:
-        """Return Databricks Jobs API-compatible cluster definition."""
+    def to_json(self, spark_version: str = "15.4.x-scala2.12") -> dict:
+        """Return Databricks Jobs API-compatible cluster definition as dict."""
         cluster = {
             "spark_version": spark_version,
             "node_type_id": self.instance_type,
@@ -86,6 +89,35 @@ class ClusterConfig(BaseModel):
             }
         return {"new_cluster": cluster}
 
+    def to_dab(self, name: str, spark_version: str = "15.4.x-scala2.12") -> str:
+        """Return Databricks Asset Bundle YAML cluster definition.
+
+        Args:
+            name: The name for this cluster resource
+            spark_version: The Spark runtime version to use
+
+        Returns:
+            YAML string with nested resources.clusters structure
+        """
+        import yaml
+
+        cluster = {
+            "node_type_id": self.instance_type,
+            "num_workers": self.num_workers,
+            "spark_version": spark_version,
+            "runtime_engine": "PHOTON" if self.photon_enabled else "STANDARD",
+        }
+        if (
+            self.autoscale_min_workers is not None
+            and self.autoscale_max_workers is not None
+        ):
+            cluster["autoscale"] = {
+                "min_workers": self.autoscale_min_workers,
+                "max_workers": self.autoscale_max_workers,
+            }
+        dab_dict = {"resources": {"clusters": {name: cluster}}}
+        return yaml.dump(dab_dict, default_flow_style=False, sort_keys=False)
+
 
 class PricingInfo(BaseModel):
     """Pricing information for a SKU."""
@@ -96,7 +128,7 @@ class PricingInfo(BaseModel):
     region: str = "EAST_US"
 
 
-class CostEstimate(BaseModel):
+class CostEstimate(BaseModel, _DisplayMixin):
     """Cost estimate for a query or workload."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -111,20 +143,115 @@ class CostEstimate(BaseModel):
 
     def simulate(self) -> Simulation:
         """Start a simulation scenario builder from this estimate."""
-        from ..estimators.simulation import Simulation
+        from burnt.estimators.simulation import Simulation
 
         return Simulation(self, self._cluster)
-
-    def display(self) -> None:
-        """Render a rich display of this estimate. Implemented in s2-06."""
-        raise NotImplementedError("display() will be implemented in s2-06")
 
     def raise_if_exceeds(self, budget_usd: float, label: str = "") -> None:
         """Raise CostBudgetExceeded if cost exceeds budget. Implemented in s2-07."""
         raise NotImplementedError("raise_if_exceeds() will be implemented in s2-07")
 
+    def comparison_table(self) -> str:
+        """Generate ASCII comparison table."""
+        lines = [
+            "Cost Estimate",
+            f"{'Field':<20} {'Value':<30}",
+            "-" * 50,
+            f"{'Estimated DBU':<20} {self.estimated_dbu:<30.2f}",
+        ]
+        if self.estimated_cost_usd is not None:
+            lines.append(f"{'Estimated Cost':<20} ${self.estimated_cost_usd:<29.2f}")
+        lines.append(f"{'Confidence':<20} {self.confidence:<30}")
 
-class ClusterRecommendation(BaseModel):
+        if self.breakdown:
+            lines.extend(["", "Breakdown:"])
+            for key, value in self.breakdown.items():
+                lines.append(f"  {key}: {value:.2f}")
+
+        if self.warnings:
+            lines.extend(["", "Warnings:"])
+            for warning in self.warnings:
+                lines.append(f"  ⚠ {warning}")
+
+        return "\n".join(lines)
+
+    def _to_html_table(self) -> str:
+        """Generate HTML table for notebooks."""
+        rows = [
+            f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>",
+        ]
+        if self.estimated_cost_usd is not None:
+            rows.append(
+                f"<tr><td>Estimated Cost</td><td>${self.estimated_cost_usd:.2f}</td></tr>"
+            )
+        rows.append(f"<tr><td>Confidence</td><td>{self.confidence}</td></tr>")
+
+        html = f"""
+        <div style="font-family: monospace; margin: 20px 0;">
+            <h3>Cost Estimate</h3>
+            <table style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f0f0f0;">
+                        <th style="padding: 8px; border: 1px solid #ccc;">Field</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {"".join(rows)}
+                </tbody>
+            </table>
+        """
+
+        if self.breakdown:
+            html += "<h4>Breakdown:</h4><ul>"
+            for key, value in self.breakdown.items():
+                html += f"<li>{key}: {value:.2f}</li>"
+            html += "</ul>"
+
+        if self.warnings:
+            html += '<div style="margin: 10px 0; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107;">'
+            html += "<strong>Warnings:</strong><ul>"
+            for warning in self.warnings:
+                html += f"<li>{warning}</li>"
+            html += "</ul></div>"
+
+        html += "</div>"
+        return html
+
+    def to_markdown(self) -> str:
+        """Return a GFM markdown table using tabulate."""
+        rows = [
+            ["Estimated DBU", f"{self.estimated_dbu:.2f}"],
+        ]
+        if self.estimated_cost_usd is not None:
+            rows.append(["Estimated Cost", f"${self.estimated_cost_usd:.2f}"])
+        rows.append(["Confidence", self.confidence])
+
+        md = tabulate(rows, headers=["Field", "Value"], tablefmt="github")
+
+        if self.breakdown:
+            md += "\n\n**Breakdown:**\n"
+            for key, value in self.breakdown.items():
+                md += f"- {key}: {value:.2f}\n"
+
+        if self.warnings:
+            md += "\n**Warnings:**\n"
+            for warning in self.warnings:
+                md += f"- ⚠ {warning}\n"
+
+        return md
+
+    def __str__(self) -> str:
+        """Return string representation (comparison table)."""
+        return self.comparison_table()
+
+    def __repr__(self) -> str:
+        """Return developer representation."""
+        cost = self.estimated_cost_usd or 0
+        return f"CostEstimate(dbu={self.estimated_dbu:.2f}, cost=${cost:.2f}, confidence={self.confidence})"
+
+
+class ClusterRecommendation(BaseModel, _DisplayMixin):
     """Three-tier cluster recommendation for optimization."""
 
     economy: ClusterConfig
@@ -147,9 +274,122 @@ class ClusterRecommendation(BaseModel):
         ]
         return "\n".join(lines)
 
-    def to_api_json(self) -> dict:
-        """Return the balanced cluster as Databricks Jobs API-compatible JSON."""
-        return self.balanced.to_api_json()
+    def _to_html_table(self) -> str:
+        """Generate HTML table for notebooks."""
+        rows = [
+            f"<tr><td>Economy</td><td>{self.economy.instance_type}</td><td>{self.economy.num_workers}</td><td>{self.economy.dbu_per_hour:.2f}</td><td>${self.economy.dbu_per_hour * 1.0:.2f}</td></tr>",
+            f"<tr><td>Balanced</td><td>{self.balanced.instance_type}</td><td>{self.balanced.num_workers}</td><td>{self.balanced.dbu_per_hour:.2f}</td><td>${self.balanced.dbu_per_hour * 1.5:.2f}</td></tr>",
+            f"<tr><td>Performance</td><td>{self.performance.instance_type}</td><td>{self.performance.num_workers}</td><td>{self.performance.dbu_per_hour:.2f}</td><td>${self.performance.dbu_per_hour * 2.0:.2f}</td></tr>",
+        ]
+        return f"""
+        <div style="font-family: monospace; margin: 20px 0;">
+            <h3>Cluster Recommendation</h3>
+            <table style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f0f0f0;">
+                        <th style="padding: 8px; border: 1px solid #ccc;">Tier</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Instance</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Workers</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">DBU/hr</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Est. Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {"".join(rows)}
+                </tbody>
+            </table>
+            <p><strong>Rationale:</strong> {self.rationale}</p>
+        </div>
+        """
+
+    def to_markdown(self) -> str:
+        """Return a GFM markdown table using tabulate."""
+        rows = [
+            [
+                "Economy",
+                self.economy.instance_type,
+                self.economy.num_workers,
+                f"{self.economy.dbu_per_hour:.2f}",
+                f"${self.economy.dbu_per_hour * 1.0:.2f}",
+            ],
+            [
+                "Balanced",
+                self.balanced.instance_type,
+                self.balanced.num_workers,
+                f"{self.balanced.dbu_per_hour:.2f}",
+                f"${self.balanced.dbu_per_hour * 1.5:.2f}",
+            ],
+            [
+                "Performance",
+                self.performance.instance_type,
+                self.performance.num_workers,
+                f"{self.performance.dbu_per_hour:.2f}",
+                f"${self.performance.dbu_per_hour * 2.0:.2f}",
+            ],
+        ]
+        md = tabulate(
+            rows,
+            headers=["Tier", "Instance", "Workers", "DBU/hr", "Est. Cost"],
+            tablefmt="github",
+        )
+        md += f"\n\n**Rationale:** {self.rationale}"
+        return md
+
+    def to_json(self) -> dict:
+        """Return the balanced cluster as Databricks Jobs API-compatible dict."""
+        return self.balanced.to_json()
+
+    def to_dab(self, base_name: str = "recommended") -> str:
+        """Return all three tiers as Databricks Asset Bundle YAML.
+
+        Args:
+            base_name: Base name for auto-generated cluster resource names
+
+        Returns:
+            YAML string with all three cluster definitions
+        """
+        import yaml
+
+        spark_version = "15.4.x-scala2.12"
+        clusters = {
+            f"{base_name}_economy": self._cluster_to_dab_dict(
+                self.economy, spark_version
+            ),
+            f"{base_name}_balanced": self._cluster_to_dab_dict(
+                self.balanced, spark_version
+            ),
+            f"{base_name}_performance": self._cluster_to_dab_dict(
+                self.performance, spark_version
+            ),
+        }
+        dab_dict = {"resources": {"clusters": clusters}}
+        return yaml.dump(dab_dict, default_flow_style=False, sort_keys=False)
+
+    def _cluster_to_dab_dict(self, config: ClusterConfig, spark_version: str) -> dict:
+        """Helper to convert ClusterConfig to DAB dict."""
+        cluster = {
+            "node_type_id": config.instance_type,
+            "num_workers": config.num_workers,
+            "spark_version": spark_version,
+            "runtime_engine": "PHOTON" if config.photon_enabled else "STANDARD",
+        }
+        if (
+            config.autoscale_min_workers is not None
+            and config.autoscale_max_workers is not None
+        ):
+            cluster["autoscale"] = {
+                "min_workers": config.autoscale_min_workers,
+                "max_workers": config.autoscale_max_workers,
+            }
+        return cluster
+
+    def __str__(self) -> str:
+        """Return string representation (comparison table)."""
+        return self.comparison_table()
+
+    def __repr__(self) -> str:
+        """Return developer representation."""
+        return f"ClusterRecommendation(economy={self.economy.instance_type}, balanced={self.balanced.instance_type}, performance={self.performance.instance_type})"
 
 
 class UsageRecord(BaseModel):
@@ -235,7 +475,7 @@ class SimulationModification(BaseModel):
     trade_offs: list[str] = []
 
 
-class SimulationResult(BaseModel):
+class SimulationResult(BaseModel, _DisplayMixin):
     """Result of comparing original vs projected cost after modifications."""
 
     original: CostEstimate
@@ -260,11 +500,10 @@ class SimulationResult(BaseModel):
 
         lines = [
             "Simulation Comparison",
-            f"{'Metric':<20} {'Original':<15} {'Projected':<15}",
-            "-" * 50,
-            f"{'DBU':<20} {self.original.estimated_dbu:<15.2f} {self.projected.estimated_dbu:<15.2f}",
-            f"{'Cost (USD)':<20} {original_cost:<15.2f} {projected_cost:<15.2f}",
-            f"{'Savings %':<20} {'—':<15} {self.total_savings_pct:<15.1f}",
+            f"{'Metric':<20} {'Original':<15} {'Projected':<15} {'Δ':<10}",
+            "-" * 60,
+            f"{'DBU':<20} {self.original.estimated_dbu:<15.2f} {self.projected.estimated_dbu:<15.2f} {self.total_savings_pct:<10.1f}%",
+            f"{'Cost (USD)':<20} ${original_cost:<14.2f} ${projected_cost:<14.2f} {self.total_savings_pct:<10.1f}%",
             "",
             "Modifications:",
         ]
@@ -276,6 +515,89 @@ class SimulationResult(BaseModel):
 
         return "\n".join(lines)
 
+    def _to_html_table(self) -> str:
+        """Generate HTML table for notebooks."""
+        original_cost = self.original.estimated_cost_usd or 0
+        projected_cost = self.projected.estimated_cost_usd or 0
+
+        mod_rows = []
+        for mod in self.modifications:
+            verified = "✓" if mod.is_verified else "≈"
+            mod_rows.append(
+                f"<li>{verified} <strong>{mod.name}</strong>: {mod.cost_multiplier:.2f}x - {mod.rationale}</li>"
+            )
+
+        return f"""
+        <div style="font-family: monospace; margin: 20px 0;">
+            <h3>Simulation Comparison</h3>
+            <table style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f0f0f0;">
+                        <th style="padding: 8px; border: 1px solid #ccc;">Metric</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Original</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Projected</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Δ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ccc;">DBU</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">{self.original.estimated_dbu:.2f}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">{self.projected.estimated_dbu:.2f}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">{self.total_savings_pct:.1f}%</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ccc;">Cost (USD)</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">${original_cost:.2f}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">${projected_cost:.2f}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">{self.total_savings_pct:.1f}%</td>
+                    </tr>
+                </tbody>
+            </table>
+            <h4>Modifications:</h4>
+            <ul>{"".join(mod_rows)}</ul>
+        </div>
+        """
+
+    def to_markdown(self) -> str:
+        """Return a GFM markdown table using tabulate."""
+        original_cost = self.original.estimated_cost_usd or 0
+        projected_cost = self.projected.estimated_cost_usd or 0
+
+        rows = [
+            [
+                "Cost (USD)",
+                f"${original_cost:.2f}",
+                f"${projected_cost:.2f}",
+                f"{self.total_savings_pct:.1f}%",
+            ],
+            [
+                "DBU",
+                f"{self.original.estimated_dbu:.1f}",
+                f"{self.projected.estimated_dbu:.1f}",
+                f"{self.total_savings_pct:.1f}%",
+            ],
+        ]
+        md = tabulate(
+            rows, headers=["", "Original", "Projected", "Δ"], tablefmt="github"
+        )
+
+        if self.modifications:
+            md += "\n\n**Modifications:**\n"
+            for mod in self.modifications:
+                verified = "✓" if mod.is_verified else "≈"
+                md += f"- {verified} **{mod.name}**: {mod.cost_multiplier:.2f}x - {mod.rationale}\n"
+
+        return md
+
+    def __str__(self) -> str:
+        """Return string representation (comparison table)."""
+        return self.comparison_table()
+
+    def __repr__(self) -> str:
+        """Return developer representation."""
+        return f"SimulationResult(savings={self.total_savings_pct:.1f}%, mods={len(self.modifications)})"
+
     def get_verified_multipliers(self) -> list[str]:
         """Get list of verified modification names."""
         return [m.name for m in self.modifications if m.is_verified]
@@ -285,7 +607,7 @@ class SimulationResult(BaseModel):
         return [m.name for m in self.modifications if not m.is_verified]
 
 
-class MultiSimulationResult(BaseModel):
+class MultiSimulationResult(BaseModel, _DisplayMixin):
     """Result of comparing multiple simulation scenarios."""
 
     scenarios: list[tuple[str, SimulationResult]]
@@ -294,6 +616,30 @@ class MultiSimulationResult(BaseModel):
         """Get list of SimulationResult objects."""
         return [r for _, r in self.scenarios]
 
+    def best(self) -> tuple[str, SimulationResult]:
+        """Return the scenario with the lowest projected cost.
+
+        In case of ties, prefers higher confidence levels (high > medium > low).
+
+        Returns:
+            Tuple of (scenario_name, SimulationResult)
+        """
+        if not self.scenarios:
+            raise ValueError("No scenarios to compare")
+
+        confidence_order = {"high": 3, "medium": 2, "low": 1}
+
+        def sort_key(item: tuple[str, SimulationResult]) -> tuple[float, int]:
+            _name, result = item
+            cost = result.projected.estimated_cost_usd or float("inf")
+            confidence_score = confidence_order.get(result.projected.confidence, 0)
+            return (
+                cost,
+                -confidence_score,
+            )  # Negative so higher confidence comes first
+
+        return min(self.scenarios, key=sort_key)
+
     def comparison_table(self) -> str:
         """Generate ASCII comparison table for all scenarios."""
         if not self.scenarios:
@@ -301,12 +647,97 @@ class MultiSimulationResult(BaseModel):
 
         lines = [
             "Scenario Comparison",
-            f"{'Scenario':<20} {'Cost (USD)':<15} {'Savings %':<15}",
-            "-" * 50,
+            f"{'Scenario':<20} {'Cost (USD)':<15} {'vs Baseline':<15} {'Modifications':<30}",
+            "-" * 80,
         ]
 
         for name, result in self.scenarios:
             cost = result.projected.estimated_cost_usd or 0
-            lines.append(f"{name:<20} {cost:<15.2f} {result.total_savings_pct:<15.1f}")
+            vs_baseline = (
+                "—"
+                if name == self.scenarios[0][0]
+                else f"{result.total_savings_pct:+.1f}%"
+            )
+            mods = (
+                ", ".join(m.name for m in result.modifications)
+                if result.modifications
+                else "—"
+            )
+            lines.append(f"{name:<20} ${cost:<14.2f} {vs_baseline:<15} {mods:<30}")
 
         return "\n".join(lines)
+
+    def _to_html_table(self) -> str:
+        """Generate HTML table for notebooks."""
+        if not self.scenarios:
+            return "<p>No scenarios to compare.</p>"
+
+        rows = []
+        for name, result in self.scenarios:
+            cost = result.projected.estimated_cost_usd or 0
+            vs_baseline = (
+                "—"
+                if name == self.scenarios[0][0]
+                else f"{result.total_savings_pct:+.1f}%"
+            )
+            mods = (
+                ", ".join(m.name for m in result.modifications)
+                if result.modifications
+                else "—"
+            )
+            rows.append(
+                f"<tr><td>{name}</td><td>${cost:.2f}</td><td>{vs_baseline}</td><td>{mods}</td></tr>"
+            )
+
+        return f"""
+        <div style="font-family: monospace; margin: 20px 0;">
+            <h3>Scenario Comparison</h3>
+            <table style="border-collapse: collapse; width: 100%;">
+                <thead>
+                    <tr style="background-color: #f0f0f0;">
+                        <th style="padding: 8px; border: 1px solid #ccc;">Scenario</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Cost (USD)</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">vs Baseline</th>
+                        <th style="padding: 8px; border: 1px solid #ccc;">Modifications</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {"".join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+
+    def to_markdown(self) -> str:
+        """Return a GFM markdown table using tabulate."""
+        if not self.scenarios:
+            return "No scenarios to compare."
+
+        rows = []
+        for name, result in self.scenarios:
+            cost = result.projected.estimated_cost_usd or 0
+            vs_baseline = (
+                "—"
+                if name == self.scenarios[0][0]
+                else f"{result.total_savings_pct:+.1f}%"
+            )
+            mods = (
+                ", ".join(m.name for m in result.modifications)
+                if result.modifications
+                else "—"
+            )
+            rows.append([name, f"${cost:.2f}", vs_baseline, mods])
+
+        return tabulate(
+            rows,
+            headers=["Scenario", "Cost (USD)", "vs Baseline", "Modifications"],
+            tablefmt="github",
+        )
+
+    def __str__(self) -> str:
+        """Return string representation (comparison table)."""
+        return self.comparison_table()
+
+    def __repr__(self) -> str:
+        """Return developer representation."""
+        return f"MultiSimulationResult(scenarios={len(self.scenarios)})"

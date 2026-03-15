@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from burnt.core._display import _DisplayMixin
 from burnt.core.models import ClusterConfig, ClusterRecommendation  # noqa: TC001
 
 
@@ -19,46 +20,25 @@ class ComputeScenario(BaseModel):
     tradeoff: str  # e.g., "Recommended", "Fastest cold start"
 
 
-class AdvisoryReport(BaseModel):
+class AdvisoryReport(BaseModel, _DisplayMixin):
     """Advisory report with compute migration analysis and cluster recommendation."""
 
     baseline: ComputeScenario  # The current run (All-Purpose)
     scenarios: list[ComputeScenario]  # Jobs Compute, Serverless, etc.
-    recommended: ClusterConfig  # Best cluster config with to_api_json()
+    recommended: ClusterConfig  # Best cluster config with to_json()
     recommendation: ClusterRecommendation  # economy/balanced/performance tiers
     insights: list[str]  # e.g., "Peak memory 14%, downsize DS4→DS3"
     run_metrics: dict[str, Any] = {}  # Raw metrics from the analyzed run
     num_runs_analyzed: int | None = None  # Number of runs analyzed (for job_id)
     confidence_level: str | None = None  # "high", "medium", "low"
 
-    def display(self) -> None:
-        """Render rich table. Uses displayHTML() in Databricks, rich.Table otherwise."""
-        try:
-            # Check if we're in Databricks notebook environment
-            if self._is_databricks_notebook():
-                from IPython.display import HTML, display
-
-                display(HTML(self._to_html_table()))
-            else:
-                # Use rich for CLI
-                from rich.console import Console
-
-                console = Console()
-                console.print(self.comparison_table())
-                console.print(
-                    "\n[yellow]💡[/yellow] "
-                    + "\n[yellow]💡[/yellow] ".join(self.insights)
-                )
-                console.print(
-                    "\n[bold]Recommended Cluster (paste into Job definition):[/bold]"
-                )
-                console.print(self.recommended.model_dump_json(indent=2))
-        except ImportError:
-            # Fallback to ASCII
-            print(self.comparison_table())
-            print("\n💡 " + "\n💡 ".join(self.insights))
-            print("\nRecommended Cluster (paste into Job definition):")
-            print(self.recommended.model_dump_json(indent=2))
+    def _render_rich(self) -> str:
+        """Return rich-renderable string with table, insights, and recommendation."""
+        lines = [self.comparison_table()]
+        lines.append("\n💡 " + "\n💡 ".join(self.insights))
+        lines.append("\nRecommended Cluster (paste into Job definition):")
+        lines.append(self.recommended.model_dump_json(indent=2))
+        return "\n".join(lines)
 
     def comparison_table(self) -> str:
         """ASCII table matching docs/cli-workflows.md Compute Migration Analysis format."""
@@ -100,28 +80,6 @@ class AdvisoryReport(BaseModel):
             confidence="low",
         )
         return Simulation(estimate)
-
-    def _is_databricks_notebook(self) -> bool:
-        """Check if running in Databricks notebook environment."""
-        try:
-            import os
-
-            # Check for Databricks runtime environment variable
-            if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
-                # Check for dbutils or displayHTML availability
-                try:
-                    from pyspark.dbutils import DBUtils
-                    from pyspark.sql import SparkSession
-
-                    spark = SparkSession.getActiveSession()
-                    if spark is not None:
-                        DBUtils(spark)
-                        return True
-                except ImportError:
-                    pass
-        except Exception:
-            pass
-        return False
 
     def _to_html_table(self) -> str:
         """Generate HTML table for Databricks notebook display."""
@@ -201,3 +159,24 @@ class AdvisoryReport(BaseModel):
         """
 
         return html
+
+    def to_markdown(self) -> str:
+        """Return a GFM markdown table."""
+        lines = [
+            "| Compute Type | Est. Cost | Savings | Tradeoff |",
+            "|--------------|-----------|---------|----------|",
+            f"| {self.baseline.compute_type} | ${self.baseline.estimated_cost_usd:.2f} | baseline | {self.baseline.tradeoff} |",
+        ]
+        for scenario in self.scenarios:
+            savings = (
+                f"{scenario.savings_pct:+.1f}%" if scenario.savings_pct != 0 else "—"
+            )
+            lines.append(
+                f"| {scenario.compute_type} | ${scenario.estimated_cost_usd:.2f} | {savings} | {scenario.tradeoff} |"
+            )
+
+        lines.extend(["", "**Insights:**"])
+        for insight in self.insights:
+            lines.append(f"- 💡 {insight}")
+
+        return "\n".join(lines)

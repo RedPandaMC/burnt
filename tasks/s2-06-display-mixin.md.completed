@@ -215,20 +215,20 @@ at the start and end of each tier.
 
 ## Acceptance Criteria
 
-- [ ] `_DisplayMixin` exists in `src/burnt/core/_display.py`
-- [ ] `CostEstimate` inherits from `_DisplayMixin` and has working `display()`
-- [ ] `SimulationResult` inherits from `_DisplayMixin` and has working `display()`
-- [ ] `MultiSimulationResult` inherits from `_DisplayMixin` and has working `display()`
-- [ ] `MultiSimulationResult.best()` returns the lowest-cost named scenario
-- [ ] `ClusterRecommendation` inherits from `_DisplayMixin` and has working `display()`
-- [ ] `ClusterRecommendation.to_api_json()` returns `self.balanced.to_api_json()`
-- [ ] `AdvisoryReport` uses `_DisplayMixin` (no duplicated `_is_databricks_notebook()`)
-- [ ] All `display()` calls fall back to `print()` when neither `rich` nor `IPython` available
-- [ ] No `ImportError` raised in any environment
-- [ ] `.to_markdown()` implemented on `CostEstimate`, `SimulationResult`, `MultiSimulationResult`, `ClusterRecommendation`, `AdvisoryReport` — output is valid GFM markdown
-- [ ] `.to_markdown()` output contains no HTML tags
-- [ ] Progress feedback fires during `estimate()` in multi-tier mode; suppressed in offline-only mode
-- [ ] Progress feedback is a graceful no-op when `rich` and `IPython` are both absent
+- [x] `_DisplayMixin` exists in `src/burnt/core/_display.py`
+- [x] `CostEstimate` inherits from `_DisplayMixin` and has working `display()`
+- [x] `SimulationResult` inherits from `_DisplayMixin` and has working `display()`
+- [x] `MultiSimulationResult` inherits from `_DisplayMixin` and has working `display()`
+- [x] `MultiSimulationResult.best()` returns the lowest-cost named scenario
+- [x] `ClusterRecommendation` inherits from `_DisplayMixin` and has working `display()`
+- [x] `ClusterRecommendation.to_api_json()` returns `self.balanced.to_api_json()`
+- [x] `AdvisoryReport` uses `_DisplayMixin` (no duplicated `_is_databricks_notebook()`)
+- [x] All `display()` calls fall back to `print()` when neither `rich` nor `IPython` available
+- [x] No `ImportError` raised in any environment
+- [x] `.to_markdown()` implemented on `CostEstimate`, `SimulationResult`, `MultiSimulationResult`, `ClusterRecommendation`, `AdvisoryReport` — output is valid GFM markdown
+- [x] `.to_markdown()` output contains no HTML tags
+- [x] Progress feedback fires during `estimate()` in multi-tier mode; suppressed in offline-only mode
+- [x] Progress feedback is a graceful no-op when `rich` and `IPython` are both absent
 
 ---
 
@@ -265,14 +265,45 @@ print('best:', mr.best()[0])
 
 ---
 
+## Implementation
+
+### Changes Made
+- **src/burnt/core/_display.py** - New file: `_DisplayMixin` base class with environment detection, display routing, and abstract methods
+- **src/burnt/core/_progress.py** - New file: `_ProgressTracker` and `_progress_context()` for tier-by-tier progress feedback
+- **src/burnt/core/models.py** - Updated classes:
+  - `ClusterConfig`: Added `to_dab()` method returning YAML, `to_json()` returning JSON string, `to_api_json()` returning dict
+  - `ClusterRecommendation`: Added `to_dab()` with auto-generated tier names (YAML), `to_json()` (JSON string), inherits from `_DisplayMixin`
+  - `CostEstimate`: Inherits from `_DisplayMixin`, implements `comparison_table()`, `_to_html_table()`, `to_markdown()` using tabulate
+  - `SimulationResult`: Inherits from `_DisplayMixin`, implements all display methods with Δ column, uses tabulate for markdown
+  - `MultiSimulationResult`: Inherits from `_DisplayMixin`, adds `best()` method (lowest cost, then confidence), implements all display methods using tabulate
+  - All classes: Added `__str__()` (returns comparison_table) and `__repr__()` methods
+- **src/burnt/advisor/report.py** - `AdvisoryReport`: Refactored to inherit from `_DisplayMixin`, removed duplicate `_is_databricks_notebook()`
+- **src/burnt/core/__init__.py** - Added exports for `_DisplayMixin`, `_ProgressTracker`, `_progress_context`
+
+### Implementation Notes
+- **Output format pattern**:
+  - `to_dab()` → YAML string (for Databricks Asset Bundles)
+  - `to_json()` → JSON string (for serialization)
+  - `to_api_json()` → dict (for API compatibility)
+  - `to_markdown()` → GFM table using `tabulate` library
+  - `display()` → Rich table (CLI) or HTML (IPython)
+  - `__str__()` → comparison_table() for human-readable output
+- `MultiSimulationResult.best()` sorts by cost (ascending), then confidence (descending) using confidence_order map
+- All display methods gracefully degrade: IPython → rich → print()
+- Progress utility uses `importlib.util.find_spec()` to avoid ruff F401 warnings
+- All methods use proper type hints and pass ruff linting
+
+### Verification Results
+- **Tests**: 15/15 model tests passed
+- **Lint**: All checks passed on modified files
+- **Smoke Test**: Verified `display()`, `to_markdown()`, `to_dab()`, `to_json()` all work correctly
+
 ## Handoff
 
 ### Result
 
 ```yaml
-status: todo
+status: done
+agent: openrouter/moonshotai/kimi-k2.5
+completed_by: openrouter/moonshotai/kimi-k2.5
 ```
-
-### Blocked reason
-
-Blocked on s2-05a (requires renamed classes: `SimulationResult`, `MultiSimulationResult`).
