@@ -1,121 +1,123 @@
 """
 burnt - Pre-Orchestration FinOps & Cost Estimation for Databricks.
 
-The Data Engineer's best friend for cost-aware linting, interactive cluster advising,
-and programmatic pipeline cost estimation.
+CLI = static analysis. Zero credentials. Works offline. CI-friendly.
+Python API = runtime cost intelligence. Requires Databricks credentials for live features.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from .core.instances import WorkloadProfile, get_cluster_json
 from .core.models import (
     ClusterConfig,
     ClusterRecommendation,
     CostEstimate,
-    MultiScenarioResult,
-    WhatIfModification,
-    WhatIfResult,
+    MultiSimulationResult,
+    SimulationModification,
+    SimulationResult,
 )
-from .estimators.pipeline import EstimationPipeline
-from .parsers.antipatterns import AntiPattern, detect_antipatterns
+from .estimators.simulation import Simulation
+from .parsers.antipatterns import AntiPattern
 
 __version__ = "0.1.0"
 
 
-def lint(source: str, language: str = "sql") -> list[AntiPattern]:
-    """
-    Detect expensive anti-patterns (CROSS JOIN, un-limited collects) in code.
-
-    Args:
-        source: The SQL or PySpark code to analyze.
-        language: "sql" or "pyspark". Defaults to "sql".
-
-    Returns:
-        A list of AntiPattern objects detailing the issue and severity.
-    """
-    return detect_antipatterns(source, language)
-
-
-def lint_file(file_path: str | Path) -> list[AntiPattern]:
-    """
-    Read a file and detect expensive anti-patterns.
-
-    Args:
-        file_path: Path to a .sql or .py file.
-
-    Returns:
-        A list of AntiPattern objects.
-    """
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
-
-    source = path.read_text(encoding="utf-8")
-    language = "pyspark" if path.suffix == ".py" else "sql"
-
-    return lint(source, language)
-
-
 def estimate(
-    query: str, cluster: ClusterConfig | None = None, registry: Any | None = None
+    query: str | Path,
+    *,
+    cluster: ClusterConfig | None = None,
+    sku: str = "ALL_PURPOSE",
+    currency: Literal["USD", "EUR"] = "USD",
+    language: Literal["sql", "python", "auto"] | None = None,
+    registry: Any | None = None,
 ) -> CostEstimate:
     """
-    Estimate the DBU cost of a SQL query without executing it.
+    Estimate the DBU cost of a SQL query, Python file, or notebook.
 
     Args:
-        query: The SQL query to estimate.
+        query: SQL string, Python source string, or path to a .sql/.py/.ipynb/.dbc file.
+               Pass a Path object or a string ending in a known extension to load from disk.
         cluster: Optional target ClusterConfig. Defaults to a standard DS3_v2 cluster.
+        sku: Databricks SKU (ALL_PURPOSE, JOBS_COMPUTE, etc.).
+        currency: Output currency. USD or EUR.
+        language: Force language detection. None = auto.
         registry: Optional TableRegistry for enterprise governance views.
 
     Returns:
         A CostEstimate object containing predicted DBUs, dollar cost, and confidence level.
     """
+    from .estimators.pipeline import EstimationPipeline
+
+    # Resolve path vs inline source
+    _FILE_EXTENSIONS = {".sql", ".py", ".ipynb", ".dbc"}
+    source: str
+
+    if isinstance(query, Path):
+        source = _load_file(query)
+    elif isinstance(query, str) and Path(query).suffix in _FILE_EXTENSIONS and Path(query).exists():
+        source = _load_file(Path(query))
+    else:
+        source = str(query)
+
     if cluster is None:
         cluster = ClusterConfig(
-            instance_type="Standard_DS3_v2", num_workers=2, dbu_per_hour=0.75
+            instance_type="Standard_DS3_v2", num_workers=2, dbu_per_hour=0.75, sku=sku
         )
 
     pipeline = EstimationPipeline()
-    return pipeline.estimate(query, cluster)
+    result = pipeline.estimate(source, cluster)
+
+    if currency != "USD" and result.estimated_cost_usd:
+        from datetime import date
+        from decimal import Decimal
+
+        from .core.exchange import FrankfurterProvider
+
+        exchange = FrankfurterProvider()
+        converted = round(
+            float(
+                exchange.get_rate_for_amount(
+                    Decimal(str(result.estimated_cost_usd)),
+                    date.today(),
+                    "USD",
+                    currency,
+                )
+            ),
+            4,
+        )
+        result = CostEstimate(
+            estimated_dbu=result.estimated_dbu,
+            estimated_cost_usd=result.estimated_cost_usd,
+            estimated_cost_eur=converted if currency == "EUR" else None,
+            confidence=result.confidence,
+            breakdown=result.breakdown,
+            warnings=result.warnings,
+        )
+
+    return result
 
 
-def estimate_file(
-    file_path: str | Path,
-    cluster: ClusterConfig | None = None,
-    registry: Any | None = None,
-) -> CostEstimate:
-    """
-    Estimate the DBU cost of a .sql file.
-
-    Args:
-        file_path: Path to the .sql file.
-        cluster: Optional target ClusterConfig.
-        registry: Optional TableRegistry.
-
-    Returns:
-        A CostEstimate object.
-    """
-    path = Path(file_path)
+def _load_file(path: Path) -> str:
+    """Load source text from a file, handling notebooks."""
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    source = path.read_text(encoding="utf-8")
-    return estimate(source, cluster, registry)
+    if path.suffix == ".sql" or path.suffix == ".py":
+        return path.read_text(encoding="utf-8")
+    elif path.suffix == ".ipynb":
+        from .parsers.notebooks import parse_notebook
 
+        cells = parse_notebook(path)
+        return "\n\n".join(c.source for c in cells)
+    elif path.suffix == ".dbc":
+        from .parsers.notebooks import parse_dbc
 
-def advise_current_session() -> Any:
-    """
-    Analyzes the queries recently executed in the active Databricks SparkSession
-    and recommends an optimized production Jobs Cluster configuration.
-
-    (Context-Aware "End of Notebook" Advisor)
-    """
-    from .advisor.session import advise_current_session as _advise_current_session
-
-    return _advise_current_session()
+        cells = parse_dbc(path)
+        return "\n\n".join(c.source for c in cells)
+    else:
+        return path.read_text(encoding="utf-8")
 
 
 def advise(
@@ -127,14 +129,16 @@ def advise(
     """
     Analyze a historical run and recommend optimized cluster configuration.
 
+    With no arguments, analyzes the current SparkSession (requires Databricks runtime).
+
     Args:
-        run_id: Databricks Job Run ID to analyze
-        statement_id: SQL statement ID from query history
-        job_id: Job ID for analyzing multiple runs
-        job_name: Job name to analyze (looks up job ID first)
+        run_id: Databricks Job Run ID to analyze.
+        statement_id: SQL statement ID from query history.
+        job_id: Job ID for analyzing multiple runs.
+        job_name: Job name to analyze (looks up job ID first).
 
     Returns:
-        AdvisoryReport with cost comparisons and cluster recommendation
+        AdvisoryReport with cost comparisons and cluster recommendation.
     """
     from .advisor.session import advise as _advise
 
@@ -148,49 +152,14 @@ def right_size(profile: Any) -> Any:
     Right-size cluster configuration based on workload profile.
 
     Args:
-        profile: WorkloadProfile with memory, CPU, and data characteristics
+        profile: WorkloadProfile with memory, CPU, and data characteristics.
 
     Returns:
-        ClusterConfig recommendation
+        ClusterConfig recommendation.
     """
     from .core.instances import get_cluster_config
 
     return get_cluster_config(profile)
-
-
-def what_if(dbu: float, sku: str = "ALL_PURPOSE") -> Any:
-    """
-    Start a what-if scenario from raw parameters.
-
-    Args:
-        dbu: Estimated DBU consumption
-        sku: Databricks SKU (ALL_PURPOSE, JOBS_COMPUTE, etc.)
-
-    Returns:
-        WhatIfBuilder for fluent scenario building
-    """
-    from .core.pricing import get_dbu_rate
-
-    rate = get_dbu_rate(sku)
-    estimate = CostEstimate(
-        estimated_dbu=dbu,
-        estimated_cost_usd=round(dbu * float(rate), 4),
-        confidence="low",
-    )
-    return estimate.what_if()
-
-
-def compare(builder: Any) -> WhatIfResult | MultiScenarioResult:
-    """
-    Compare what-if scenarios.
-
-    Args:
-        builder: A WhatIfBuilder instance
-
-    Returns:
-        WhatIfResult for single scenario, MultiScenarioResult for multiple
-    """
-    return builder.compare()
 
 
 __all__ = [
@@ -198,18 +167,18 @@ __all__ = [
     "ClusterConfig",
     "ClusterRecommendation",
     "CostEstimate",
-    "MultiScenarioResult",
-    "WhatIfModification",
-    "WhatIfResult",
+    "MultiSimulationResult",
+    "Simulation",
+    "SimulationModification",
+    "SimulationResult",
     "WorkloadProfile",
     "advise",
-    "advise_current_session",
-    "compare",
     "estimate",
-    "estimate_file",
-    "get_cluster_json",
-    "lint",
-    "lint_file",
     "right_size",
-    "what_if",
 ]
+
+# WorkloadProfile imported lazily to avoid heavy dependency at module level
+try:
+    from .core.instances import WorkloadProfile
+except ImportError:
+    WorkloadProfile = None  # type: ignore[assignment, misc]

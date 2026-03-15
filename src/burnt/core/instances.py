@@ -343,7 +343,7 @@ def _get_pricing_cache() -> TTLCache:
     global _pricing_cache
     if _pricing_cache is None:
         settings = Settings()
-        _pricing_cache = TTLCache(ttl_seconds=settings.cache_ttl_seconds)
+        _pricing_cache = TTLCache(ttl_seconds=settings.cache.ttl_seconds)
     return _pricing_cache
 
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from burnt.core.models import ClusterConfig, ClusterRecommendation
+from burnt.core.models import ClusterConfig, ClusterRecommendation  # noqa: TC001
 
 
 class ComputeScenario(BaseModel):
@@ -89,12 +89,17 @@ class AdvisoryReport(BaseModel):
         lines.append("└──────────────────┴───────────┴──────────┴────────────────────┘")
         return "\n".join(lines)
 
-    def what_if(self):
-        """Chain into what-if scenarios from this advice."""
-        raise NotImplementedError(
-            "what_if() builder requires WhatIfBuilder (scheduled for Sprint 2). "
-            "Use burnt.estimate(query).what_if() instead."
+    def simulate(self) -> Any:
+        """Chain into simulation scenarios from this advisory report."""
+        from burnt.core.models import CostEstimate
+        from burnt.estimators.simulation import Simulation
+
+        estimate = CostEstimate(
+            estimated_dbu=self.baseline.estimated_cost_usd / 0.55,
+            estimated_cost_usd=self.baseline.estimated_cost_usd,
+            confidence="low",
         )
+        return Simulation(estimate)
 
     def _is_databricks_notebook(self) -> bool:
         """Check if running in Databricks notebook environment."""

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Any, Literal
+from decimal import Decimal  # noqa: TC003 — used in pydantic field type
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+
+if TYPE_CHECKING:
+    from .estimators.simulation import Simulation
 
 
 class OperationInfo(BaseModel):
@@ -106,11 +109,19 @@ class CostEstimate(BaseModel):
     warnings: list[str] = []
     _cluster: ClusterConfig | None = PrivateAttr(default=None)
 
-    def what_if(self) -> WhatIfBuilder:
-        """Start a what-if scenario builder from this estimate."""
-        from ..estimators.whatif import WhatIfBuilder
+    def simulate(self) -> Simulation:
+        """Start a simulation scenario builder from this estimate."""
+        from ..estimators.simulation import Simulation
 
-        return WhatIfBuilder(self, self._cluster)
+        return Simulation(self, self._cluster)
+
+    def display(self) -> None:
+        """Render a rich display of this estimate. Implemented in s2-06."""
+        raise NotImplementedError("display() will be implemented in s2-06")
+
+    def raise_if_exceeds(self, budget_usd: float, label: str = "") -> None:
+        """Raise CostBudgetExceeded if cost exceeds budget. Implemented in s2-07."""
+        raise NotImplementedError("raise_if_exceeds() will be implemented in s2-07")
 
 
 class ClusterRecommendation(BaseModel):
@@ -135,6 +146,10 @@ class ClusterRecommendation(BaseModel):
             f"Rationale: {self.rationale}",
         ]
         return "\n".join(lines)
+
+    def to_api_json(self) -> dict:
+        """Return the balanced cluster as Databricks Jobs API-compatible JSON."""
+        return self.balanced.to_api_json()
 
 
 class UsageRecord(BaseModel):
@@ -210,8 +225,8 @@ class AggregatedMetrics(BaseModel):
     last_run_metrics: dict[str, Any] = {}
 
 
-class WhatIfModification(BaseModel):
-    """A single modification applied in a what-if scenario."""
+class SimulationModification(BaseModel):
+    """A single modification applied in a simulation scenario."""
 
     name: str
     cost_multiplier: float
@@ -220,12 +235,12 @@ class WhatIfModification(BaseModel):
     trade_offs: list[str] = []
 
 
-class WhatIfResult(BaseModel):
+class SimulationResult(BaseModel):
     """Result of comparing original vs projected cost after modifications."""
 
     original: CostEstimate
     projected: CostEstimate
-    modifications: list[WhatIfModification]
+    modifications: list[SimulationModification]
     total_savings_pct: float
     recommended_cluster: ClusterConfig | None = None
 
@@ -244,7 +259,7 @@ class WhatIfResult(BaseModel):
         projected_cost = self.projected.estimated_cost_usd or 0
 
         lines = [
-            "What-If Comparison",
+            "Simulation Comparison",
             f"{'Metric':<20} {'Original':<15} {'Projected':<15}",
             "-" * 50,
             f"{'DBU':<20} {self.original.estimated_dbu:<15.2f} {self.projected.estimated_dbu:<15.2f}",
@@ -270,13 +285,13 @@ class WhatIfResult(BaseModel):
         return [m.name for m in self.modifications if not m.is_verified]
 
 
-class MultiScenarioResult(BaseModel):
-    """Result of comparing multiple what-if scenarios."""
+class MultiSimulationResult(BaseModel):
+    """Result of comparing multiple simulation scenarios."""
 
-    scenarios: list[tuple[str, WhatIfResult]]
+    scenarios: list[tuple[str, SimulationResult]]
 
-    def get_results(self) -> list[WhatIfResult]:
-        """Get list of WhatIfResult objects."""
+    def get_results(self) -> list[SimulationResult]:
+        """Get list of SimulationResult objects."""
         return [r for _, r in self.scenarios]
 
     def comparison_table(self) -> str:

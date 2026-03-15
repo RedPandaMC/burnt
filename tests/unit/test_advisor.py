@@ -6,11 +6,11 @@ import pytest
 
 from burnt.advisor.report import AdvisoryReport, ComputeScenario
 from burnt.advisor.session import (
+    _advise_current_session,
     _calculate_confidence,
     _fetch_metrics_from_job,
     _lookup_job_id_by_name,
     advise,
-    advise_current_session,
 )
 from burnt.core.models import ClusterConfig, ClusterRecommendation
 
@@ -163,8 +163,10 @@ class TestAdvisoryReport:
             run_metrics={},
         )
 
-        with pytest.raises(NotImplementedError):
-            report.what_if()
+        # simulate() should return a Simulation object (not raise NotImplementedError)
+        from burnt.estimators.simulation import Simulation
+        sim = report.simulate()
+        assert isinstance(sim, Simulation)
 
 
 class TestSessionAdvisor:
@@ -173,7 +175,7 @@ class TestSessionAdvisor:
         mock_auto_backend.side_effect = RuntimeError("No Databricks context")
 
         with pytest.raises(RuntimeError, match="No Databricks context"):
-            advise_current_session()
+            _advise_current_session()
 
     @patch("burnt.advisor.session._auto_backend_or_error")
     def test_advise_current_session_with_mock_backend(self, mock_auto_backend):
@@ -204,7 +206,7 @@ class TestSessionAdvisor:
                 sku="JOBS_COMPUTE",
             )
 
-            report = advise_current_session(backend=mock_backend)
+            report = _advise_current_session(backend=mock_backend)
 
             assert isinstance(report, AdvisoryReport)
             assert report.baseline.compute_type == "All-Purpose"
@@ -254,7 +256,7 @@ class TestErrorMessages:
         with patch("burnt.advisor.session._auto_backend_or_error") as mock_auto:
             mock_auto.side_effect = RuntimeError(
                 "No Databricks execution context detected. "
-                "advise_current_session() requires a Databricks runtime. "
+                "_advise_current_session() requires a Databricks runtime. "
                 "Set DATABRICKS_HOST and authentication credentials, "
                 "or run inside a Databricks notebook."
             )
@@ -262,7 +264,7 @@ class TestErrorMessages:
             with pytest.raises(
                 RuntimeError, match="No Databricks execution context detected"
             ):
-                advise_current_session()
+                _advise_current_session()
 
     @patch("burnt.advisor.session._auto_backend_or_error")
     def test_advise_current_session_no_metrics(self, mock_auto_backend):
@@ -271,7 +273,7 @@ class TestErrorMessages:
         mock_auto_backend.return_value = mock_backend
 
         with pytest.raises(RuntimeError, match="Could not retrieve session metrics"):
-            advise_current_session(backend=mock_backend)
+            _advise_current_session(backend=mock_backend)
 
     def test_advise_no_history_found(self):
         mock_backend = Mock()

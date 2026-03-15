@@ -6,7 +6,7 @@
 
 ```yaml
 id: s2-05a-cli-api-redesign
-status: todo
+status: done
 phase: 2
 priority: critical
 agent: ~

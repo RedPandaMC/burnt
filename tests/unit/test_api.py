@@ -4,24 +4,6 @@ import burnt
 from burnt.core.models import ClusterConfig, CostEstimate
 
 
-def test_lint_sql_string():
-    issues = burnt.lint("SELECT * FROM a CROSS JOIN b")
-    assert len(issues) > 0
-    assert any(i.name == "cross_join" for i in issues)
-
-
-def test_lint_file(tmp_path):
-    f = tmp_path / "test.sql"
-    f.write_text("SELECT * FROM a CROSS JOIN b")
-    issues = burnt.lint_file(f)
-    assert len(issues) > 0
-
-
-def test_lint_file_not_found():
-    with pytest.raises(FileNotFoundError):
-        burnt.lint_file("does_not_exist.sql")
-
-
 def test_estimate_sql_string():
     cost = burnt.estimate("SELECT * FROM test")
     assert isinstance(cost, CostEstimate)
@@ -39,12 +21,37 @@ def test_estimate_with_custom_cluster():
 def test_estimate_file(tmp_path):
     f = tmp_path / "test.sql"
     f.write_text("SELECT * FROM test")
-    cost = burnt.estimate_file(f)
+    # estimate() now accepts Path objects directly
+    cost = burnt.estimate(f)
     assert isinstance(cost, CostEstimate)
 
 
-def test_advise_current_session_stubbed():
-    # Note: advise_current_session() is now implemented and will raise
-    # RuntimeError when not in Databricks context instead of NotImplementedError
+def test_estimate_string_path(tmp_path):
+    f = tmp_path / "test.sql"
+    f.write_text("SELECT * FROM test")
+    # estimate() accepts string path ending in .sql
+    cost = burnt.estimate(str(f))
+    assert isinstance(cost, CostEstimate)
+
+
+def test_advise_no_context():
+    # advise() with no args attempts current session → raises RuntimeError outside Databricks
     with pytest.raises(RuntimeError, match="No Databricks execution context"):
-        burnt.advise_current_session()
+        burnt.advise()
+
+
+def test_simulation_in_all():
+    assert "Simulation" in dir(burnt)
+    assert "SimulationResult" in dir(burnt)
+    assert "MultiSimulationResult" in dir(burnt)
+    assert "SimulationModification" in dir(burnt)
+
+
+def test_removed_exports():
+    assert not hasattr(burnt, "what_if")
+    assert not hasattr(burnt, "compare")
+    assert not hasattr(burnt, "estimate_file")
+    assert not hasattr(burnt, "advise_current_session")
+    assert not hasattr(burnt, "lint")
+    assert not hasattr(burnt, "lint_file")
+    assert not hasattr(burnt, "get_cluster_json")

@@ -11,14 +11,14 @@ if TYPE_CHECKING:
 from burnt.core.instances import WorkloadProfile, get_cluster_config
 from burnt.core.models import ClusterConfig, ClusterRecommendation
 from burnt.core.pricing import get_dbu_rate
-from burnt.estimators.whatif import apply_serverless_migration
+from burnt.estimators.simulation import apply_serverless_migration
 
 from .report import AdvisoryReport, ComputeScenario
 
 logger = logging.getLogger(__name__)
 
 
-def advise_current_session(backend: Backend | None = None) -> AdvisoryReport:
+def _advise_current_session(backend: Backend | None = None) -> AdvisoryReport:
     """
     Analyze queries executed in the current SparkSession.
 
@@ -107,6 +107,10 @@ def advise(
             f"Only one of run_id, statement_id, job_id, or job_name can be provided. Got: {provided}"
         )
 
+    # No args → analyze current SparkSession (requires Databricks runtime)
+    if not provided:
+        return _advise_current_session(backend)
+
     if backend is None:
         backend = _auto_backend_or_error()
 
@@ -115,11 +119,6 @@ def advise(
 
     if job_id is not None:
         return _advise_from_job(job_id, backend)
-
-    if run_id is None and statement_id is None:
-        raise ValueError(
-            "Either run_id, statement_id, job_id, or job_name must be provided"
-        )
 
     # 1. Fetch metrics from system tables
     metrics = _fetch_metrics_from_history(backend, run_id, statement_id)
