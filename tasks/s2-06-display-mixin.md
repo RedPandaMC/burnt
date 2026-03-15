@@ -172,6 +172,45 @@ Add `display()` method using `_DisplayMixin`. The table shows three tiers side b
 - Keep existing `display()`, `comparison_table()`, `_to_html_table()` behavior unchanged
   (just refactor to use mixin).
 
+### `.to_markdown()` on all result types
+
+Add a `.to_markdown()` method to `_DisplayMixin` (and implement in each subclass) that
+produces a GitHub-Flavored Markdown table string. This renders correctly in Slack, GitHub
+issues, Confluence, and email when pasted from a notebook.
+
+```python
+def to_markdown(self) -> str:
+    """Return a GFM markdown table suitable for pasting into Slack / GitHub / Confluence."""
+    ...
+```
+
+The markdown output must be copy-paste safe: no HTML tags, pipe-delimited rows, header separator row.
+
+### Progress feedback during estimation
+
+Add a `_progress_context()` helper in `_DisplayMixin` (or a standalone utility in
+`src/burnt/core/_progress.py`) that shows tier-by-tier progress during multi-tier
+estimation. Activated when estimation takes >200ms or when `verbose=True` is passed to
+`estimate()`.
+
+In terminal: use `rich.progress` with spinner. In Databricks notebooks: use
+`IPython.display` to update a display handle in-place. Graceful no-op when neither is
+available.
+
+Target output:
+```
+Estimating query cost...
+  [✓] Static analysis (2ms)
+  [✓] Delta metadata — 3 tables (340ms)
+  [⟳] Running EXPLAIN COST...
+  [✓] EXPLAIN COST (1,840ms)
+  [✓] Fingerprint lookup — 7 matches (210ms)
+Done. Confidence: high
+```
+
+The progress hook must be integrated into `EstimationPipeline.estimate()` — emit events
+at the start and end of each tier.
+
 ---
 
 ## Acceptance Criteria
@@ -186,6 +225,10 @@ Add `display()` method using `_DisplayMixin`. The table shows three tiers side b
 - [ ] `AdvisoryReport` uses `_DisplayMixin` (no duplicated `_is_databricks_notebook()`)
 - [ ] All `display()` calls fall back to `print()` when neither `rich` nor `IPython` available
 - [ ] No `ImportError` raised in any environment
+- [ ] `.to_markdown()` implemented on `CostEstimate`, `SimulationResult`, `MultiSimulationResult`, `ClusterRecommendation`, `AdvisoryReport` — output is valid GFM markdown
+- [ ] `.to_markdown()` output contains no HTML tags
+- [ ] Progress feedback fires during `estimate()` in multi-tier mode; suppressed in offline-only mode
+- [ ] Progress feedback is a graceful no-op when `rich` and `IPython` are both absent
 
 ---
 

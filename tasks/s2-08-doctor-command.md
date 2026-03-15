@@ -139,12 +139,42 @@ Only attempt if both credentials are set. Make a lightweight HTTP request to
 
 **Do not raise.** Catch all exceptions and show a user-friendly message.
 
-### 2e. `system.query.history` access
+### 2e. System table permission checks
 
-Only if credentials set. Make a lightweight query to check access.
-Success → `OK  accessible`. Auth/permission error → `NO ACCESS  check workspace permissions`.
+Only if credentials set. For each system table that `burnt` uses, attempt a lightweight
+`SELECT 1 FROM <table> LIMIT 1` or `DESCRIBE <table>` to verify read access. Display
+a table of results.
 
-**Do not raise.**
+Required system tables to check:
+
+| Table | Required for |
+|-------|-------------|
+| `system.billing.usage` | Cost attribution, anomaly detection, tag attribution |
+| `system.billing.list_prices` | Dollar amount calculation |
+| `system.query.history` | Historical estimation, fingerprint lookup, regression detection |
+| `system.compute.node_types` | Instance catalog refresh |
+| `system.compute.node_timeline` | Idle cluster detection, spot analysis |
+| `system.lakeflow.jobs` | Job analysis, freshness tradeoff |
+| `system.lakeflow.job_run_timeline` | Job run cost attribution |
+
+Output format:
+
+```
+Permissions
+────────────────────────────────
+  system.billing.usage          OK
+  system.billing.list_prices    OK
+  system.query.history          NO ACCESS  ⚠ required for historical estimation
+  system.compute.node_types     OK
+  system.compute.node_timeline  NO ACCESS  ⚠ required for idle cluster detection
+  system.lakeflow.jobs          NO ACCESS  ⚠ required for job analysis
+  system.lakeflow.job_run_timeline  NO ACCESS  ⚠ required for job analysis
+
+Missing permissions affect: historical estimation, idle detection, job analysis
+Contact your workspace admin to grant SELECT on system catalog tables.
+```
+
+**Do not raise.** Catch permission errors (403, AnalysisException) per table and continue.
 
 ### 2f. Config file detection
 
@@ -187,6 +217,8 @@ Exit code: 0 always (doctor is informational, not a check command).
 - [ ] Shows Python version and all dependency versions (or MISSING)
 - [ ] Shows DATABRICKS_HOST and DATABRICKS_TOKEN status; token value redacted
 - [ ] Shows connection test result (or SKIP if credentials not set)
+- [ ] Shows per-system-table permission check results (OK / NO ACCESS) for all 7 tables listed above
+- [ ] Shows summary of which features are unavailable due to missing permissions
 - [ ] Shows which config file is loaded and its full path
 - [ ] Shows key config values (workspace_url, lint.fail_on, rules count, cache ttl)
 - [ ] Shows "Also found" if both `.burnt.toml` and `pyproject.toml [tool.burnt]` exist
