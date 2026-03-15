@@ -27,9 +27,11 @@ Industry benchmarks show that **cluster configuration drives 70% of Databricks s
 
 ### Core Capabilities
 
-*   **Pre-Orchestration Estimates:** Parse `databricks.yml` and Job JSON to project minimum and maximum workload costs before deployment.
-*   **Historical Baselines:** Cross-reference `system.lakeflow.jobs` and `system.billing.usage` to detect silent cost drift.
-*   **Query-Level `EXPLAIN` Analytics:** For ad-hoc analytics, estimate SQL query costs utilizing Spark's `EXPLAIN COST` without touching the actual data.
+*   **End-of-Notebook Advisor:** Run `burnt.advise_current_session()` after developing in a notebook to get a recommended cluster config, cost comparison (All-Purpose → Jobs Compute → Serverless → Spot), and Databricks API JSON to paste into your job definition.
+*   **What-If Simulation:** Model cost scenarios fluently — `estimate.simulate().cluster().enable_photon().compare()` — with calibrated multipliers and verified/estimated flags.
+*   **4-Tier Estimation Pipeline:** Static analysis → Delta metadata (`DESCRIBE DETAIL`) → `EXPLAIN COST` → Historical fingerprints. Each tier adds accuracy with graceful fallback.
+*   **Anti-Pattern Detection:** AST-based SQL/PySpark linting for expensive patterns (CROSS JOIN, collect without limit, Python UDFs, etc.).
+*   **System Table Analytics:** Tag-based cost attribution, anomaly detection, idle cluster alerting, warehouse scaling analysis — all via `system.*` tables.
 
 ---
 
@@ -45,26 +47,55 @@ uv sync
 
 ## Quick Start
 
-### 1. Pre-Orchestration Job Estimation (Coming Soon)
-Estimate the cost of a Databricks Asset Bundle (DAB) before deploying:
-```bash
-uv run burnt estimate-job ./databricks.yml
+### 1. End-of-Notebook Advisor (Flagship)
+After developing in a Databricks notebook, get a cluster recommendation with cost breakdown:
+```python
+import burnt
+advice = burnt.advise_current_session()
+advice.display()
+# → "Switch to Standard_DS3_v2 Jobs Compute with 3 workers.
+#    Cost drops from $45/run to $12/run. Peak memory was 14% — over-provisioned."
+
+# Get Databricks API JSON to paste directly into your job definition
+print(advice.recommended.to_api_json())
+
+# Explore simulation scenarios from the advisory
+advice.simulate().cluster().enable_photon().compare().display()
 ```
 
 ### 2. SQL / PySpark Cost Estimation
-Estimate an individual query or file using static or hybrid estimation:
+Check for anti-patterns and estimate query cost offline:
 ```bash
-uv run burnt estimate "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1"
-uv run burnt estimate ./notebooks/daily_revenue.sql
+uv run burnt check "SELECT * FROM a CROSS JOIN b"
+uv run burnt check ./notebooks/
 ```
 
-### 3. Native Databricks Runtime Integration
-If you are running `burnt` *inside* a Databricks notebook, it natively uses your active `SparkSession`—avoiding slow and expensive REST API roundtrips:
+Or estimate programmatically with simulation:
 ```python
-import burnt
-# Automatically detects current notebook and estimates the cost to run it
-estimate = burnt.estimate_current_notebook()
-burnt.display()
+estimate = burnt.estimate("SELECT customer_id, SUM(amount) FROM orders GROUP BY 1")
+result = (
+    estimate.simulate()
+    .cluster().enable_photon()
+    .data_source().enable_liquid_clustering(["customer_id"])
+    .compare()
+)
+result.display()
+```
+
+### 3. Cost Attribution & FinOps
+```python
+# Tag-based cost breakdown
+report = burnt.cost_by_tag("team", days=30)
+report.display()
+
+# Detect idle all-purpose clusters
+idle = burnt.detect_idle_clusters()
+for cluster in idle:
+    print(f"{cluster.cluster_name}: {cluster.idle_cost_usd:.2f} USD wasted")
+
+# Check environment health
+# (from CLI)
+# uv run burnt doctor
 ```
 
 ---
@@ -111,24 +142,34 @@ backend = burnt.runtime.auto_backend()
 
 ## Roadmap
 
-| Phase | Status | Focus |
-|-------|--------|-------|
-| 1-3 | ✅ Done | Foundation, System Tables, EXPLAIN parser |
-| 4 | ✅ Done | Bug fixes, WhatIfBuilder |
-| 5 | ⏳ Planned | Pre-Orchestration Job Cost Projection (DABs) |
-| 6 | ⏳ Planned | Query-Level Estimation Wiring |
+| Sprint | Status | Focus |
+|--------|--------|-------|
+| 1 | ✅ Done | RuntimeBackend, instance catalog, `advise_current_session()` |
+| 2 | 🔄 In progress | CLI redesign, display mixin, `burnt doctor`, offline mode fix, `ClusterProfile` |
+| 3 | 📋 Planned | Estimation accuracy — partition pruning, spill risk, photon eligibility, `EstimationTrace` |
+| 4 | 📋 Planned | Production hardening — error handling, caching, cost anomaly detection, tag attribution |
+| 4.5 | 📋 Planned | ML research spike — model selection, forecast target, training data requirements |
+| 5 | 📋 Planned | ML models — transfer function, cost regressor, calibration loop, streaming projection |
+| 6 | 📋 Planned | Analytics — schema impact, commitment advisor, DLT decomposition, query regression, storage tiering |
 
-### What's Implemented
+### What's Implemented Today
 
-- **RuntimeBackend** — Dual-mode execution (SparkBackend + RestBackend with OAuth)
-- **4-Tier Estimation Pipeline** — Static → Delta → EXPLAIN → Historical
-- **Anti-pattern detection** — SQL/PySpark linting via AST
-- **Static cost estimation** — Complexity-based heuristics
-- **EXPLAIN COST parser** — Parses Spark plans into structured data
-- **Delta metadata parser** — DESCRIBE DETAIL → table stats
-- **Query fingerprinting** — SHA-256 normalization for history lookup
+| Feature | API |
+|---------|-----|
+| End-of-notebook advisor | `burnt.advise_current_session()` |
+| Historical run analysis | `burnt.advise(run_id=…)` |
+| SQL/PySpark anti-pattern detection | `burnt.lint()`, `burnt check` (CLI) |
+| Static + hybrid cost estimation | `burnt.estimate(sql)` |
+| What-if simulation builder | `estimate.simulate().cluster().enable_photon().compare()` |
+| Cluster right-sizing | `burnt.right_size(profile)` |
+| Databricks API JSON output | `cluster_config.to_api_json()` |
+| Dual-mode runtime | Auto-detects SparkBackend / RestBackend / offline |
+| 4-tier estimation pipeline | Static → Delta → EXPLAIN → Historical fingerprints |
+| System table clients | billing, query history, compute, attribution |
+| Azure instance catalog | 23 VM types, DBU rates, right-sizer |
+| What-if cost multipliers | Photon, spot, serverless, Delta, Liquid Clustering, AQE |
 
-For a complete look at our architecture and research findings, see [`DESIGN.md`](DESIGN.md).
+For architecture details, research findings, and full sprint specs, see [`DESIGN.md`](DESIGN.md).
 
 ---
 
