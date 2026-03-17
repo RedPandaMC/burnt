@@ -52,12 +52,18 @@ def extract_tables(sql: str, dialect: str = "databricks") -> list[str]:
     return list(dict.fromkeys(tables))
 
 
-def detect_operations(sql: str, dialect: str = "databricks") -> list[OperationInfo]:
-    """Detect cost-affecting operations in SQL."""
+def detect_operations(
+    sql: str, dialect: str = "databricks", *, tree=None
+) -> list[OperationInfo]:
+    """Detect cost-affecting operations in SQL.
+
+    Pass a pre-parsed ``tree`` to avoid a redundant parse when the caller has
+    already called ``parse_sql()`` (eliminates the double-parse bug).
+    """
     require("sqlglot")
     from sqlglot import exp
 
-    ast = parse_sql(sql, dialect)
+    ast = tree if tree is not None else parse_sql(sql, dialect)
     operations = []
 
     for node in ast.walk():

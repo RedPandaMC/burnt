@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from ..parsers.antipatterns import AntiPattern
 from rich.console import Console
 from rich.table import Table
 
@@ -50,20 +55,14 @@ def main(
 # burnt check
 # ---------------------------------------------------------------------------
 
-_RULE_SEVERITIES: dict[str, str] = {
-    "cross_join": "warning",
-    "select_star": "error",
-    "collect_without_limit": "error",
-    "python_udf": "error",
-    "toPandas": "error",
-    "repartition_one": "warning",
-    "order_by_no_limit": "warning",
-    "pandas_udf": "warning",
-    "count_without_filter": "warning",
-    "withColumn_in_loop": "warning",
-    "jdbc_incomplete_partition": "error",
-    "sdp_prohibited_ops": "error",
-}
+def _build_rule_severities() -> dict[str, str]:
+    """Build the rule-id → severity dict from the REGISTRY."""
+    from ..parsers.registry import REGISTRY
+
+    return {rule_id: str(rule.severity) for rule_id, rule in REGISTRY.items()}
+
+
+_RULE_SEVERITIES: dict[str, str] = _build_rule_severities()
 
 
 @app.command()
@@ -96,7 +95,7 @@ def check(
         files_to_check.append(target)
     else:
         for ext in ("*.sql", "*.py"):
-            for f in target.rglob(ext):
+            for f in sorted(target.rglob(ext)):
                 # Apply lint.exclude globs
                 if not _is_excluded(f, settings.lint.exclude, target):
                     files_to_check.append(f)
@@ -108,7 +107,7 @@ def check(
     severity_levels = {"info": 1, "warning": 2, "error": 3}
     fail_threshold = severity_levels.get(fail_on.lower(), 3)
 
-    all_issues: list[tuple[Path, object]] = []
+    all_issues: list[tuple[Path, AntiPattern]] = []
     fail_build = False
 
     for file_path in files_to_check:
@@ -118,8 +117,6 @@ def check(
         # Determine per-file ignores
         file_ignores = set(effective_ignore)
         for glob_pattern, rule_ids in settings.lint.per_file_ignores.items():
-            import fnmatch
-
             if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
                 file_path.name, glob_pattern
             ):
@@ -191,8 +188,6 @@ def check(
 
 
 def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bool:
-    import fnmatch
-
     rel = str(file_path.relative_to(root))
     for pattern in exclude_patterns:
         if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(str(file_path), pattern):
