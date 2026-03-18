@@ -32,6 +32,7 @@
 - **Minimal changes** — focused, incremental
 - **No AI commits** — human only in git author
 - **Commits**: `feat:`, `fix:`, `refactor:`, `test:`, `chore:`
+- **Typing** — Use `from typing import ...` for all type annotations: `Optional[str]`, `List[str]`, `Dict[str, Any]`, `Tuple[...]`, `Set[str]`, `Union[X, Y]`, `Any`, `Literal`, `Protocol`, `runtime_checkable`, `TYPE_CHECKING`, `TypeVar`, `Generic`, `overload`, `cast`, `ClassVar`.
 
 ---
 
