@@ -70,7 +70,7 @@ They see: "Switch to `Standard_DS3_v2` Jobs Compute with 3 workers. Estimated co
 | Cluster right-sizer | **Working** | `get_cluster_json()` outputs Databricks API JSON |
 | Benchmark dataset | **Working** | 5 SQL queries, expected_costs.json, monotonicity + Hypothesis tests |
 | CLI redesign | **Pending** | `check`/`init`/`tutorial`/`cache`/`rules`/`doctor`/`generate-policy` — see s2-05a |
-| Simulation API | **Pending** | Rename WhatIfBuilder → Simulation, `.simulate()` entry point — see s2-05a |
+| Simulation API | **Working** | `Simulation` builder, `.simulate()` entry point — see s2-05a |
 | `burnt doctor` | **Pending** | Permission audit for 7 system tables — see s2-08 |
 | `ClusterConfig.from_databricks_json()` | **Pending** | Jobs API JSON → ClusterConfig — see s2-11 |
 | `ClusterProfile` | **Pending** | Extended cluster context (spark_version, tags, pool) — see s2-12 |
@@ -161,7 +161,7 @@ The old task graph had 5 serial dependencies before the flagship feature could s
 |------|------|
 | `s2-03` | ✅ Benchmark dataset — 5 queries, expected costs, monotonicity + Hypothesis tests |
 | `s2-04` | AST lint rules — 7 of 12 rules done, 5 remaining |
-| `s2-05a` | CLI/API redesign — `check`/`init`/`tutorial`/`cache`/`rules`; rename `WhatIfBuilder` → `Simulation` |
+| ✅ `s2-05a` | CLI/API redesign — `check`/`init`/`tutorial`/`cache`/`rules`; `Simulation` builder |
 | ✅ `s2-06` | Display mixin — `_DisplayMixin` base class, `.to_markdown()`, progress feedback |
 | 🔄 `s2-07` | Cost guard — `raise_if_exceeds()` implemented; `warn_if_exceeds()` pending |
 | `s2-08` | `burnt doctor` — environment health check, system table permission audit |
@@ -576,7 +576,7 @@ burnt --version
 **Commands removed from CLI** (use Python API instead):
 - `burnt estimate` → `burnt.estimate("SELECT ...")`
 - `burnt advise` → `burnt.advise_current_session()` / `burnt.advise(run_id=...)`
-- `burnt whatif` → `estimate.simulate().cluster().enable_photon().compare()`
+- `burnt simulate` → `estimate.simulate().cluster().enable_photon().compare()`
 
 ---
 

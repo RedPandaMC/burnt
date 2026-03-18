@@ -556,9 +556,14 @@ print('exports OK')
 ### Result
 
 ```yaml
-status: todo
+status: done
 ```
 
-### Blocked reason
-
-Not blocked.
+All acceptance criteria verified:
+- CLI commands (`check`, `init`, `tutorial`, `cache show/clear`, `rules`, `advise`, `doctor` stub, `--version`) working
+- Removed commands (`estimate`, `whatif`, `lint`) correctly raise "No such command"
+- Config redesign complete (`LintSettings`, `CacheSettings`, `Settings.from_toml/discover/merge`)
+- `Simulation` builder with `_ScenarioState`, `scenario()`, `disable_spot()`, 6 new `SparkConfigContext` methods
+- Python API exports correct; `estimate()` and `advise()` unified signatures
+- All `whatif` references purged from src/, tests/, DESIGN.md
+- 451 unit tests passing

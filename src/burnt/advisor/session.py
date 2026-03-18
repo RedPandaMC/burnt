@@ -244,7 +244,7 @@ def _project_scenarios(
     )
 
     # Serverless scenario
-    # Use the whatif.py function
+    # Use the simulation module
     from burnt.core.models import CostEstimate
 
     # Create a dummy estimate for the serverless calculation

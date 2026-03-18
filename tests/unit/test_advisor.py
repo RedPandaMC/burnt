@@ -139,7 +139,7 @@ class TestAdvisoryReport:
         assert "$18.25" in table
         assert "-60.0%" in table
 
-    def test_what_if_not_implemented(self):
+    def test_simulate_returns_simulation(self):
         baseline = ComputeScenario(
             compute_type="All-Purpose",
             sku="ALL_PURPOSE",
