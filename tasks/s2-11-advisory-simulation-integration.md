@@ -10,7 +10,7 @@ status: todo
 phase: 2
 priority: high
 agent: ~
-blocked_by: [s2-05a-cli-api-redesign, s2-12-cluster-profile]
+blocked_by: [s2-05a-cli-api-redesign, s2-09-cluster-config-enrichment]
 created_by: planner
 ```
 

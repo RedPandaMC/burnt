@@ -12,7 +12,6 @@ priority: medium
 agent: ~
 blocked_by: []
 created_by: planner
-supersedes: [s2-11-cluster-config-factory, s2-12-cluster-profile]
 ```
 
 ---
