@@ -6,7 +6,7 @@
 
 ```yaml
 id: s2-08-doctor-command
-status: todo
+status: done
 phase: 2
 priority: high
 agent: ~
@@ -213,18 +213,18 @@ Exit code: 0 always (doctor is informational, not a check command).
 
 ## Acceptance Criteria
 
-- [ ] `burnt doctor` runs without error in any environment (no credentials, no config, no cache)
-- [ ] Shows Python version and all dependency versions (or MISSING)
-- [ ] Shows DATABRICKS_HOST and DATABRICKS_TOKEN status; token value redacted
-- [ ] Shows connection test result (or SKIP if credentials not set)
-- [ ] Shows per-system-table permission check results (OK / NO ACCESS) for all 7 tables listed above
-- [ ] Shows summary of which features are unavailable due to missing permissions
-- [ ] Shows which config file is loaded and its full path
-- [ ] Shows key config values (workspace_url, lint.fail_on, rules count, cache ttl)
-- [ ] Shows "Also found" if both `.burnt.toml` and `pyproject.toml [tool.burnt]` exist
-- [ ] Shows "NOT FOUND" with hint if no config exists
-- [ ] Shows cache directory file count and total size
-- [ ] Exit code is always 0
+- [x] `burnt doctor` runs without error in any environment (no credentials, no config, no cache)
+- [x] Shows Python version and all dependency versions (or MISSING)
+- [x] Shows DATABRICKS_HOST and DATABRICKS_TOKEN status; token value redacted
+- [x] Shows connection test result (or SKIP if credentials not set)
+- [x] Shows per-system-table permission check results (OK / NO ACCESS) for all 7 tables listed above
+- [x] Shows summary of which features are unavailable due to missing permissions
+- [x] Shows which config file is loaded and its full path
+- [x] Shows key config values (workspace_url, lint.fail_on, rules count, cache ttl)
+- [x] Shows "Also found" if both `.burnt.toml` and `pyproject.toml [tool.burnt]` exist
+- [x] Shows "NOT FOUND" with hint if no config exists
+- [x] Shows cache directory file count and total size
+- [x] Exit code is always 0
 
 ---
 
@@ -254,8 +254,8 @@ burnt doctor
 
 ### Integration Check
 
-- [ ] `burnt doctor` prints a complete environment report without raising
-- [ ] Config path shown matches the actual file discovered on disk
+- [x] `burnt doctor` prints a complete environment report without raising
+- [x] Config path shown matches the actual file discovered on disk
 
 ---
 
@@ -264,9 +264,15 @@ burnt doctor
 ### Result
 
 ```yaml
-status: todo
+status: done
 ```
 
-### Blocked reason
+### Implementation notes
 
-Blocked on s2-05a (`Settings.discover()` must be implemented first).
+- Full implementation in `src/burnt/cli/main.py` replacing the stub at the former lines 605-608.
+- Added module-level `_SYSTEM_TABLES` list and `_check_table_access()` helper (uses `POST /api/2.0/sql/statements` with `wait_timeout=30s`).
+- `doctor()` accepts optional `--warehouse-id`; auto-detects via `GET /api/2.1/warehouses` if omitted.
+- Credential env var fallback chains: `DATABRICKS_HOST` → `DATABRICKS_WORKSPACE_URL` → `BURNT_WORKSPACE_URL` and `DATABRICKS_TOKEN` → `BURNT_TOKEN`.
+- "Also found" secondary config detection uses the existing `Settings._has_tool_burnt()` helper.
+- 17 unit tests in `tests/unit/test_doctor.py`; all pass (`uv run pytest -m unit` 468 passed).
+- `uv run ruff check src/ tests/` passes with 0 errors.

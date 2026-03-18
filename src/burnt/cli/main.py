@@ -598,14 +598,273 @@ def _write_ignore_list(config_path: Path, ignore: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# burnt doctor (stub — implemented in s2-08)
+# burnt doctor
 # ---------------------------------------------------------------------------
+
+_SYSTEM_TABLES = [
+    ("system.billing.usage", "cost attribution / anomaly detection"),
+    ("system.billing.list_prices", "dollar amount calculation"),
+    ("system.query.history", "historical estimation / fingerprint lookup"),
+    ("system.compute.node_types", "instance catalog refresh"),
+    ("system.compute.node_timeline", "idle cluster detection"),
+    ("system.lakeflow.jobs", "job analysis"),
+    ("system.lakeflow.job_run_timeline", "job run cost attribution"),
+]
+
+
+def _check_table_access(
+    host: str,
+    token: str,
+    warehouse_id: str,
+    table: str,
+) -> tuple[str, str]:
+    """Check SELECT access on a system table via the SQL Statement API.
+
+    Returns (status, message) where status is one of: OK, NO ACCESS, TIMEOUT, ERROR.
+    """
+    import requests
+
+    try:
+        resp = requests.post(
+            f"{host}/api/2.0/sql/statements",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "statement": f"SELECT 1 FROM {table} LIMIT 1",
+                "warehouse_id": warehouse_id,
+                "wait_timeout": "30s",
+                "disposition": "INLINE",
+            },
+            timeout=35,
+        )
+        data = resp.json()
+        state = data.get("status", {}).get("state", "UNKNOWN")
+        if state == "SUCCEEDED":
+            return "OK", ""
+        if state in ("PENDING", "RUNNING"):
+            return "TIMEOUT", "query still running after 30s"
+        error = data.get("status", {}).get("error", {})
+        msg = error.get("message", "unknown error")
+        msg_lower = msg.lower()
+        if (
+            "permission_denied" in msg_lower
+            or "does not have privilege" in msg_lower
+            or "insufficient privileges" in msg_lower
+        ):
+            return "NO ACCESS", msg
+        return "ERROR", msg
+    except requests.Timeout:
+        return "TIMEOUT", "request timed out after 35s"
+    except Exception as exc:
+        return "ERROR", str(exc)
 
 
 @app.command()
-def doctor() -> None:
-    """Diagnose burnt setup and Databricks connectivity. (Implemented in s2-08)"""
-    raise NotImplementedError("doctor command will be implemented in s2-08")
+def doctor(
+    warehouse_id: str | None = typer.Option(
+        None, "--warehouse-id", help="SQL warehouse ID for system table permission checks"
+    ),
+) -> None:
+    """Diagnose burnt setup and Databricks connectivity."""
+    import importlib.metadata
+    import os
+    import sys
+
+    import requests
+
+    from .. import __version__
+
+    SEP = "─" * 48
+
+    # ── Header ───────────────────────────────────────────────────────────────
+    console.print(f"burnt v{__version__} environment check")
+    console.print(SEP)
+
+    # ── Python + dependencies ─────────────────────────────────────────────────
+    vi = sys.version_info
+    py_ver = f"{vi.major}.{vi.minor}.{vi.micro}"
+    console.print(f"  {'Python':<22} {py_ver:<14} [green]OK[/green]")
+
+    _PACKAGES = [
+        ("sqlglot", "sqlglot"),
+        ("pydantic", "pydantic"),
+        ("pydantic-settings", "pydantic_settings"),
+        ("rich", "rich"),
+    ]
+    for pkg_name, import_name in _PACKAGES:
+        try:
+            ver = importlib.metadata.version(import_name)
+            console.print(f"  {pkg_name:<22} {ver:<14} [green]OK[/green]")
+        except importlib.metadata.PackageNotFoundError:
+            console.print(f"  {pkg_name:<22} {'':14} [red]MISSING[/red]")
+
+    console.print(SEP)
+
+    # ── Credentials ───────────────────────────────────────────────────────────
+    host = (
+        os.environ.get("DATABRICKS_HOST")
+        or os.environ.get("DATABRICKS_WORKSPACE_URL")
+        or os.environ.get("BURNT_WORKSPACE_URL")
+    )
+    token = os.environ.get("DATABRICKS_TOKEN") or os.environ.get("BURNT_TOKEN")
+    creds_ok = bool(host and token)
+
+    if host:
+        console.print(f"  {'DATABRICKS_HOST':<22} {'SET':<14} {host}")
+    else:
+        console.print(
+            f"  {'DATABRICKS_HOST':<22} [yellow]NOT SET ⚠[/yellow]"
+            "       advise() and live features unavailable"
+        )
+
+    if token:
+        redacted = (token[:6] + "...") if len(token) > 6 else token
+        console.print(f"  {'DATABRICKS_TOKEN':<22} {'SET':<14} {redacted}")
+    else:
+        console.print(
+            f"  {'DATABRICKS_TOKEN':<22} [yellow]NOT SET ⚠[/yellow]"
+            "       advise() and live features unavailable"
+        )
+
+    # ── Connection test ───────────────────────────────────────────────────────
+    if not creds_ok:
+        console.print(f"  {'Connection test':<38} SKIP  (credentials not configured)")
+    else:
+        try:
+            resp = requests.get(
+                f"{host}/api/2.0/clusters/list",
+                params={"limit": 1},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                console.print(
+                    f"  {'Connection test':<38} [green]OK[/green]  workspace reachable"
+                )
+            elif resp.status_code in (401, 403):
+                console.print(
+                    f"  {'Connection test':<38} [red]AUTH ERROR[/red]  check token"
+                )
+            else:
+                console.print(
+                    f"  {'Connection test':<38} [red]ERROR[/red]  {resp.status_code}"
+                )
+        except requests.Timeout:
+            console.print(
+                f"  {'Connection test':<38} [yellow]TIMEOUT[/yellow]  (5s)  check firewall/network"
+            )
+        except Exception as exc:
+            console.print(f"  {'Connection test':<38} [red]ERROR[/red]  {exc}")
+
+    # ── System table permission checks ────────────────────────────────────────
+    if not creds_ok:
+        for tbl, _ in _SYSTEM_TABLES:
+            console.print(f"  {tbl:<38} SKIP  (credentials not configured)")
+    else:
+        wh_id = warehouse_id
+        if not wh_id:
+            try:
+                wh_resp = requests.get(
+                    f"{host}/api/2.1/warehouses",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5,
+                )
+                if wh_resp.status_code == 200:
+                    for wh in wh_resp.json().get("warehouses", []):
+                        if wh.get("state") != "DELETED":
+                            wh_id = wh["id"]
+                            break
+            except Exception:
+                pass
+
+        if not wh_id:
+            for tbl, _ in _SYSTEM_TABLES:
+                console.print(
+                    f"  {tbl:<38} [yellow]SKIP[/yellow]  (no SQL warehouse; use --warehouse-id)"
+                )
+        else:
+            missing_features: list[str] = []
+            for tbl, feature in _SYSTEM_TABLES:
+                status, msg = _check_table_access(host, token, wh_id, tbl)
+                if status == "OK":
+                    console.print(f"  {tbl:<38} [green]OK[/green]")
+                elif status == "NO ACCESS":
+                    console.print(
+                        f"  {tbl:<38} [red]NO ACCESS ⚠[/red]  required for {feature}"
+                    )
+                    missing_features.append(feature)
+                else:
+                    console.print(f"  {tbl:<38} [red]{status}[/red]  {msg}")
+
+            if missing_features:
+                console.print(
+                    f"\n  [yellow]Missing permissions affect:[/yellow] {', '.join(missing_features)}"
+                )
+                console.print(
+                    "  Contact your workspace admin to grant SELECT on system catalog tables."
+                )
+
+    console.print(SEP)
+
+    # ── Config ────────────────────────────────────────────────────────────────
+    config_path, settings = Settings.discover(cwd=Path.cwd())
+
+    if config_path is None:
+        console.print(
+            f"  {'Config':<22} [yellow]NOT FOUND ⚠[/yellow]  "
+            "Run 'burnt init' to create .burnt.toml"
+        )
+    else:
+        console.print(f"  {'Config':<22} {config_path}")
+        url_val = settings.workspace_url or "(not set)"
+        console.print(f"    {'workspace-url':<16} {url_val}")
+        console.print(f"    {'lint.fail-on':<16} {settings.lint.fail_on}")
+
+        from ..parsers.registry import REGISTRY
+
+        total_rules = len(REGISTRY)
+        ignored_count = len(settings.lint.ignore)
+        if settings.lint.select == ["ALL"]:
+            rules_str = f"ALL  ({total_rules} rules, {ignored_count} ignored)"
+        else:
+            selected = len(settings.lint.select)
+            rules_str = f"{selected} rules selected, {ignored_count} ignored"
+        console.print(f"    {'lint.select':<16} {rules_str}")
+        console.print(f"    {'cache.ttl':<16} {int(settings.cache.ttl_seconds)}s")
+
+        # Check for secondary config in the same directory
+        parent = config_path.parent
+        if config_path.name == ".burnt.toml":
+            secondary = parent / "pyproject.toml"
+            if secondary.exists() and Settings._has_tool_burnt(secondary):
+                console.print(
+                    f"  {'Also found':<22} {secondary} [tool.burnt]  (lower priority)"
+                )
+        else:
+            secondary = parent / ".burnt.toml"
+            if secondary.exists():
+                console.print(f"  {'Also found':<22} {secondary}  (lower priority)")
+
+    console.print(SEP)
+
+    # ── Cache ─────────────────────────────────────────────────────────────────
+    cache_dir = Path.cwd() / ".burnt" / "cache"
+    if cache_dir.exists():
+        files = [f for f in cache_dir.iterdir() if f.is_file()]
+        total_size = sum(f.stat().st_size for f in files)
+        console.print(
+            f"  {'Cache':<22} {cache_dir}  {len(files)} files  {_human_bytes(total_size)}"
+        )
+    else:
+        console.print(
+            f"  {'Cache':<22} {cache_dir}  [dim]not found[/dim]  "
+            "(run 'burnt check' to populate)"
+        )
+
+    console.print(SEP)
+    raise typer.Exit(0)
 
 
 # ---------------------------------------------------------------------------
