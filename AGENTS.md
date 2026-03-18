@@ -21,7 +21,8 @@
    - `status: done`, `completed_by: <model-id>`
    - Implementation section (files changed, key decisions, results)
    - Check off acceptance criteria
-6. Rename: `mv tasks/<id>.md tasks/<id>.md.completed`
+6. Update `tasks/README.md`: mark the task row `done` in the sprint table
+7. Rename: `mv tasks/<id>.md tasks/<id>.md.completed`
 
 ---
 

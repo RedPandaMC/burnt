@@ -1,6 +1,6 @@
 # tasks/ — Sprint-Based Task Queue
 
-This directory is the **handoff protocol** between Planner agents and Executor agents.
+This directory is the **handoff protocol** between the Planner agent and the Executor agent.
 
 ---
 
@@ -22,6 +22,10 @@ Sprint 5: ML & Forecasting ───────── Feature extraction, class
 | `s2-04-ast-lint-rules` | in-progress | 7 of 12 rules done; 5 missing + severity fixes + AST migration needed | — |
 | `s2-05a-cli-api-redesign` | todo | CLI check/init/tutorial/cache/rules; remove estimate/advise/whatif; rename WhatIf→Simulation | — |
 | `s2-05b-simulate-api` | superseded | Merged into s2-05a | — |
+| `s2-07-cost-guard` | done | `raise_if_exceeds()` budget guard with currency conversion | — |
+| `s2-08-doctor-command` | done | `burnt doctor` diagnostic command | — |
+| `s2-09-cluster-config-enrichment` | done | `ClusterConfig.from_databricks_json()`, `ClusterProfile`, default currency system | — |
+| `s2-10-offline-mode-fix` | done | Suppress dollar amounts in offline mode; DBU→cost for connected mode; inline SQL in `check` | — |
 
 ### Sprint 3: Estimation Accuracy
 
@@ -72,14 +76,13 @@ s3-01 (Delta) ──→ s3-02 (Fingerprint) ──→ s3-03 (Pipeline) ──→
 ## How It Works
 
 ```
-Planner → creates task file (status: todo)
-         ↓
+Planner  → creates task file (status: todo)
+          ↓
 Executor → claims (status: in-progress, agent: <name>)
-         → implements code, runs tests/lint
-         → writes handoff notes (status: validation-pending)
-         ↓
-Validator → runs benchmarks, checks formulas
-          → archives to tasks/archive/ (status: done)
+         → implements code, runs tests/lint, validates
+         → updates task file (status: done, checks off criteria)
+         → updates this README — marks row as done in the sprint table
+         → renames task file to <id>.md.completed
 ```
 
 ## Status Values
@@ -87,9 +90,8 @@ Validator → runs benchmarks, checks formulas
 | Status | Meaning |
 |--------|---------|
 | `todo` | Ready to pick up |
-| `in-progress` | Claimed by an executor |
-| `validation-pending` | Executor finished, awaiting validation |
-| `done` | Validated and archived |
+| `in-progress` | Claimed by the executor |
+| `done` | Implemented, tested, and archived |
 | `blocked` | Cannot proceed (see `blocked_reason`) |
 
 ## Parallel Execution Rules
