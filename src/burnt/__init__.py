@@ -8,7 +8,7 @@ Python API = runtime cost intelligence. Requires Databricks credentials for live
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Optional, Set
 
 from .core.exceptions import CostBudgetExceeded
 from .core.models import (

@@ -1,3 +1,4 @@
+
 """Tests for HybridEstimator delta_tables integration."""
 
 import pytest

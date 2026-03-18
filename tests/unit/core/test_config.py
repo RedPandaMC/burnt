@@ -1,8 +1,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from burnt.core.config import CacheSettings, LintSettings, Settings
 
 

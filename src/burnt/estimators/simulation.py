@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from ..core.models import (
     ClusterConfig,
@@ -14,6 +15,9 @@ from ..core.models import (
     SimulationModification,
     SimulationResult,
 )
+
+if TYPE_CHECKING:
+    from ..core.instances import WorkloadProfile
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,17 @@ COST_MULTIPLIERS = {
 }
 
 VERIFIED_MULTIPLIERS = {"aqe"}
+
+
+def _derive_photon_query_type(profile: WorkloadProfile) -> str:
+    """Infer best Photon query-type label from observed workload metrics."""
+    if profile.memory_intensity > 0.7:
+        return "window"
+    if profile.compute_intensity > 0.7:
+        return "aggregation"
+    if profile.shuffle_bytes > 1_073_741_824:  # >1 GB shuffle → join-heavy
+        return "complex_join"
+    return "complex_join"
 
 
 def apply_photon_scenario(
@@ -168,7 +183,7 @@ class _ScenarioState:
     pool_use_spot: bool = False
     pool_min_idle: int = 0
     to_serverless: bool = False
-    serverless_utilization: float = 50.0
+    serverless_utilization: float | None = None  # None = auto-derive from metrics
     extra_multipliers: list[_ExtraMod] = field(default_factory=list)
 
 
@@ -179,6 +194,8 @@ class Simulation:
         self,
         estimate: CostEstimate,
         cluster: ClusterConfig | ClusterProfile | None = None,
+        profile: WorkloadProfile | None = None,
+        metrics: dict | None = None,
     ):
         self._original_estimate = estimate
         if isinstance(cluster, ClusterProfile):
@@ -187,6 +204,8 @@ class Simulation:
         else:
             self._cluster = cluster or ClusterConfig()
             self._profile: ClusterProfile | None = None
+        self._workload_profile = profile
+        self._metrics: dict = metrics or {}
         self._unnamed_state: _ScenarioState = _ScenarioState()
         self._named_scenarios: dict[str, _ScenarioState] = {}
         self._current_scenario: str | None = None
@@ -291,16 +310,23 @@ class Simulation:
 
         # --- Photon ---
         if state.photon_query_type:
-            estimate = apply_photon_scenario(estimate, state.photon_query_type)
+            if state.photon_query_type == "_auto_":
+                if self._workload_profile is not None:
+                    effective_qt = _derive_photon_query_type(self._workload_profile)
+                else:
+                    effective_qt = "complex_join"
+            else:
+                effective_qt = state.photon_query_type
+            estimate = apply_photon_scenario(estimate, effective_qt)
             modifications.append(
                 SimulationModification(
                     name="Enable Photon",
                     cost_multiplier=float(PHOTON_COST_MULTIPLIER)
-                    / SPEEDUP_FACTORS.get(state.photon_query_type, 2.0),
+                    / SPEEDUP_FACTORS.get(effective_qt, 2.0),
                     is_verified=True,
-                    rationale=f"Photon {state.photon_query_type} optimization",
+                    rationale=f"Photon {effective_qt} optimization",
                     trade_offs=[
-                        f"Requires {SPEEDUP_FACTORS.get(state.photon_query_type, 2.0)}x speedup to break even"
+                        f"Requires {SPEEDUP_FACTORS.get(effective_qt, 2.0)}x speedup to break even"
                     ],
                 )
             )
@@ -332,13 +358,28 @@ class Simulation:
                     confidence="medium",
                     breakdown={**estimate.breakdown, "instance_change_ratio": ratio},
                 )
+                instance_trade_offs: list[str] = []
+                if (
+                    self._workload_profile is not None
+                    and self._workload_profile.spill_to_disk_bytes > 0
+                ):
+                    current_mem_spec = AZURE_INSTANCE_CATALOG.get(cluster.instance_type)
+                    if current_mem_spec is not None:
+                        peak_gb = current_mem_spec.memory_gb * (
+                            self._workload_profile.peak_memory_pct / 100
+                        )
+                        if peak_gb > target_spec.memory_gb * 0.8:
+                            instance_trade_offs.append(
+                                f"Spill risk: peak memory ~{peak_gb:.0f}GB exceeds"
+                                f" 80% of target {target_spec.memory_gb:.0f}GB"
+                            )
                 modifications.append(
                     SimulationModification(
                         name=f"Migrate to {state.target_instance}",
                         cost_multiplier=ratio,
                         is_verified=False,
                         rationale=f"Instance type change from {cluster.instance_type}",
-                        trade_offs=[],
+                        trade_offs=instance_trade_offs,
                     )
                 )
                 cluster = ClusterConfig(
@@ -405,6 +446,12 @@ class Simulation:
         elif state.use_spot is not None:
             if state.use_spot:
                 vm_discount = SPOT_VM_DISCOUNT
+                duration_ms = self._metrics.get("duration_ms", 0)
+                if duration_ms > 0:
+                    if duration_ms < 1_800_000:  # < 30 min → low interruption risk
+                        vm_discount = 0.65
+                    elif duration_ms > 14_400_000:  # > 4 hours → higher risk
+                        vm_discount = 0.72
                 policy = (
                     "SPOT_WITH_ON_DEMAND_FALLBACK" if state.spot_fallback else "SPOT"
                 )
@@ -472,8 +519,15 @@ class Simulation:
 
         # --- Serverless ---
         if state.to_serverless:
+            utilization = state.serverless_utilization
+            if utilization is None:
+                duration_ms = self._metrics.get("duration_ms", 0)
+                if duration_ms > 0:
+                    utilization = min(duration_ms / 3_600_000 * 100, 100.0)
+                else:
+                    utilization = 50.0
             estimate = apply_serverless_migration(
-                estimate, cluster.sku, state.serverless_utilization
+                estimate, cluster.sku, utilization
             )
             modifications.append(
                 SimulationModification(
@@ -518,10 +572,16 @@ class ClusterContext:
     def __init__(self, parent: Simulation):
         self._parent = parent
 
-    def enable_photon(self, query_type: str = "complex_join") -> ClusterContext:
-        """Enable Photon optimization."""
+    def enable_photon(self, query_type: str | None = None) -> ClusterContext:
+        """Enable Photon optimization.
+
+        When ``query_type`` is omitted and a ``WorkloadProfile`` was passed to
+        :class:`Simulation`, the query type is automatically derived from the
+        observed workload metrics.  Without a profile the default falls back to
+        ``"complex_join"``.
+        """
         state = self._parent._current_state()
-        state.photon_query_type = query_type
+        state.photon_query_type = query_type if query_type is not None else "_auto_"
         return self
 
     def disable_photon(self) -> ClusterContext:
@@ -574,8 +634,13 @@ class ClusterContext:
         state.target_workers = count
         return self
 
-    def to_serverless(self, utilization_pct: float = 50.0) -> ClusterContext:
-        """Migrate to serverless compute."""
+    def to_serverless(self, utilization_pct: float | None = None) -> ClusterContext:
+        """Migrate to serverless compute.
+
+        When ``utilization_pct`` is omitted and ``metrics`` were passed to
+        :class:`Simulation`, the utilization is derived from the actual
+        ``duration_ms`` metric.  Without metrics it defaults to ``50.0``.
+        """
         state = self._parent._current_state()
         state.to_serverless = True
         state.serverless_utilization = utilization_pct

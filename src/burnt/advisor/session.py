@@ -90,6 +90,7 @@ def _advise_current_session(backend: Backend | None = None) -> AdvisoryReport:
         insights=insights,
         run_metrics=metrics,
         cluster_profile=cluster_profile,
+        workload_profile=workload_profile,
     )
 
 
@@ -170,6 +171,7 @@ def advise(
         recommendation=recommendation,
         insights=insights,
         run_metrics=metrics,
+        workload_profile=workload_profile,
     )
 
 
@@ -634,6 +636,7 @@ def _advise_from_job(job_id: str, backend: Backend | None = None) -> AdvisoryRep
         run_metrics=metrics,
         num_runs_analyzed=num_runs,
         confidence_level=confidence,
+        workload_profile=workload_profile,
     )
 
 

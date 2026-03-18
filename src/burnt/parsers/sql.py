@@ -1,3 +1,4 @@
+
 """SQL parsing for Databricks using sqlglot."""
 
 from .._compat import require

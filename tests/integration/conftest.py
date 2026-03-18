@@ -5,13 +5,7 @@ Provides fixtures for Databricks connectivity with SQLite fallback.
 
 from __future__ import annotations
 
-import os
-from typing import TYPE_CHECKING
-
 import pytest
-
-if TYPE_CHECKING:
-    from burnt.core.config import Settings
 
 
 @pytest.fixture(scope="session")

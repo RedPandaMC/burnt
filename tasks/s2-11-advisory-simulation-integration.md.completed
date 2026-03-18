@@ -6,7 +6,7 @@
 
 ```yaml
 id: s2-13-advisory-simulation-integration
-status: todo
+status: done
 phase: 2
 priority: high
 agent: ~
@@ -124,12 +124,16 @@ uv run ruff check src/ tests/
 
 ### Result
 
-[Executor fills this in when done.]
+- `Simulation.__init__` accepts `profile: WorkloadProfile | None` and `metrics: dict | None`
+- `AdvisoryReport` gained `workload_profile: WorkloadProfile | None` field
+- `AdvisoryReport.simulate()` passes `cluster_profile`, `workload_profile`, and `run_metrics` to `Simulation`
+- All three `AdvisoryReport` construction sites in `session.py` now populate `workload_profile`
+- `enable_photon()` auto-derives query type from profile (window/aggregation/complex_join); falls back to complex_join without profile
+- `to_instance()` adds spill-risk trade_off warning when profile shows spill bytes and target instance memory is insufficient
+- `to_serverless()` derives `utilization_pct` from actual `duration_ms` when metrics are present
+- `use_spot()` adjusts discount: 0.65 for jobs <30 min, 0.72 for jobs >4 h, 0.70 otherwise
+- 18 new unit tests added; 516 unit tests pass; lint clean
 
 ```yaml
-status: todo
+status: done
 ```
-
-### Blocked reason
-
-Blocked on s2-05a (Simulation class rename/refactor must be done first) and s2-12 (ClusterProfile for extended cluster data).

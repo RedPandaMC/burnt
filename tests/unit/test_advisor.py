@@ -168,6 +168,69 @@ class TestAdvisoryReport:
         sim = report.simulate()
         assert isinstance(sim, Simulation)
 
+    def test_simulate_passes_workload_profile_and_metrics(self):
+        """simulate() wires workload_profile and run_metrics into Simulation."""
+        from burnt.core.instances import WorkloadProfile
+        from burnt.estimators.simulation import Simulation
+
+        profile = WorkloadProfile(peak_memory_pct=60.0, peak_cpu_pct=80.0, compute_intensity=0.8)
+        baseline = ComputeScenario(
+            compute_type="All-Purpose",
+            sku="ALL_PURPOSE",
+            estimated_cost_usd=45.12,
+            savings_pct=0.0,
+            tradeoff="Test",
+        )
+        report = AdvisoryReport(
+            baseline=baseline,
+            scenarios=[],
+            recommended=ClusterConfig(),
+            recommendation=ClusterRecommendation(
+                economy=ClusterConfig(),
+                balanced=ClusterConfig(),
+                performance=ClusterConfig(),
+                current_cost_usd=0.0,
+                rationale="",
+            ),
+            insights=[],
+            run_metrics={"duration_ms": 120_000},
+            workload_profile=profile,
+        )
+        sim = report.simulate()
+        assert isinstance(sim, Simulation)
+        assert sim._workload_profile is profile
+        assert sim._metrics.get("duration_ms") == 120_000
+
+    def test_simulate_without_profile_falls_back_to_heuristics(self):
+        """simulate() without workload_profile leaves _workload_profile as None."""
+        from burnt.estimators.simulation import Simulation
+
+        baseline = ComputeScenario(
+            compute_type="All-Purpose",
+            sku="ALL_PURPOSE",
+            estimated_cost_usd=45.12,
+            savings_pct=0.0,
+            tradeoff="Test",
+        )
+        report = AdvisoryReport(
+            baseline=baseline,
+            scenarios=[],
+            recommended=ClusterConfig(),
+            recommendation=ClusterRecommendation(
+                economy=ClusterConfig(),
+                balanced=ClusterConfig(),
+                performance=ClusterConfig(),
+                current_cost_usd=0.0,
+                rationale="",
+            ),
+            insights=[],
+            run_metrics={},
+        )
+        sim = report.simulate()
+        assert isinstance(sim, Simulation)
+        assert sim._workload_profile is None
+        assert sim._metrics == {}
+
 
 class TestSessionAdvisor:
     @patch("burnt.advisor.session._auto_backend_or_error")

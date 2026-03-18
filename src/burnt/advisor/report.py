@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from burnt.core._display import _DisplayMixin
+from burnt.core.instances import WorkloadProfile  # noqa: TC001
 from burnt.core.models import (  # noqa: TC001
     ClusterConfig,
     ClusterProfile,
@@ -36,6 +37,7 @@ class AdvisoryReport(BaseModel, _DisplayMixin):
     num_runs_analyzed: int | None = None  # Number of runs analyzed (for job_id)
     confidence_level: str | None = None  # "high", "medium", "low"
     cluster_profile: ClusterProfile | None = None  # Full runtime context when available
+    workload_profile: WorkloadProfile | None = None  # Observed memory/CPU/spill metrics
 
     def _render_rich(self) -> str:
         """Return rich-renderable string with table, insights, and recommendation."""
@@ -75,7 +77,13 @@ class AdvisoryReport(BaseModel, _DisplayMixin):
         return "\n".join(lines)
 
     def simulate(self) -> Any:
-        """Chain into simulation scenarios from this advisory report."""
+        """Chain into simulation scenarios from this advisory report.
+
+        Returns a :class:`~burnt.estimators.simulation.Simulation` pre-populated
+        with the cluster config, workload profile, and raw metrics from the
+        advisory so that scenario calculations use real observed data instead of
+        generic heuristic multipliers.
+        """
         from burnt.core.models import CostEstimate
         from burnt.estimators.simulation import Simulation
 
@@ -84,7 +92,12 @@ class AdvisoryReport(BaseModel, _DisplayMixin):
             estimated_cost_usd=self.baseline.estimated_cost_usd,
             confidence="low",
         )
-        return Simulation(estimate)
+        return Simulation(
+            estimate=estimate,
+            cluster=self.cluster_profile or self.recommended,
+            profile=self.workload_profile,
+            metrics=self.run_metrics or None,
+        )
 
     def _to_html_table(self) -> str:
         """Generate HTML table for Databricks notebook display."""
