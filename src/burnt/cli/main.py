@@ -87,8 +87,9 @@ def check(
 
     target = Path(path)
     if not target.exists():
-        console.print(f"[red]Error:[/red] Path not found: {path}")
-        raise typer.Exit(1)
+        # Treat as inline SQL if it doesn't look like a file path
+        _check_inline_sql(path, console)
+        raise typer.Exit(0)
 
     files_to_check: list[Path] = []
     if target.is_file():
@@ -185,6 +186,33 @@ def check(
 
     if fail_build:
         raise typer.Exit(1)
+
+
+def _complexity_label(score: float) -> str:
+    if score < 10:
+        return "low"
+    if score <= 30:
+        return "moderate"
+    return "high"
+
+
+def _check_inline_sql(sql: str, console: Console) -> None:
+    """Print complexity + anti-pattern warnings for an inline SQL string."""
+    from ..parsers.antipatterns import detect_antipatterns
+    from ..parsers.sql import analyze_query
+
+    profile = analyze_query(sql)
+    complexity = profile.complexity_score
+    label = _complexity_label(complexity)
+    console.print(f"Complexity: {complexity} ({label})")
+
+    issues = detect_antipatterns(sql, "sql")
+    if issues:
+        console.print("Warnings:")
+        for issue in issues:
+            console.print(f"  ⚠ {issue.name} — {issue.description}")
+
+    console.print("\nConnect to a workspace for cost estimates: burnt doctor")
 
 
 def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bool:

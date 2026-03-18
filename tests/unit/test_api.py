@@ -7,7 +7,11 @@ from burnt.core.models import ClusterConfig, CostEstimate
 def test_estimate_sql_string():
     cost = burnt.estimate("SELECT * FROM test")
     assert isinstance(cost, CostEstimate)
-    assert cost.estimated_dbu > 0
+    # offline mode: no backend available, so cost fields are suppressed
+    assert cost.estimated_dbu is None
+    assert cost.estimated_cost_usd is None
+    assert cost.confidence == "none"
+    assert cost.breakdown.get("complexity", 0) >= 0
 
 
 def test_estimate_with_custom_cluster():

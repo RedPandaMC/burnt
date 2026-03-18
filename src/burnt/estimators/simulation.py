@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from ..core.models import (
     ClusterConfig,
+    ClusterProfile,
     CostEstimate,
     MultiSimulationResult,
     SimulationModification,
@@ -177,10 +178,15 @@ class Simulation:
     def __init__(
         self,
         estimate: CostEstimate,
-        cluster: ClusterConfig | None = None,
+        cluster: ClusterConfig | ClusterProfile | None = None,
     ):
         self._original_estimate = estimate
-        self._cluster = cluster or ClusterConfig()
+        if isinstance(cluster, ClusterProfile):
+            self._cluster = cluster.config
+            self._profile = cluster
+        else:
+            self._cluster = cluster or ClusterConfig()
+            self._profile: ClusterProfile | None = None
         self._unnamed_state: _ScenarioState = _ScenarioState()
         self._named_scenarios: dict[str, _ScenarioState] = {}
         self._current_scenario: str | None = None

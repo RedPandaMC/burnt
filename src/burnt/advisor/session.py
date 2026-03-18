@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from burnt.runtime import Backend
 
 from burnt.core.instances import WorkloadProfile, get_cluster_config
-from burnt.core.models import ClusterConfig, ClusterRecommendation
+from burnt.core.models import ClusterConfig, ClusterProfile, ClusterRecommendation
 from burnt.core.pricing import get_dbu_rate
 from burnt.estimators.simulation import apply_serverless_migration
 
@@ -66,6 +66,13 @@ def _advise_current_session(backend: Backend | None = None) -> AdvisoryReport:
     # 7. Build insights
     insights = _generate_insights(metrics, current_cluster, recommended_cluster)
 
+    # Build ClusterProfile from current cluster + available session context
+    cluster_profile = ClusterProfile(
+        config=current_cluster,
+        spark_version=metrics.get("spark_version"),
+        custom_spark_conf=metrics.get("spark_conf", {}),
+    )
+
     # Build report
     baseline_scenario = ComputeScenario(
         compute_type="All-Purpose",
@@ -82,6 +89,7 @@ def _advise_current_session(backend: Backend | None = None) -> AdvisoryReport:
         recommendation=recommendation,
         insights=insights,
         run_metrics=metrics,
+        cluster_profile=cluster_profile,
     )
 
 

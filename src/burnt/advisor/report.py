@@ -7,7 +7,11 @@ from typing import Any
 from pydantic import BaseModel
 
 from burnt.core._display import _DisplayMixin
-from burnt.core.models import ClusterConfig, ClusterRecommendation  # noqa: TC001
+from burnt.core.models import (  # noqa: TC001
+    ClusterConfig,
+    ClusterProfile,
+    ClusterRecommendation,
+)
 
 
 class ComputeScenario(BaseModel):
@@ -31,6 +35,7 @@ class AdvisoryReport(BaseModel, _DisplayMixin):
     run_metrics: dict[str, Any] = {}  # Raw metrics from the analyzed run
     num_runs_analyzed: int | None = None  # Number of runs analyzed (for job_id)
     confidence_level: str | None = None  # "high", "medium", "low"
+    cluster_profile: ClusterProfile | None = None  # Full runtime context when available
 
     def _render_rich(self) -> str:
         """Return rich-renderable string with table, insights, and recommendation."""

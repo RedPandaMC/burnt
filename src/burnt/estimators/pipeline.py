@@ -71,7 +71,12 @@ class EstimationPipeline:
 
         if self._backend is None:
             logger.debug("No backend configured - using static estimation only")
-            return result
+            return result.model_copy(update={
+                "estimated_dbu": None,
+                "estimated_cost_usd": None,
+                "estimated_cost_eur": None,
+                "confidence": "none",
+            })
 
         if self._warehouse_id is None:
             logger.debug("No warehouse_id - using static estimation only")
@@ -138,6 +143,12 @@ class EstimationPipeline:
                 signal = "hybrid+explain"
             elif delta_tables:
                 signal = "hybrid+delta"
+
+        # Convert DBU → USD for connected-mode results where hybrid skipped cost
+        if result.estimated_dbu is not None and result.estimated_cost_usd is None:
+            from ..core.pricing import get_dbu_rate
+            cost_usd = round(result.estimated_dbu * float(get_dbu_rate(cluster.sku)), 4)
+            result = result.model_copy(update={"estimated_cost_usd": cost_usd})
 
         result.warnings.append(f"Signal: {signal}")
         return result

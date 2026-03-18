@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .core.exceptions import CostBudgetExceeded
 from .core.models import (
     ClusterConfig,
+    ClusterProfile,
     ClusterRecommendation,
     CostEstimate,
     MultiSimulationResult,
@@ -30,7 +31,7 @@ def estimate(
     *,
     cluster: ClusterConfig | None = None,
     sku: str = "ALL_PURPOSE",
-    currency: Literal["USD", "EUR"] = "USD",
+    currency: str | None = None,
     language: Literal["sql", "python", "auto"] | None = None,
     registry: Any | None = None,
 ) -> CostEstimate:
@@ -50,6 +51,9 @@ def estimate(
         A CostEstimate object containing predicted DBUs, dollar cost, and confidence level.
     """
     from .estimators.pipeline import EstimationPipeline
+
+    if currency is None:
+        currency = get_default_currency()
 
     # Resolve path vs inline source
     _FILE_EXTENSIONS = {".sql", ".py", ".ipynb", ".dbc"}
@@ -170,6 +174,7 @@ def right_size(profile: Any) -> Any:
 __all__ = [
     "AntiPattern",
     "ClusterConfig",
+    "ClusterProfile",
     "ClusterRecommendation",
     "CostBudgetExceeded",
     "CostEstimate",
@@ -186,6 +191,7 @@ __all__ = [
 ]
 
 _default_currency: str = "USD"
+_SUPPORTED_CURRENCIES: frozenset[str] = frozenset({"USD", "EUR", "GBP", "CHF", "JPY", "CAD", "AUD"})
 
 # WorkloadProfile imported lazily to avoid heavy dependency at module level
 try:
@@ -198,10 +204,18 @@ def set_default_currency(currency: str) -> None:
     """Set the default currency for cost budget checks.
 
     Args:
-        currency: Currency code (USD, EUR, etc.)
+        currency: Currency code (USD, EUR, GBP, CHF, JPY, CAD, AUD).
+
+    Raises:
+        ValueError: If the currency is not in the supported set.
     """
     global _default_currency
-    _default_currency = currency.upper()
+    upper = currency.upper()
+    if upper not in _SUPPORTED_CURRENCIES:
+        raise ValueError(
+            f"Unsupported currency: {currency!r}. Supported currencies: {sorted(_SUPPORTED_CURRENCIES)}"
+        )
+    _default_currency = upper
 
 
 def get_default_currency() -> str:

@@ -6,7 +6,7 @@
 
 ```yaml
 id: s2-11-cluster-config-enrichment
-status: todo
+status: done
 phase: 2
 priority: medium
 agent: ~
@@ -189,8 +189,34 @@ uv run ruff check src/ tests/
 
 ### Result
 
-[Executor fills this in when done.]
+All three parts implemented and passing.
+
+**Part 1 — `ClusterConfig.from_databricks_json()`**
+- Added `_lookup_dbu_rate()` (lazy import of `AZURE_INSTANCE_CATALOG` to avoid circular import; falls back to 0.75 + warning for unknown types)
+- Added `from_databricks_json()` classmethod: handles `new_cluster` wrapper or bare dict, maps node type → DBU, spot policy, autoscale, Photon detection from `spark_version` or `runtime_engine`
+
+**Part 2 — `ClusterProfile`**
+- New Pydantic model in `src/burnt/core/models.py` with all spec fields
+- `ClusterProfile.from_databricks_json()` populates `config` + extended fields
+- Exported from `burnt` top-level `__init__.py`
+- `AdvisoryReport` gains optional `cluster_profile: ClusterProfile | None` field
+- `_advise_current_session()` builds and attaches `ClusterProfile` (with `spark_version` and `spark_conf` from metrics)
+- `Simulation.__init__` accepts `ClusterConfig | ClusterProfile`; extracts `.config` for cost calculations
+
+**Part 3 — Default Currency**
+- `set_default_currency()` now validates against `_SUPPORTED_CURRENCIES = {"USD", "EUR", "GBP", "CHF", "JPY", "CAD", "AUD"}`, raises `ValueError` for unsupported codes
+- `raise_if_exceeds()` was already wired to `get_default_currency()`
+
+**Tests:** 30 new unit tests in `tests/unit/core/test_cluster_config_factory.py`; all 498 unit tests pass; lint clean on all modified files.
 
 ```yaml
-status: todo
+status: done
+agent: claude-sonnet-4-6
+files_changed:
+  - src/burnt/core/models.py
+  - src/burnt/__init__.py
+  - src/burnt/advisor/report.py
+  - src/burnt/advisor/session.py
+  - src/burnt/estimators/simulation.py
+  - tests/unit/core/test_cluster_config_factory.py
 ```

@@ -18,15 +18,27 @@ def cluster():
 
 
 class TestEstimationPipelineOffline:
-    def test_offline_mode_returns_static_estimate(self, cluster):
-        """Offline mode (no backend) returns static estimation."""
+    def test_offline_mode_suppresses_dollar_amounts(self, cluster):
+        """Offline mode (no backend) suppresses all cost fields."""
         pipeline = EstimationPipeline(backend=None, warehouse_id=None)
         result = pipeline.estimate(
             "SELECT * FROM orders JOIN customers ON orders.id = customers.id", cluster
         )
 
-        assert result.estimated_dbu > 0
-        assert result.confidence in ("low", "medium", "high")
+        assert result.estimated_cost_usd is None
+        assert result.estimated_cost_eur is None
+        assert result.estimated_dbu is None
+        assert result.confidence == "none"
+
+    def test_offline_mode_preserves_complexity(self, cluster):
+        """Offline mode keeps complexity score in breakdown."""
+        pipeline = EstimationPipeline(backend=None, warehouse_id=None)
+        result = pipeline.estimate(
+            "SELECT * FROM a CROSS JOIN b", cluster
+        )
+
+        assert "complexity" in result.breakdown
+        assert result.breakdown["complexity"] > 0
 
     def test_offline_mode_no_warehouse_id(self, cluster):
         """No warehouse_id falls back to static estimation."""
@@ -35,7 +47,8 @@ class TestEstimationPipelineOffline:
             "SELECT * FROM orders JOIN customers ON orders.id = customers.id", cluster
         )
 
-        assert result.estimated_dbu > 0
+        assert result.estimated_dbu is None
+        assert result.estimated_cost_usd is None
 
 
 class TestEstimationPipelineWithBackend:
@@ -92,6 +105,21 @@ class TestEstimationPipelineWithBackend:
         )
 
         assert result.estimated_dbu > 0
+
+    def test_connected_mode_produces_cost_usd(self, cluster):
+        """Connected backend path populates estimated_cost_usd from DBU."""
+        mock_backend = MagicMock()
+        mock_backend.execute_sql.side_effect = Exception("no tiers")
+
+        pipeline = EstimationPipeline(backend=mock_backend, warehouse_id="abc123")
+        result = pipeline.estimate(
+            "SELECT * FROM orders", cluster
+        )
+
+        assert result.estimated_dbu is not None
+        assert result.estimated_cost_usd is not None
+        assert result.estimated_cost_usd > 0
+        assert result.confidence != "none"
 
 
 class TestCreatePipeline:

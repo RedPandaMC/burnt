@@ -68,6 +68,47 @@ class ClusterConfig(BaseModel):
             raise ValueError(f"Invalid SKU: {v}. Must be one of: {VALID_SKUS}")
         return v
 
+    @classmethod
+    def _lookup_dbu_rate(cls, node_type: str) -> float:
+        import logging
+
+        from burnt.core.instances import (
+            AZURE_INSTANCE_CATALOG,  # lazy — avoids circular import
+        )
+
+        if node_type in AZURE_INSTANCE_CATALOG:
+            return AZURE_INSTANCE_CATALOG[node_type].dbu_rate
+        logging.getLogger(__name__).warning(
+            "Unknown instance type %r; falling back to default DBU rate 0.75", node_type
+        )
+        return 0.75
+
+    @classmethod
+    def from_databricks_json(cls, payload: dict) -> ClusterConfig:
+        """Parse a Databricks Jobs API new_cluster payload (or bare cluster dict) into a ClusterConfig."""
+        cluster = payload.get("new_cluster", payload)
+        node_type = cluster.get("node_type_id", "Standard_DS3_v2")
+        dbu = cls._lookup_dbu_rate(node_type)
+        spot_raw = cluster.get("azure_attributes", {}).get("availability", "ON_DEMAND")
+        spot_map = {
+            "ON_DEMAND": "ON_DEMAND",
+            "SPOT_WITH_ON_DEMAND_FALLBACK": "SPOT_WITH_ON_DEMAND_FALLBACK",
+            "SPOT": "SPOT",
+        }
+        autoscale = cluster.get("autoscale", {})
+        return cls(
+            instance_type=node_type,
+            num_workers=cluster.get("num_workers", autoscale.get("max_workers", 2)),
+            dbu_per_hour=dbu,
+            photon_enabled=(
+                "photon" in cluster.get("spark_version", "").lower()
+                or cluster.get("runtime_engine", "").upper() == "PHOTON"
+            ),
+            spot_policy=spot_map.get(spot_raw, "ON_DEMAND"),
+            autoscale_min_workers=autoscale.get("min_workers"),
+            autoscale_max_workers=autoscale.get("max_workers"),
+        )
+
     def to_json(self, spark_version: str = "15.4.x-scala2.12") -> dict:
         """Return Databricks Jobs API-compatible cluster definition as dict."""
         cluster = {
@@ -119,6 +160,35 @@ class ClusterConfig(BaseModel):
         return yaml.dump(dab_dict, default_flow_style=False, sort_keys=False)
 
 
+class ClusterProfile(BaseModel):
+    """Full cluster configuration including runtime context used by the estimation pipeline."""
+
+    config: ClusterConfig
+    driver_node_type: str | None = None
+    spark_version: str | None = None
+    custom_spark_conf: dict[str, str] = {}
+    cluster_tags: dict[str, str] = {}
+    instance_pool_id: str | None = None
+    instance_pool_max_capacity: int | None = None
+    cloud_provider: Literal["AZURE", "AWS", "GCP"] = "AZURE"
+
+    @classmethod
+    def from_databricks_json(cls, payload: dict) -> ClusterProfile:
+        """Populate both config (via ClusterConfig.from_databricks_json) and extended fields."""
+        cluster = payload.get("new_cluster", payload)
+        config = ClusterConfig.from_databricks_json(payload)
+        return cls(
+            config=config,
+            driver_node_type=cluster.get("driver_node_type_id"),
+            spark_version=cluster.get("spark_version"),
+            custom_spark_conf=cluster.get("spark_conf", {}),
+            cluster_tags=cluster.get("custom_tags", {}),
+            instance_pool_id=cluster.get("instance_pool_id"),
+            instance_pool_max_capacity=cluster.get("instance_pool_max_capacity"),
+            cloud_provider="AZURE",
+        )
+
+
 class PricingInfo(BaseModel):
     """Pricing information for a SKU."""
 
@@ -133,10 +203,10 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    estimated_dbu: float
+    estimated_dbu: float | None = None
     estimated_cost_usd: float | None = None
     estimated_cost_eur: float | None = None
-    confidence: Literal["low", "medium", "high"] = "low"
+    confidence: Literal["low", "medium", "high", "none"] = "low"
     breakdown: dict[str, float] = {}
     warnings: list[str] = []
     _cluster: ClusterConfig | None = PrivateAttr(default=None)
@@ -149,7 +219,7 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
     def raise_if_exceeds(
         self, budget: float, label: str = "", currency: str | None = None
-    ) -> "CostEstimate":
+    ) -> CostEstimate:
         """Raise CostBudgetExceeded if cost exceeds budget. Returns self if under budget.
 
         Args:
@@ -215,8 +285,9 @@ class CostEstimate(BaseModel, _DisplayMixin):
             "Cost Estimate",
             f"{'Field':<20} {'Value':<30}",
             "-" * 50,
-            f"{'Estimated DBU':<20} {self.estimated_dbu:<30.2f}",
         ]
+        if self.estimated_dbu is not None:
+            lines.append(f"{'Estimated DBU':<20} {self.estimated_dbu:<30.2f}")
         if self.estimated_cost_usd is not None:
             lines.append(f"{'Estimated Cost':<20} ${self.estimated_cost_usd:<29.2f}")
         lines.append(f"{'Confidence':<20} {self.confidence:<30}")
@@ -231,13 +302,16 @@ class CostEstimate(BaseModel, _DisplayMixin):
             for warning in self.warnings:
                 lines.append(f"  ⚠ {warning}")
 
+        if self.confidence == "none":
+            lines.append("\nConnect to a workspace for cost estimates: burnt doctor")
+
         return "\n".join(lines)
 
     def _to_html_table(self) -> str:
         """Generate HTML table for notebooks."""
-        rows = [
-            f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>",
-        ]
+        rows = []
+        if self.estimated_dbu is not None:
+            rows.append(f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>")
         if self.estimated_cost_usd is not None:
             rows.append(
                 f"<tr><td>Estimated Cost</td><td>${self.estimated_cost_usd:.2f}</td></tr>"
@@ -278,9 +352,9 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""
-        rows = [
-            ["Estimated DBU", f"{self.estimated_dbu:.2f}"],
-        ]
+        rows = []
+        if self.estimated_dbu is not None:
+            rows.append(["Estimated DBU", f"{self.estimated_dbu:.2f}"])
         if self.estimated_cost_usd is not None:
             rows.append(["Estimated Cost", f"${self.estimated_cost_usd:.2f}"])
         rows.append(["Confidence", self.confidence])
@@ -306,7 +380,8 @@ class CostEstimate(BaseModel, _DisplayMixin):
     def __repr__(self) -> str:
         """Return developer representation."""
         cost = self.estimated_cost_usd or 0
-        return f"CostEstimate(dbu={self.estimated_dbu:.2f}, cost=${cost:.2f}, confidence={self.confidence})"
+        dbu = f"{self.estimated_dbu:.2f}" if self.estimated_dbu is not None else "N/A"
+        return f"CostEstimate(dbu={dbu}, cost=${cost:.2f}, confidence={self.confidence})"
 
 
 class ClusterRecommendation(BaseModel, _DisplayMixin):
