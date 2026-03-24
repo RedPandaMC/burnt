@@ -1,0 +1,16 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- BP020, BP024, BP031, BNT-T01, BP019.
+- Cross-cell, cross-%run.
+
+### Implementation Notes
+- Implement complex rules that require cross-cell or cross-file semantic analysis.
+- Leverage the SemanticModel built in earlier tasks.
+
+### Verification Results
+- Tests: `cargo test` pass
+- Lint: `cargo clippy` pass

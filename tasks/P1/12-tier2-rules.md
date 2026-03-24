@@ -1,0 +1,16 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- BP010, BP011, BP012, BP013, BP029, BNT-W/L/D/SP/J/T/M rules, BSQ004-005, DLT001/004/005.
+- Fixture + snapshot per rule.
+
+### Implementation Notes
+- Implement rules that require more context than simple tree-sitter patterns can provide.
+- These rules will be implemented directly in Rust.
+
+### Verification Results
+- Tests: `cargo test` pass
+- Lint: `cargo clippy` pass

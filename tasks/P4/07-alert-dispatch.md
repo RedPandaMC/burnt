@@ -1,0 +1,17 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- `.alert(slack=, teams=, webhook=, delta=)`.
+- No args → reads `[alert]` from `burnt.toml`.
+- Slack, Teams, Webhook, and Delta destinations.
+
+### Implementation Notes
+- Implement a flexible alerting system to notify users of cost issues via their preferred channels.
+- Support rich messaging formats for Slack and Teams.
+
+### Verification Results
+- Tests: `pytest` pass
+- Lint: `ruff check` pass

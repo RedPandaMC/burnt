@@ -1,0 +1,18 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- Baseline: 30-day median per job/pipeline.
+- Drift: `(recent - baseline) / baseline`.
+- Root cause hints from table growth.
+- DLT: per-table changes from `pipeline_event_log`.
+
+### Implementation Notes
+- Monitor cost variations over time and alert when a job or pipeline significantly deviates from its historical baseline.
+- Provide hints on why the cost has changed (e.g., increased data volume).
+
+### Verification Results
+- Tests: `pytest` pass
+- Lint: `ruff check` pass

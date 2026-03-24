@@ -1,75 +1,118 @@
-# tasks/ — Sprint-Based Task Queue
+# tasks/ — Phase-Based Task Queue
 
 This directory is the **handoff protocol** between the Planner agent and the Executor agent.
 
 ---
 
-## Sprint Roadmap
+## Roadmap
 
 ```
-Sprint 1: The Core Loop ─────────── Get advise_current_session() working  [complete]
-Sprint 2: The Developer Experience ─ Lint rules, benchmarks, CLI/API redesign  [in-progress]
-Sprint 3: Estimation Accuracy ────── Wire all 4 tiers, total cost (DBU + VM)
-Sprint 4: Production Hardening ───── Error handling, caching, observability
-Sprint 5: ML & Forecasting ───────── Feature extraction, classification, Prophet
+Phase 0: Base Rework ─────────────── Cleanup, new architecture setup, test adaptation [todo]
+Phase 1: Rust Engine ─────────────── tree-sitter, SQL/Python parsing, CostGraph, rules
+Phase 2: Python Intelligence ─────── Enrichment, estimation, recommendations, feedback
+Phase 3: Display & CLI ───────────── check(), CLI, notebook/terminal layouts
+Phase 4: Monitoring & Alerts ─────── watch(), .alert(), drift/idle/tag monitoring
+Phase 5: Integration & Hardening ─── E2E tests, dynamic SQL, error handling
+Phase 6: Validation ──────────────── Dogfood, security audit, ship v2.0.0
 ```
 
-### Sprint 2: The Developer Experience
+### Phase 0: Base Rework
 
-| Task | Status | What | Blocked By |
-|------|--------|------|------------|
-| `s2-03-benchmark-dataset` | done | 5 reference queries, monotonicity + Hypothesis tests, integration fixtures | — |
-| `s2-04-ast-lint-rules` | in-progress | 7 of 12 rules done; 5 missing + severity fixes + AST migration needed | — |
-| `s2-05a-cli-api-redesign` | todo | CLI check/init/tutorial/cache/rules; remove estimate/advise/whatif; rename WhatIf→Simulation | — |
-| `s2-05b-simulate-api` | superseded | Merged into s2-05a | — |
-| `s2-07-cost-guard` | done | `raise_if_exceeds()` budget guard with currency conversion | — |
-| `s2-08-doctor-command` | done | `burnt doctor` diagnostic command | — |
-| `s2-09-cluster-config-enrichment` | done | `ClusterConfig.from_databricks_json()`, `ClusterProfile`, default currency system | — |
-| `s2-10-offline-mode-fix` | done | Suppress dollar amounts in offline mode; DBU→cost for connected mode; inline SQL in `check` | — |
+| Task | Status | What |
+|------|--------|------|
+| `P0/01-remove-unneeded-code` | todo | Cleanup old estimators, advisor, etc. |
+| `P0/02-setup-new-package-structure` | todo | Create burnt-engine/ and scaffold src/burnt/ |
+| `P0/03-adapt-existing-tests` | todo | Refactor current tests for new architecture |
 
-### Sprint 3: Estimation Accuracy
+### Phase 1: Rust Engine
 
-| Task | Status | What | Blocked By |
-|------|--------|------|------------|
-| `s3-01-delta-scan-integration` | todo | DESCRIBE DETAIL → scan size enrichment | s1-01 |
-| `s3-02-fingerprint-lookup` | todo | Historical query matching → p50/p95 | s1-01, s3-01 |
-| `s3-03-pipeline-hardening` | todo | Total cost (DBU+VM), confidence calibration | s3-01, s3-02 |
+| Task | Status | What |
+|------|--------|------|
+| `P1/01-cargo-setup` | todo | Basic Cargo and core Rust types |
+| `P1/02-format-parsers` | todo | Databricks .py, .ipynb, and .sql formats |
+| `P1/03-run-resolution` | todo | Handle %run directives in Rust engine |
+| `P1/04-tree-sitter-python` | todo | tree-sitter for Python and SQL fragments |
+| `P1/05-tree-sitter-sql` | todo | tree-sitter and sqlparser-rs for SQL |
+| `P1/06-mode-detection` | todo | Detect if Python, SQL, or DLT mode |
+| `P1/07-semantic-model` | todo | Scope, bindings, and call chains |
+| `P1/08-python-cost-graph` | todo | Build CostGraph for Python code |
+| `P1/09-sql-cost-graph` | todo | Build CostGraph for SQL statements |
+| `P1/10-dlt-pipeline-graph` | todo | Build PipelineGraph for DLT |
+| `P1/11-tier1-rules` | todo | ~48 TOML-based rules |
+| `P1/12-tier2-rules` | todo | ~25 Rust context-aware rules |
+| `P1/13-tier3-rules` | todo | ~11 Rust semantic rules |
+| `P1/14-rule-pipeline` | todo | Rule execution and suppression |
+| `P1/15-pyo3-bridge` | todo | Expose engine to Python via PyO3 |
+| `P1/16-parity-validation` | todo | Ensure parity with v1.0 |
 
-### Sprint 4: Production Hardening
+### Phase 2: Python Intelligence
 
-| Task | Status | What | Blocked By |
-|------|--------|------|------------|
-| `s4-01-error-handling` | todo | Typed exceptions, retry, graceful failures | s3-03 |
-| `s4-02-caching` | todo | TTL cache, connection pooling | s4-01 |
-| `s4-03-observability` | todo | Structured logging, --debug, timing metrics | s4-01 |
+| Task | Status | What |
+|------|--------|------|
+| `P2/01-pydantic-models` | todo | Define models for graphs and estimates |
+| `P2/02-env-detection` | todo | Detect runtime env and access level |
+| `P2/03-spark-integration` | todo | Extract data from active SparkSession |
+| `P2/04-rest-backend` | todo | Connect via databricks-sdk outside Spark |
+| `P2/05-dabs-parser` | todo | Parse databricks.yml for job context |
+| `P2/06-delta-enrichment` | todo | Enrichment via DESCRIBE DETAIL/HISTORY |
+| `P2/07-dlt-enrichment` | todo | Enrichment via Pipelines API |
+| `P2/08-explain-enrichment` | todo | Enrichment via EXPLAIN COST |
+| `P2/09-scaling-functions` | todo | 7 scaling models (Linear, Quadratic, etc.) |
+| `P2/10-cost-estimation` | todo | Topological walk and cost summation |
+| `P2/11-session-cost` | todo | Idle vs execution cost in notebooks |
+| `P2/12-recommendations` | todo | SKU, Photon, and auto-term recs |
+| `P2/13-feedback-loop` | todo | Calibrate coefficients from billing |
+| `P2/14-instance-catalog` | todo | Pricing for Azure/Databricks SKUs |
 
-### Sprint 5: ML & Forecasting
+### Phase 3: Display & CLI
 
-| Task | Status | What | Blocked By |
-|------|--------|------|------------|
-| `s5-01-feature-extraction` | todo | ExplainPlan + Delta + cluster → feature vector | s3-03, s2-03 |
-| `s5-02-classification-model` | todo | Cost bucket classifier (scikit-learn) | s5-01 |
-| `s5-03-prophet-forecasting` | todo | Per-SKU time-series cost projection | s5-01 |
+| Task | Status | What |
+|------|--------|------|
+| `P3/01-notebook-renderer` | todo | HTML output for notebooks |
+| `P3/02-terminal-renderer` | todo | Rich terminal output |
+| `P3/03-export` | todo | JSON and Markdown export |
+| `P3/04-check-wiring` | todo | Full burnt.check() orchestration |
+| `P3/05-config-system` | todo | burnt.toml and pyproject.toml loading |
+| `P3/06-cli-implementation` | todo | burnt check CLI command |
+| `P3/07-graceful-degradation` | todo | Handling missing permissions/APIs |
+| `P3/08-performance-tuning` | todo | Meet < 3s and < 50MB targets |
 
----
+### Phase 4: Monitoring & Alerts
 
-## Dependency Graph
+| Task | Status | What |
+|------|--------|------|
+| `P4/01-tag-attribution` | todo | Cost reporting by Databricks tags |
+| `P4/02-idle-cluster-detection` | todo | Find and alert on wasted cost |
+| `P4/03-cost-drift` | todo | Detect significant cost deviations |
+| `P4/04-job-report` | todo | Historical cost trends for jobs |
+| `P4/05-pipeline-report` | todo | Table-level cost trends for DLT |
+| `P4/06-watch-orchestration` | todo | Full burnt.watch() orchestration |
+| `P4/07-alert-dispatch` | todo | Slack, Teams, and Webhook alerts |
+| `P4/08-monitoring-template` | todo | Deployable monitoring notebook |
 
-```
-[Sprint 1 Complete]
-       │
-s2-03 (Benchmarks) ──done──┐
-s2-04 (Lint Rules) ─partial─┤──→ [Sprint 2 Complete]
-s2-05a (CLI/API) ───todo────┘
-       │
-s3-01 (Delta) ──→ s3-02 (Fingerprint) ──→ s3-03 (Pipeline) ──→ [Sprint 3]
-                                                 │
-                                    s4-01 (Errors) ──→ s4-02 (Cache)
-                                                 │──→ s4-03 (Observability)
-                                                 │
-                                    s5-01 (Features) ──→ s5-02 (ML)
-                                                    ──→ s5-03 (Prophet)
-```
+### Phase 5: Integration & Hardening
+
+| Task | Status | What |
+|------|--------|------|
+| `P5/01-e2e-tests` | todo | 6 fixtures through full pipeline |
+| `P5/02-dynamic-sql` | todo | Variable resolution in SQL strings |
+| `P5/03-error-handling-audit` | todo | Eliminate tracebacks on failure |
+| `P5/04-access-level-tests` | todo | Verify 4 access level behaviors |
+| `P5/05-config-validation` | todo | Catch invalid configs with clear errors |
+| `P5/06-ci-examples` | todo | GitHub Actions and Azure DevOps YAML |
+| `P5/07-packaging` | todo | Wheel building and platform testing |
+| `P5/08-documentation` | todo | README, docs, and CHANGELOG finalization |
+
+### Phase 6: Validation
+
+| Task | Status | What |
+|------|--------|------|
+| `P6/01-dogfood` | todo | Test on 5+ real-world notebooks |
+| `P6/02-performance-validation` | todo | Production performance verification |
+| `P6/03-security-audit` | todo | Dependency and code security scan |
+| `P6/04-edge-case-testing` | todo | Empty, nested, and circular test cases |
+| `P6/05-version-pins` | todo | Finalize dependencies and DBR versions |
+| `P6/06-ship` | todo | Tag v2.0.0 and publish |
 
 ---
 
@@ -77,7 +120,7 @@ s3-01 (Delta) ──→ s3-02 (Fingerprint) ──→ s3-03 (Pipeline) ──→
 
 ```
 Planner  → creates task file (status: todo)
-          ↓
+           ↓
 Executor → claims (status: in-progress, agent: <name>)
          → implements code, runs tests/lint, validates
          → updates task file (status: done, checks off criteria)
@@ -85,21 +128,6 @@ Executor → claims (status: in-progress, agent: <name>)
          → renames task file to <id>.md.completed
 ```
 
-## Status Values
-
-| Status | Meaning |
-|--------|---------|
-| `todo` | Ready to pick up |
-| `in-progress` | Claimed by the executor |
-| `done` | Implemented, tested, and archived |
-| `blocked` | Cannot proceed (see `blocked_reason`) |
-
-## Parallel Execution Rules
-
-1. Check `blocked_by` before starting
-2. One task at a time per agent
-3. If two tasks touch the same file, the second must list `blocked_by`
-
 ## Archived Tasks
 
-Pre-sprint-restructure tasks are in `tasks/archive/pre-sprint-restructure/`. These were the old `p4a-*` through `p9-*` phase-based tasks that have been superseded by the sprint structure.
+Sprint-based tasks (S1-S5) have been superseded by the Phase-based restructure (P0-P6) as the project moves to its v2.0 architecture.

@@ -1,0 +1,18 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- 30 runs from `job_run_timeline`.
+- Per-run cost.
+- Trend classification.
+- Significant change annotations (>20% jump).
+
+### Implementation Notes
+- Summarize historical performance and costs for Databricks jobs.
+- Highlight anomalies or trends in job execution costs.
+
+### Verification Results
+- Tests: `pytest` pass
+- Lint: `ruff check` pass

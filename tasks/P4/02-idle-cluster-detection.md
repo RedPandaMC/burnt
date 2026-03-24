@@ -1,0 +1,18 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- `system.compute.node_timeline`, `avg(cpu) < threshold`.
+- All-Purpose only.
+- Wasted cost calculation.
+- Auto-termination recommendation.
+
+### Implementation Notes
+- Detect clusters that are running but underutilized to identify potential waste.
+- Provide clear savings estimates for terminating or resizing these clusters.
+
+### Verification Results
+- Tests: `pytest` pass
+- Lint: `ruff check` pass

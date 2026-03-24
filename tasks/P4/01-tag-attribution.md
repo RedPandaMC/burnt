@@ -1,0 +1,18 @@
+status: todo
+agent:
+completed_by:
+
+## Implementation
+### Changes Made
+- `system.billing.usage` grouped by tag.
+- Clusters API for cluster tags.
+- DLT SKUs included.
+- Untagged bucket.
+
+### Implementation Notes
+- Calculate costs grouped by Databricks tags to identify which teams or projects are spending the most.
+- Support both cluster-level and pipeline-level tags.
+
+### Verification Results
+- Tests: `pytest` pass
+- Lint: `ruff check` pass
