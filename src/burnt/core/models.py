@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from decimal import Decimal  # noqa: TC003 — used in pydantic field type
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 from tabulate import tabulate
 
 from ._display import _DisplayMixin
-
-if TYPE_CHECKING:
-    from burnt.estimators.simulation import Simulation
 
 
 class OperationInfo(BaseModel):
@@ -90,12 +87,15 @@ class ClusterConfig(BaseModel):
         node_type = cluster.get("node_type_id", "Standard_DS3_v2")
         dbu = cls._lookup_dbu_rate(node_type)
         spot_raw = cluster.get("azure_attributes", {}).get("availability", "ON_DEMAND")
-        spot_map = {
+        spot_map: dict[str, str] = {
             "ON_DEMAND": "ON_DEMAND",
             "SPOT_WITH_ON_DEMAND_FALLBACK": "SPOT_WITH_ON_DEMAND_FALLBACK",
             "SPOT": "SPOT",
         }
         autoscale = cluster.get("autoscale", {})
+        spot_policy_value: Literal[
+            "ON_DEMAND", "SPOT_WITH_ON_DEMAND_FALLBACK", "SPOT"
+        ] = spot_map.get(spot_raw, "ON_DEMAND")  # type: ignore[assignment]
         return cls(
             instance_type=node_type,
             num_workers=cluster.get("num_workers", autoscale.get("max_workers", 2)),
@@ -104,7 +104,7 @@ class ClusterConfig(BaseModel):
                 "photon" in cluster.get("spark_version", "").lower()
                 or cluster.get("runtime_engine", "").upper() == "PHOTON"
             ),
-            spot_policy=spot_map.get(spot_raw, "ON_DEMAND"),
+            spot_policy=spot_policy_value,
             autoscale_min_workers=autoscale.get("min_workers"),
             autoscale_max_workers=autoscale.get("max_workers"),
         )
@@ -211,12 +211,6 @@ class CostEstimate(BaseModel, _DisplayMixin):
     warnings: list[str] = []
     _cluster: ClusterConfig | None = PrivateAttr(default=None)
 
-    def simulate(self) -> Simulation:
-        """Start a simulation scenario builder from this estimate."""
-        from burnt.estimators.simulation import Simulation
-
-        return Simulation(self, self._cluster)
-
     def raise_if_exceeds(
         self, budget: float, label: str = "", currency: str | None = None
     ) -> CostEstimate:
@@ -237,12 +231,11 @@ class CostEstimate(BaseModel, _DisplayMixin):
         from datetime import date
         from decimal import Decimal
 
-        from burnt import get_default_currency
         from burnt.core.exceptions import CostBudgetExceeded
         from burnt.core.exchange import FrankfurterProvider
 
         if currency is None:
-            currency = get_default_currency()
+            currency = "USD"
 
         if self.estimated_cost_usd is None:
             warnings.warn(
@@ -311,7 +304,9 @@ class CostEstimate(BaseModel, _DisplayMixin):
         """Generate HTML table for notebooks."""
         rows = []
         if self.estimated_dbu is not None:
-            rows.append(f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>")
+            rows.append(
+                f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>"
+            )
         if self.estimated_cost_usd is not None:
             rows.append(
                 f"<tr><td>Estimated Cost</td><td>${self.estimated_cost_usd:.2f}</td></tr>"
@@ -381,7 +376,9 @@ class CostEstimate(BaseModel, _DisplayMixin):
         """Return developer representation."""
         cost = self.estimated_cost_usd or 0
         dbu = f"{self.estimated_dbu:.2f}" if self.estimated_dbu is not None else "N/A"
-        return f"CostEstimate(dbu={dbu}, cost=${cost:.2f}, confidence={self.confidence})"
+        return (
+            f"CostEstimate(dbu={dbu}, cost=${cost:.2f}, confidence={self.confidence})"
+        )
 
 
 class ClusterRecommendation(BaseModel, _DisplayMixin):

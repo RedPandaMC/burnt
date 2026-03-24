@@ -11,10 +11,12 @@ Generates synthetic data matching the distribution from system_tables_masked.xls
 from __future__ import annotations
 
 import random
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import sqlite3
 
 # SKU distribution from xlsx analysis
 SKU_DISTRIBUTION = {

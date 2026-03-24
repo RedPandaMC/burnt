@@ -7,7 +7,7 @@ This directory is the **handoff protocol** between the Planner agent and the Exe
 ## Roadmap
 
 ```
-Phase 0: Base Rework ─────────────── Cleanup, new architecture setup, test adaptation [todo]
+Phase 0: Base Rework ─────────────── Cleanup, new architecture setup, test adaptation [done]
 Phase 1: Rust Engine ─────────────── tree-sitter, SQL/Python parsing, CostGraph, rules
 Phase 2: Python Intelligence ─────── Enrichment, estimation, recommendations, feedback
 Phase 3: Display & CLI ───────────── check(), CLI, notebook/terminal layouts
@@ -20,9 +20,9 @@ Phase 6: Validation ──────────────── Dogfood, se
 
 | Task | Status | What |
 |------|--------|------|
-| `P0/01-remove-unneeded-code` | todo | Cleanup old estimators, advisor, etc. |
-| `P0/02-setup-new-package-structure` | todo | Create burnt-engine/ and scaffold src/burnt/ |
-| `P0/03-adapt-existing-tests` | todo | Refactor current tests for new architecture |
+| `P0/01-remove-unneeded-code` | done | Cleanup old estimators, advisor, etc. |
+| `P0/02-setup-new-package-structure` | done | Create burnt-engine/ and scaffold src/burnt/ |
+| `P0/03-adapt-existing-tests` | done | Refactor current tests for new architecture |
 
 ### Phase 1: Rust Engine
 

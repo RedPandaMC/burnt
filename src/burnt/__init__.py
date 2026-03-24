@@ -7,221 +7,169 @@ Python API = runtime cost intelligence. Requires Databricks credentials for live
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional, Set
+from typing import Any, Literal
 
-from .core.exceptions import CostBudgetExceeded
-from .core.models import (
-    ClusterConfig,
-    ClusterProfile,
-    ClusterRecommendation,
-    CostEstimate,
-    MultiSimulationResult,
-    SimulationModification,
-    SimulationResult,
+from .core.exceptions import (
+    BurntError,
+    ConfigError,
+    CostBudgetExceeded,
+    DatabricksConnectionError,
+    EstimationError,
+    ParseError,
+    PricingError,
 )
-from .estimators.simulation import Simulation
-from .parsers.antipatterns import AntiPattern
+from .core.models import CostEstimate
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
+
+__all__ = [
+    "BurntError",
+    "ConfigError",
+    "CostBudgetExceeded",
+    "CostEstimate",
+    "DatabricksConnectionError",
+    "EstimationError",
+    "ParseError",
+    "PricingError",
+    "check",
+    "config",
+    "version",
+    "watch",
+]
 
 
-def estimate(
-    query: str | Path,
+def check(
+    path: str | None = None,
     *,
-    cluster: ClusterConfig | None = None,
-    sku: str = "ALL_PURPOSE",
-    currency: str | None = None,
-    language: Literal["sql", "python", "auto"] | None = None,
-    registry: Any | None = None,
-) -> CostEstimate:
-    """
-    Estimate the DBU cost of a SQL query, Python file, or notebook.
-
-    Args:
-        query: SQL string, Python source string, or path to a .sql/.py/.ipynb/.dbc file.
-               Pass a Path object or a string ending in a known extension to load from disk.
-        cluster: Optional target ClusterConfig. Defaults to a standard DS3_v2 cluster.
-        sku: Databricks SKU (ALL_PURPOSE, JOBS_COMPUTE, etc.).
-        currency: Output currency. USD or EUR.
-        language: Force language detection. None = auto.
-        registry: Optional TableRegistry for enterprise governance views.
-
-    Returns:
-        A CostEstimate object containing predicted DBUs, dollar cost, and confidence level.
-    """
-    from .estimators.pipeline import EstimationPipeline
-
-    if currency is None:
-        currency = get_default_currency()
-
-    # Resolve path vs inline source
-    _FILE_EXTENSIONS = {".sql", ".py", ".ipynb", ".dbc"}
-    source: str
-
-    if isinstance(query, Path):
-        source = _load_file(query)
-    elif (
-        isinstance(query, str)
-        and Path(query).suffix in _FILE_EXTENSIONS
-        and Path(query).exists()
-    ):
-        source = _load_file(Path(query))
-    else:
-        source = str(query)
-
-    if cluster is None:
-        cluster = ClusterConfig(
-            instance_type="Standard_DS3_v2", num_workers=2, dbu_per_hour=0.75, sku=sku
-        )
-
-    pipeline = EstimationPipeline()
-    result = pipeline.estimate(source, cluster)
-
-    if currency != "USD" and result.estimated_cost_usd:
-        from datetime import date
-        from decimal import Decimal
-
-        from .core.exchange import FrankfurterProvider
-
-        exchange = FrankfurterProvider()
-        converted = round(
-            float(
-                exchange.get_rate_for_amount(
-                    Decimal(str(result.estimated_cost_usd)),
-                    date.today(),
-                    "USD",
-                    currency,
-                )
-            ),
-            4,
-        )
-        result = CostEstimate(
-            estimated_dbu=result.estimated_dbu,
-            estimated_cost_usd=result.estimated_cost_usd,
-            estimated_cost_eur=converted if currency == "EUR" else None,
-            confidence=result.confidence,
-            breakdown=result.breakdown,
-            warnings=result.warnings,
-        )
-
-    return result
-
-
-def _load_file(path: Path) -> str:
-    """Load source text from a file, handling notebooks."""
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
-
-    if path.suffix == ".sql" or path.suffix == ".py":
-        return path.read_text(encoding="utf-8")
-    elif path.suffix == ".ipynb":
-        from .parsers.notebooks import parse_notebook
-
-        cells = parse_notebook(path)
-        return "\n\n".join(c.source for c in cells)
-    elif path.suffix == ".dbc":
-        from .parsers.notebooks import parse_dbc
-
-        cells = parse_dbc(path)
-        return "\n\n".join(c.source for c in cells)
-    else:
-        return path.read_text(encoding="utf-8")
-
-
-def advise(
-    run_id: str | None = None,
-    statement_id: str | None = None,
-    job_id: str | None = None,
-    job_name: str | None = None,
+    max_cost: float | None = None,
+    severity: Literal["error", "warning", "info"] = "warning",
+    skip: list[str] | None = None,
+    only: list[str] | None = None,
+    cluster: str | None = None,
+    json: bool = False,
+    markdown: bool = False,
 ) -> Any:
-    """
-    Analyze a historical run and recommend optimized cluster configuration.
-
-    With no arguments, analyzes the current SparkSession (requires Databricks runtime).
+    """Analyze a notebook, Python file, or SQL file for cost and best practices.
 
     Args:
-        run_id: Databricks Job Run ID to analyze.
-        statement_id: SQL statement ID from query history.
-        job_id: Job ID for analyzing multiple runs.
-        job_name: Job name to analyze (looks up job ID first).
+        path: Path to a .py, .sql, or .ipynb file. Defaults to current directory.
+        max_cost: Exit with error if estimated cost exceeds this amount (USD).
+        severity: Minimum severity to report (error, warning, info).
+        skip: List of rule IDs to skip (e.g., ["BP001", "BNT-A01"]).
+        only: List of rule IDs to run (exclusive with skip).
+        cluster: Cluster config for cost estimation (DABs path or inline JSON).
+        json: Output results as JSON.
+        markdown: Output results as Markdown.
 
     Returns:
-        AdvisoryReport with cost comparisons and cluster recommendation.
+        CheckResult with findings, cost estimate, and graph.
     """
-    from .advisor.session import advise as _advise
+    from . import _check
 
-    return _advise(
-        run_id=run_id, statement_id=statement_id, job_id=job_id, job_name=job_name
+    return _check.run(
+        path=path,
+        max_cost=max_cost,
+        severity=severity,
+        skip=skip,
+        only=only,
+        cluster=cluster,
+        json=json,
+        markdown=markdown,
     )
 
 
-def right_size(profile: Any) -> Any:
-    """
-    Right-size cluster configuration based on workload profile.
+def watch(
+    tag_key: str | None = None,
+    *,
+    drift_threshold: float = 0.25,
+    idle_threshold: float = 0.10,
+    budget: float | None = None,
+    days: int = 30,
+    job_id: int | None = None,
+    pipeline_id: str | None = None,
+) -> Any:
+    """Monitor Databricks costs via system tables.
+
+    Requires Databricks connectivity. Use in notebooks or scheduled jobs.
 
     Args:
-        profile: WorkloadProfile with memory, CPU, and data characteristics.
+        tag_key: Databricks tag to group costs by (e.g., "team", "project").
+        drift_threshold: Alert if cost changes by more than this percentage.
+        idle_threshold: Alert if cluster idle time exceeds this percentage.
+        budget: Monthly budget for alerts.
+        days: Number of days to look back.
+        job_id: Filter to specific job.
+        pipeline_id: Filter to specific DLT pipeline.
 
     Returns:
-        ClusterConfig recommendation.
+        WatchResult with cost metrics, idle detection, and drift analysis.
     """
-    from .core.instances import get_cluster_config
+    from . import _watch
 
-    return get_cluster_config(profile)
-
-
-__all__ = [
-    "AntiPattern",
-    "ClusterConfig",
-    "ClusterProfile",
-    "ClusterRecommendation",
-    "CostBudgetExceeded",
-    "CostEstimate",
-    "MultiSimulationResult",
-    "Simulation",
-    "SimulationModification",
-    "SimulationResult",
-    "WorkloadProfile",
-    "advise",
-    "estimate",
-    "get_default_currency",
-    "right_size",
-    "set_default_currency",
-]
-
-_default_currency: str = "USD"
-_SUPPORTED_CURRENCIES: frozenset[str] = frozenset({"USD", "EUR", "GBP", "CHF", "JPY", "CAD", "AUD"})
-
-# WorkloadProfile imported lazily to avoid heavy dependency at module level
-try:
-    from .core.instances import WorkloadProfile
-except ImportError:
-    WorkloadProfile = None  # type: ignore[assignment, misc]
+    return _watch.run(
+        tag_key=tag_key,
+        drift_threshold=drift_threshold,
+        idle_threshold=idle_threshold,
+        budget=budget,
+        days=days,
+        job_id=job_id,
+        pipeline_id=pipeline_id,
+    )
 
 
-def set_default_currency(currency: str) -> None:
-    """Set the default currency for cost budget checks.
+def config(
+    warehouse_id: str | None = None,
+    billing_table: str | None = None,
+    skip: list[str] | None = None,
+    max_cost: float | None = None,
+    severity: str | None = None,
+    tag_key: str | None = None,
+    drift_threshold: float | None = None,
+    idle_threshold: float | None = None,
+    budget: float | None = None,
+    alert_slack: str | None = None,
+    alert_teams: str | None = None,
+    alert_webhook: str | None = None,
+    calibration_store: str | None = None,
+) -> None:
+    """Configure burnt programmatically.
+
+    These settings override config files but are overridden by CLI flags.
 
     Args:
-        currency: Currency code (USD, EUR, GBP, CHF, JPY, CAD, AUD).
-
-    Raises:
-        ValueError: If the currency is not in the supported set.
+        warehouse_id: SQL warehouse for queries.
+        billing_table: Override for system.billing.usage table.
+        skip: Rules to skip.
+        max_cost: Default max cost threshold.
+        severity: Default severity level.
+        tag_key: Default tag key for watch().
+        drift_threshold: Default drift threshold.
+        idle_threshold: Default idle threshold.
+        budget: Default budget.
+        alert_slack: Default Slack webhook URL.
+        alert_teams: Default Teams webhook URL.
+        alert_webhook: Generic webhook URL.
+        calibration_store: Where to store calibration data ("local" or "delta:...").
     """
-    global _default_currency
-    upper = currency.upper()
-    if upper not in _SUPPORTED_CURRENCIES:
-        raise ValueError(
-            f"Unsupported currency: {currency!r}. Supported currencies: {sorted(_SUPPORTED_CURRENCIES)}"
-        )
-    _default_currency = upper
+    from . import _config
+
+    _config.set(
+        warehouse_id=warehouse_id,
+        billing_table=billing_table,
+        skip=skip,
+        max_cost=max_cost,
+        severity=severity,
+        tag_key=tag_key,
+        drift_threshold=drift_threshold,
+        idle_threshold=idle_threshold,
+        budget=budget,
+        alert_slack=alert_slack,
+        alert_teams=alert_teams,
+        alert_webhook=alert_webhook,
+        calibration_store=calibration_store,
+    )
 
 
-def get_default_currency() -> str:
-    """Get the current default currency for cost budget checks.
-
-    Returns:
-        Currency code (defaults to USD)
-    """
-    return _default_currency
+def version() -> str:
+    """Return the current version of burnt."""
+    return __version__
