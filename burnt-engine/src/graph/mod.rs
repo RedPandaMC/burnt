@@ -167,6 +167,20 @@ pub struct PipelineGraphPy {
     pub confidence: String,
 }
 
+impl From<PipelineTable> for PyPipelineTable {
+    fn from(t: PipelineTable) -> Self {
+        PyPipelineTable {
+            id: t.id,
+            name: t.name,
+            kind: t.kind,
+            source_type: t.source_type,
+            inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
+            expectations: t.expectations,
+            is_incremental: t.is_incremental,
+        }
+    }
+}
+
 impl From<PipelineGraph> for PipelineGraphPy {
     fn from(g: PipelineGraph) -> Self {
         PipelineGraphPy {

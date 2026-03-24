@@ -1,25 +1,8 @@
 use pyo3::prelude::*;
+use crate::types::{Finding as TypesFinding, RuleEntry, Severity, Confidence};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Finding {
-    pub rule_id: String,
-    pub code: String,
-    pub severity: String,
-    pub message: String,
-    pub suggestion: Option<String>,
-    pub line_number: Option<u32>,
-    pub column: Option<u32>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Rule {
-    pub id: String,
-    pub code: String,
-    pub severity: String,
-    pub language: String,
-    pub description: String,
-    pub suggestion: String,
-    pub category: String,
+mod registry {
+    include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 }
 
 #[pyclass]
@@ -39,6 +22,8 @@ pub struct Finding {
     pub line_number: Option<u32>,
     #[pyo3(get)]
     pub column: Option<u32>,
+    #[pyo3(get)]
+    pub confidence: String,
 }
 
 #[pyclass]
@@ -58,12 +43,19 @@ pub struct Rule {
     pub suggestion: String,
     #[pyo3(get)]
     pub category: String,
+    #[pyo3(get)]
+    pub tier: u8,
 }
 
-pub fn run(_source: &str, _language: &str) -> Result<Vec<Finding>, PyErr> {
+pub fn run(_source: &str, _language: &str) -> Result<Vec<TypesFinding>, PyErr> {
     Ok(vec![])
 }
 
-pub fn list_all() -> Vec<Rule> {
-    vec![]
+pub fn list_all() -> Vec<RuleEntry> {
+    registry::load_registry()
+}
+
+#[pyfunction]
+pub fn get_registry_count() -> usize {
+    registry::load_registry().len()
 }

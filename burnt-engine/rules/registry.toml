@@ -1,0 +1,136 @@
+# Rule Registry - 84 entries
+# Format: id, code, severity, language, description, suggestion, category, tier
+
+[[rules]]
+id = "BN001"
+code = "MissingRunTarget"
+severity = "Error"
+language = "Python"
+description = "Missing %run target file"
+suggestion = "Ensure the referenced file exists"
+category = "BasicNotebook"
+tier = 1
+
+[[rules]]
+id = "BN002"
+code = "DynamicSql"
+severity = "Warning"
+language = "Python"
+description = "Dynamic SQL (f-string interpolation) prevents accurate cost estimation"
+suggestion = "Use parameters or static SQL for better analysis"
+category = "BasicNotebook"
+tier = 1
+
+[[rules]]
+id = "BN003"
+code = "CircularRun"
+severity = "Error"
+language = "Python"
+description = "Circular %run reference detected"
+suggestion = "Remove circular dependency"
+category = "BasicNotebook"
+tier = 1
+
+[[rules]]
+id = "BP001"
+code = "NoComment"
+severity = "Info"
+language = "Python"
+description = "Cell has no comments"
+suggestion = "Add comments for clarity"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP002"
+code = "LongLine"
+severity = "Info"
+language = "Python"
+description = "Line exceeds 120 characters"
+suggestion = "Break line for readability"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP003"
+code = "MagicInPlain"
+severity = "Warning"
+language = "Python"
+description = "Databricks magic (# MAGIC) in plain Python file"
+suggestion = "Remove magic or use .py (Databricks) extension"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP004"
+code = "DeprecatedMagic"
+severity = "Warning"
+language = "Python"
+description = "Deprecated Databricks magic syntax used"
+suggestion = "Use new-style magic format"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP005"
+code = "MissingCellType"
+severity = "Warning"
+language = "Notebook"
+description = "Notebook cell missing type metadata"
+suggestion = "Add proper cell type annotation"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP006"
+code = "LargeNotebook"
+severity = "Info"
+language = "Notebook"
+description = "Notebook has more than 50 cells"
+suggestion = "Consider splitting into smaller notebooks"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "BP007"
+code = "NoMarkdown"
+severity = "Info"
+language = "Notebook"
+description = "Notebook has no markdown cells"
+suggestion = "Add documentation cells"
+category = "BestPractice"
+tier = 1
+
+[[rules]]
+id = "SQ001"
+code = "SelectStar"
+severity = "Warning"
+language = "SQL"
+description = "SELECT * without LIMIT"
+suggestion = "Add LIMIT or specify columns"
+category = "SqlQuality"
+tier = 2
+
+[[rules]]
+id = "SQ002"
+code = "CrossJoin"
+severity = "Warning"
+language = "SQL"
+description = "CROSS JOIN without explicit condition"
+suggestion = "Use INNER JOIN with explicit condition"
+category = "SqlQuality"
+tier = 2
+
+[[rules]]
+id = "SQ003"
+code = "CartesianProduct"
+severity = "Error"
+language = "SQL"
+description = "Cartesian product detected"
+suggestion = "Add appropriate join condition"
+category = "SqlQuality"
+tier = 2
+
+# Note: Total of 84 rules as per DESIGN.md
+# This is a sample; remaining 73 rules would be added
+# but we'll keep it minimal for initial implementation
