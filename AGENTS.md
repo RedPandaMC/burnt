@@ -30,7 +30,7 @@
 
 - **Verify everything** — tests + lint + format before marking complete
 - **Minimal changes** — focused, incremental
-- **No AI commits** — human only in git author
+- **No AI commits** — human only in git author; do NOT add `Co-Authored-By: Claude` or any Claude/Anthropic attribution to commit messages or pull requests
 - **Commits**: `feat:`, `fix:`, `refactor:`, `test:`, `chore:`
 - **Typing** — Use `from typing import ...` for all type annotations: `Optional[str]`, `List[str]`, `Dict[str, Any]`, `Tuple[...]`, `Set[str]`, `Union[X, Y]`, `Any`, `Literal`, `Protocol`, `runtime_checkable`, `TYPE_CHECKING`, `TypeVar`, `Generic`, `overload`, `cast`, `ClassVar`.
 

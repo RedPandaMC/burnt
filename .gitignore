@@ -211,3 +211,4 @@ __marimo__/
 # Other files to ignore
 *.xlsx
 *.docx
+.claude
