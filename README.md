@@ -218,7 +218,7 @@ Python: enrichment, estimation, session cost, recs, feedback, monitoring, alerts
 
 Tier 1 rules = TOML + tree-sitter query. No Rust.
 
-1. `burnt-engine/rules/tier1/{pyspark,sql,dlt}/BXXX_rule.toml`
+1. `src/burnt-engine/rules/tier1/{pyspark,sql,dlt}/BXXX_rule.toml`
 2. Fixture in `tests/fixtures/tier1/`
 3. `cargo test tier1_rules`
 4. PR
@@ -228,7 +228,7 @@ Tier 1 rules = TOML + tree-sitter query. No Rust.
 ## Development
 
 ```bash
-cd burnt-engine && maturin develop --release && cargo test
+cd src/burnt-engine && maturin develop --release && cargo test
 uv sync && uv run pytest -m unit -v && uv run ruff check src/ tests/
 ```
 

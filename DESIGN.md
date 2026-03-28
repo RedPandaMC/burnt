@@ -447,7 +447,7 @@ alerts = ["slack-sdk>=3.0"]
 ## 14. Package Structure
 
 ```
-burnt-engine/
+src/burnt-engine/
 ├── Cargo.toml
 ├── build.rs
 ├── rules/
