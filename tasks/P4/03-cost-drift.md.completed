@@ -1,6 +1,6 @@
-status: todo
-agent:
-completed_by:
+status: done
+agent: claude-sonnet-4-6
+completed_by: claude-sonnet-4-6
 
 ## Implementation
 ### Changes Made

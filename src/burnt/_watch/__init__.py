@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from typing import Any
 
 
 def run(
@@ -19,9 +16,16 @@ def run(
     pipeline_id: str | None = None,
 ) -> Any:
     """Monitor Databricks costs via system tables."""
-    raise NotImplementedError(
-        "burnt.watch() requires burnt-engine to be installed. "
-        "See https://burnt.ai/docs/install for instructions."
+    from ..watch.core import watch
+
+    return watch(
+        tag_key=tag_key,
+        drift_threshold=drift_threshold,
+        idle_threshold=idle_threshold,
+        budget=budget,
+        days=days,
+        job_id=job_id,
+        pipeline_id=pipeline_id,
     )
 
 

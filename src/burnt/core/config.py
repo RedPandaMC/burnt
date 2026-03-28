@@ -25,6 +25,26 @@ class CacheSettings(BaseModel):
     ttl_seconds: float = 3600.0
 
 
+class WatchSettings(BaseModel):
+    """Settings for the watch / monitoring subsystem."""
+
+    tag_key: str | None = None
+    drift_threshold: float = 0.25
+    idle_threshold: float = 0.10
+    budget: float | None = None
+    days: int = 30
+    warehouse_id: str | None = None
+
+
+class AlertSettings(BaseModel):
+    """Settings for alert dispatch."""
+
+    slack: str | None = None
+    teams: str | None = None
+    webhook: str | None = None
+    delta_table: str | None = None
+
+
 class Settings(BaseSettings):
     """Application settings — loaded from env vars, then TOML config files."""
 
@@ -37,10 +57,13 @@ class Settings(BaseSettings):
 
     workspace_url: str | None = None
     token: str | None = None
+    warehouse_id: str | None = None
     target_currency: str = "USD"
     pricing_source: str = "api"
     lint: LintSettings = LintSettings()
     cache: CacheSettings = CacheSettings()
+    watch: WatchSettings = WatchSettings()
+    alert: AlertSettings = AlertSettings()
 
     @classmethod
     def from_toml(cls, path: Path) -> Settings:
@@ -63,20 +86,26 @@ class Settings(BaseSettings):
         top_level = {
             k: v
             for k, v in section.items()
-            if k not in ("lint", "cache")
+            if k not in ("lint", "cache", "watch", "alert")
         }
         lint_data = section.get("lint", {})
         cache_data = section.get("cache", {})
+        watch_data = section.get("watch", {})
+        alert_data = section.get("alert", {})
 
         # TOML uses kebab-case; map to snake_case for pydantic
         lint_data = {k.replace("-", "_"): v for k, v in lint_data.items()}
         cache_data = {k.replace("-", "_"): v for k, v in cache_data.items()}
+        watch_data = {k.replace("-", "_"): v for k, v in watch_data.items()}
+        alert_data = {k.replace("-", "_"): v for k, v in alert_data.items()}
         top_level = {k.replace("-", "_"): v for k, v in top_level.items()}
 
         lint = LintSettings(**lint_data) if lint_data else LintSettings()
         cache = CacheSettings(**cache_data) if cache_data else CacheSettings()
+        watch = WatchSettings(**watch_data) if watch_data else WatchSettings()
+        alert = AlertSettings(**alert_data) if alert_data else AlertSettings()
 
-        return cls(lint=lint, cache=cache, **top_level)
+        return cls(lint=lint, cache=cache, watch=watch, alert=alert, **top_level)
 
     @classmethod
     def discover(
@@ -161,16 +190,14 @@ class Settings(BaseSettings):
                 merged[field_name] = default_val
 
         # For nested models, do field-level merge
-        lint_merged = _merge_model(
-            LintSettings,
-            [s.lint for s in settings],
-        )
-        cache_merged = _merge_model(
-            CacheSettings,
-            [s.cache for s in settings],
-        )
+        lint_merged = _merge_model(LintSettings, [s.lint for s in settings])
+        cache_merged = _merge_model(CacheSettings, [s.cache for s in settings])
+        watch_merged = _merge_model(WatchSettings, [s.watch for s in settings])
+        alert_merged = _merge_model(AlertSettings, [s.alert for s in settings])
         merged["lint"] = lint_merged
         merged["cache"] = cache_merged
+        merged["watch"] = watch_merged
+        merged["alert"] = alert_merged
 
         return cls(**merged)
 

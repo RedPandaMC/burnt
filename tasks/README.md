@@ -28,9 +28,9 @@ Phase 6: Validation ──────────────── Dogfood, se
 
 | Task | Status | What |
 |------|--------|------|
-| `P1/01-cargo-setup` | todo | Basic Cargo and core Rust types |
-| `P1/02-format-parsers` | todo | Databricks .py, .ipynb, and .sql formats |
-| `P1/03-run-resolution` | todo | Handle %run directives in Rust engine |
+| `P1/01-cargo-setup` | done | Basic Cargo and core Rust types |
+| `P1/02-format-parsers` | done | Databricks .py, .ipynb, and .sql formats |
+| `P1/03-run-resolution` | done | Handle %run directives in Rust engine |
 | `P1/04-tree-sitter-python` | todo | tree-sitter for Python and SQL fragments |
 | `P1/05-tree-sitter-sql` | todo | tree-sitter and sqlparser-rs for SQL |
 | `P1/06-mode-detection` | todo | Detect if Python, SQL, or DLT mode |
@@ -81,14 +81,14 @@ Phase 6: Validation ──────────────── Dogfood, se
 
 | Task | Status | What |
 |------|--------|------|
-| `P4/01-tag-attribution` | todo | Cost reporting by Databricks tags |
-| `P4/02-idle-cluster-detection` | todo | Find and alert on wasted cost |
-| `P4/03-cost-drift` | todo | Detect significant cost deviations |
-| `P4/04-job-report` | todo | Historical cost trends for jobs |
-| `P4/05-pipeline-report` | todo | Table-level cost trends for DLT |
-| `P4/06-watch-orchestration` | todo | Full burnt.watch() orchestration |
-| `P4/07-alert-dispatch` | todo | Slack, Teams, and Webhook alerts |
-| `P4/08-monitoring-template` | todo | Deployable monitoring notebook |
+| `P4/01-tag-attribution` | done | Cost reporting by Databricks tags |
+| `P4/02-idle-cluster-detection` | done | Find and alert on wasted cost |
+| `P4/03-cost-drift` | done | Detect significant cost deviations |
+| `P4/04-job-report` | done | Historical cost trends for jobs |
+| `P4/05-pipeline-report` | done | Table-level cost trends for DLT |
+| `P4/06-watch-orchestration` | done | Full burnt.watch() orchestration |
+| `P4/07-alert-dispatch` | done | Slack, Teams, and Webhook alerts |
+| `P4/08-monitoring-template` | done | Deployable monitoring notebook |
 
 ### Phase 5: Integration & Hardening
 
@@ -99,8 +99,8 @@ Phase 6: Validation ──────────────── Dogfood, se
 | `P5/03-error-handling-audit` | todo | Eliminate tracebacks on failure |
 | `P5/04-access-level-tests` | todo | Verify 4 access level behaviors |
 | `P5/05-config-validation` | todo | Catch invalid configs with clear errors |
-| `P5/06-ci-examples` | todo | GitHub Actions and Azure DevOps YAML |
-| `P5/07-packaging` | todo | Wheel building and platform testing |
+| `P5/06-ci-examples` | done | GitHub Actions, Azure DevOps, GitLab CI YAML |
+| `P5/07-packaging` | done | Maturin build migration, wheel building |
 | `P5/08-documentation` | todo | README, docs, and CHANGELOG finalization |
 
 ### Phase 6: Validation
