@@ -1,6 +1,6 @@
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use pyo3::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostNode {
@@ -140,7 +140,7 @@ impl RuleTable {
     pub fn new() -> Self {
         Self { bits: [0, 0] }
     }
-    
+
     pub fn set(&mut self, index: usize) {
         if index < 128 {
             let word = index / 64;
@@ -148,7 +148,7 @@ impl RuleTable {
             self.bits[word] |= 1 << bit;
         }
     }
-    
+
     pub fn clear(&mut self, index: usize) {
         if index < 128 {
             let word = index / 64;
@@ -156,7 +156,7 @@ impl RuleTable {
             self.bits[word] &= !(1 << bit);
         }
     }
-    
+
     pub fn get(&self, index: usize) -> bool {
         if index < 128 {
             let word = index / 64;

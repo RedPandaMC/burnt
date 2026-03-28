@@ -19,7 +19,7 @@ impl CostGraph {
             confidence: "low".to_string(),
         })
     }
-    
+
     pub fn from_sql(_source: &str) -> Result<Self, PyErr> {
         Ok(CostGraph {
             nodes: vec![],

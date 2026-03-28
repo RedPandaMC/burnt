@@ -2,14 +2,14 @@ use std::{env, fs, path::Path};
 
 fn main() {
     pyo3_build_config::use_pyo3_cfgs();
-    
+
     // Generate registry module from rules/registry.toml
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
-    
+
     // Read registry.toml if it exists
     let registry_path = Path::new("rules/registry.toml");
-    
+
     // Create empty registry for now - will be loaded at runtime
     let code = r#"use std::sync::OnceLock;
 
@@ -67,9 +67,9 @@ fn parse_registry_toml(toml_content: &str) -> Vec<crate::types::RuleEntry> {
     
     entries
 }"#;
-    
+
     fs::write(&dest_path, code).expect("Failed to write registry.rs");
-    
+
     if registry_path.exists() {
         println!("cargo:rerun-if-changed=rules/registry.toml");
     }

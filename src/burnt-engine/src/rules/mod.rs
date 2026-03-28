@@ -1,5 +1,5 @@
+use crate::types::{Confidence, Finding as TypesFinding, RuleEntry, Severity};
 use pyo3::prelude::*;
-use crate::types::{Finding as TypesFinding, RuleEntry, Severity, Confidence};
 
 mod registry {
     include!(concat!(env!("OUT_DIR"), "/registry.rs"));
