@@ -3,6 +3,33 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SqlFragment {
+    pub text: String,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Provenance {
+    pub source_path: Option<PathBuf>,
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DltSignal {
+    Import,
+    Decorator(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonParseResult {
+    pub tree: (),
+    pub sql_fragments: Vec<SqlFragment>,
+    pub dlt_signals: Vec<DltSignal>,
+    pub findings: Vec<Finding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostNode {
     pub id: String,
     pub kind: String,

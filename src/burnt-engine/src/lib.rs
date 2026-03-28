@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+mod detect;
 mod graph;
 mod ingestion;
 mod parse;
@@ -7,6 +8,7 @@ mod rules;
 mod semantic;
 mod types;
 
+use detect::detect_mode_from_source;
 use graph::{CostGraphPy, PipelineGraphPy, PyCostEdge, PyCostNode, PyPipelineTable};
 use rules::{Finding, Rule};
 use types::{AnalysisMode, Cell, CellKind, Confidence, RuleEntry, RuleTable, Severity};
@@ -19,33 +21,28 @@ fn version() -> String {
 #[pyfunction]
 #[pyo3(signature = (source, language=None))]
 fn check(source: &str, language: Option<&str>) -> PyResult<PyObject> {
-    let lang = language.unwrap_or("auto");
+    let _ = language;
+    let mode = detect_mode_from_source(source);
 
-    Python::with_gil(|py| {
-        if source.contains("import dlt")
-            || source.contains("from dlt import")
-            || source.contains("CREATE STREAMING TABLE")
-            || source.contains("@dlt.table")
-        {
+    Python::with_gil(|py| match mode {
+        AnalysisMode::Dlt => {
             use crate::graph::PipelineGraph;
             let pg = PipelineGraph::from_dlt(source);
             let pg_py: PipelineGraphPy = pg.into();
-            return Ok(pg_py.into_py(py));
+            Ok(pg_py.into_py(py))
         }
-
-        if source.trim().to_uppercase().starts_with("SELECT")
-            || source.trim().to_uppercase().starts_with("WITH")
-        {
+        AnalysisMode::Sql => {
             use crate::graph::CostGraph;
             let cg = CostGraph::from_sql(source)?;
             let cg_py: CostGraphPy = cg.into();
-            return Ok(cg_py.into_py(py));
+            Ok(cg_py.into_py(py))
         }
-
-        use crate::graph::CostGraph;
-        let cg = CostGraph::from_python(source)?;
-        let cg_py: CostGraphPy = cg.into();
-        Ok(cg_py.into_py(py))
+        AnalysisMode::Python => {
+            use crate::graph::CostGraph;
+            let cg = CostGraph::from_python(source)?;
+            let cg_py: CostGraphPy = cg.into();
+            Ok(cg_py.into_py(py))
+        }
     })
 }
 

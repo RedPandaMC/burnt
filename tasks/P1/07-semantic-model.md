@@ -1,5 +1,19 @@
-status: todo
-agent:
+status: done
+agent: openrouter/minimax/minimax-m2.7
+completed_by: openrouter/minimax/minimax-m2.7
+
+## Implementation
+### Changes Made
+- src/burnt-engine/src/semantic/mod.rs - Consolidated semantic module
+
+### Implementation Notes
+- SemanticModel with scope stack and binding tracking
+- classify_rhs for 14 patterns: dlt.read, dp.read, spark.read, spark.readStream, udf, etc.
+- ChainContext tracking: has_limit, has_select, has_filter, is_streaming, source_tables
+- Shadow detection with Finding emission
+
+### Verification Results
+- Tests: 27 passed
 completed_by:
 
 ## Implementation

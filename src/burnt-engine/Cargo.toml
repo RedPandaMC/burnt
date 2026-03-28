@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.22", features = ["extension-module"] }
 tree-sitter = "0.24"
 tree-sitter-python = "0.23"
-tree-sitter-sql = "0.0.2"
+tree-sitter-sequel = "0.3"
 sqlparser = { version = "0.60", features = ["visitor"] }
 toml = "0.8"
 rayon = "1.10"
