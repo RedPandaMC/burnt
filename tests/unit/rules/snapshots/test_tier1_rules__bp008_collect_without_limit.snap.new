@@ -1,0 +1,22 @@
+---
+source: "../../tests/unit/rules/test_tier1_rules.rs"
+assertion_line: 30
+expression: snapshot_data
+---
+findings:
+  - code: BP008
+    line: 3
+    message: collect() without limit() can OOM the driver
+    rule_id: collect_without_limit
+    severity: Error
+  - code: BP008
+    line: 3
+    message: collect() without limit() can OOM the driver
+    rule_id: collect_without_limit
+    severity: Error
+  - code: BNT-N01
+    line: 2
+    message: "Variable named 'df' is too generic — hinders readability"
+    rule_id: BNT-N01
+    severity: Info
+rule_count: 3

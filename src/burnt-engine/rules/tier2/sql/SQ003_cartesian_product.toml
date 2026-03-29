@@ -1,0 +1,19 @@
+# SQ003 - Cartesian product detected
+# Category: SqlQuality
+# Severity: error
+# Language: sql
+# Tier: 2
+
+[rule]
+id = "cartesian_product"
+code = "SQ003"
+severity = "error"
+language = "sql"
+description = "Cartesian product detected"
+suggestion = "Add appropriate join condition"
+category = "SqlQuality"
+tier = 2
+
+[context]
+type = "cartesian_product"
+required = true

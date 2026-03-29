@@ -1,0 +1,27 @@
+# BP014 - CROSS JOIN (SQL and PySpark)
+# Category: BestPractice
+# Severity: warning
+# Language: All
+# Tier: 1
+
+[rule]
+id = "cross_join"
+code = "BP014"
+severity = "warning"
+language = "All"
+description = "CROSS JOIN creates O(n*m) rows"
+suggestion = "Use INNER JOIN with explicit ON clause"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "crossJoin")
+)
+"""
+

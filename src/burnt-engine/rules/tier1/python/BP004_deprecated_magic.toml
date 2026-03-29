@@ -1,0 +1,23 @@
+# BP004 - Deprecated Databricks magic syntax used
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "deprecated_magic"
+code = "BP004"
+severity = "warning"
+language = "python"
+description = "Deprecated Databricks magic syntax used"
+suggestion = "Use new-style magic format"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(magic_line
+  (magic_command) @cmd
+  (#match? @cmd "^(run|sql|md)$")
+)
+"""

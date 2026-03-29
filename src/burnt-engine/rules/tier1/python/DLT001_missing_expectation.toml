@@ -1,0 +1,53 @@
+# DLT001 - DLT table missing data quality expectation
+# Category: DLT
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "missing_expectation"
+code = "DLT001"
+severity = "warning"
+language = "python"
+description = "DLT table missing data quality expectation"
+suggestion = "Add @dlt.expect or @dlt.expect_all constraint"
+category = "DLT"
+tier = 1
+
+[query]
+detect = """
+(decorated_definition
+  (decorator
+    (call
+      function: (attribute
+        object: (identifier) @dlt_obj
+        attribute: (identifier) @table_decorator
+      )
+      (#eq? @dlt_obj "dlt")
+      (#eq? @table_decorator "table")
+    )
+  )
+)
+"""
+exclude = """
+(decorated_definition
+  (decorator
+    (call
+      function: (attribute
+        object: (identifier) @dlt_obj
+        attribute: (identifier) @table_decorator
+      )
+      arguments: (argument_list
+        (call
+          function: (attribute
+            object: (identifier) @expect_obj
+            attribute: (identifier) @expect_method
+          )
+          (#eq? @dlt_obj "dlt")
+          (#match? @expect_method "^expect.*$")
+        )
+      )
+    )
+  )
+)
+"""

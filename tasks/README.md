@@ -42,8 +42,8 @@ Phase 6: Validation ──────────────── Dogfood, se
 | `P1/12-tier2-rules` | todo | ~25 Rust context-aware rules |
 | `P1/13-tier3-rules` | todo | ~11 Rust semantic rules |
 | `P1/14-rule-pipeline` | todo | Rule execution and suppression |
-| `P1/15-pyo3-bridge` | todo | Expose engine to Python via PyO3 |
-| `P1/16-parity-validation` | todo | Ensure parity with v1.0 |
+| `P1/15-pyo3-bridge` | done | Expose engine to Python via PyO3 |
+| `P1/16-parity-validation` | done | Ensure parity with v1.0 |
 
 ### Phase 2: Python Intelligence
 

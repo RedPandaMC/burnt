@@ -1,0 +1,42 @@
+# BP011 - toPandas() brings all data to driver
+# Category: BestPractice
+# Severity: error
+# Language: python
+# Tier: 1
+
+[rule]
+id = "to_pandas"
+code = "BP011"
+severity = "error"
+language = "python"
+description = "toPandas() brings the entire DataFrame to the driver"
+suggestion = "Add .limit(n).toPandas() or use Spark-native aggregations"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "toPandas")
+)
+"""
+exclude = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @limit_method
+      )
+      (#eq? @limit_method "limit")
+    )
+    attribute: (identifier) @pandas_method
+  )
+  (#eq? @pandas_method "toPandas")
+)
+"""
+

@@ -1,11 +1,16 @@
-use crate::types::{
-    CompiledRule, Confidence, ExecutionPhase, Finding as TypesFinding, RuleEntry,
-};
+use crate::types::{CompiledRule, Confidence, ExecutionPhase, Finding as TypesFinding, RuleEntry};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
+mod cinder;
+mod context;
+mod dataflow;
 mod registry {
     include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+}
+#[allow(unused)]
+mod generated_tests {
+    include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));
 }
 
 mod query;
@@ -93,9 +98,93 @@ impl RulePipeline {
         language: &str,
     ) -> Vec<TypesFinding> {
         match phase {
-            ExecutionPhase::SimplePatterns => self.execute_tier1_rules(source, language),
-            _ => vec![], // Other phases not implemented yet
+            ExecutionPhase::Syntax | ExecutionPhase::SimplePatterns => {
+                self.execute_tier1_rules(source, language)
+            }
+            ExecutionPhase::ContextRules => self.execute_tier2_rules(source, language),
+            ExecutionPhase::SemanticRules => self.execute_tier3_rules(source, language),
+            ExecutionPhase::CrossCell => vec![], // TODO: cross-cell analysis
+            ExecutionPhase::DltRules => vec![],  // DLT rules are Tier 1
+            ExecutionPhase::Finalize => vec![],
+            _ => vec![],
         }
+    }
+
+    fn execute_tier2_rules(&self, source: &str, language: &str) -> Vec<TypesFinding> {
+        let mut findings = Vec::new();
+
+        if let Some(tier2_rules) = self.rules_by_tier.get(&2) {
+            eprintln!(
+                "DEBUG execute_tier2_rules: {} rules for language {}",
+                tier2_rules.len(),
+                language
+            );
+            for rule in tier2_rules {
+                eprintln!(
+                    "DEBUG   checking rule {} with language {}",
+                    rule.code, rule.language
+                );
+                if rule.language.to_lowercase() == language.to_lowercase()
+                    || rule.language.to_lowercase() == "all"
+                    || rule.language.to_lowercase() == "notebook"
+                {
+                    eprintln!("DEBUG     executing context for {}", rule.code);
+                    let ctx_findings = context::analyze_context_for_rule(
+                        &rule.code,
+                        source,
+                        &context::ContextConfig {
+                            rule_code: rule.code.clone(),
+                            context_type: String::new(),
+                        },
+                    );
+                    eprintln!("DEBUG     found {} findings", ctx_findings.len());
+                    for finding in ctx_findings {
+                        findings.push(TypesFinding {
+                            rule_id: finding.rule_id,
+                            code: finding.code,
+                            severity: finding.severity,
+                            message: finding.message,
+                            suggestion: finding.suggestion,
+                            line_number: finding.line_number,
+                            column: finding.column,
+                            confidence: finding.confidence,
+                        });
+                    }
+                }
+            }
+        } else {
+            eprintln!("DEBUG execute_tier2_rules: no tier2 rules found");
+        }
+
+        findings
+    }
+
+    fn execute_tier3_rules(&self, source: &str, language: &str) -> Vec<TypesFinding> {
+        let mut findings = Vec::new();
+
+        if let Some(tier3_rules) = self.rules_by_tier.get(&3) {
+            for rule in tier3_rules {
+                if rule.language.to_lowercase() == language.to_lowercase()
+                    || rule.language.to_lowercase() == "all"
+                {
+                    let df_findings = dataflow::analyze_dataflow_for_rule(&rule.code, source);
+                    for finding in df_findings {
+                        findings.push(TypesFinding {
+                            rule_id: finding.rule_id,
+                            code: finding.code,
+                            severity: finding.severity,
+                            message: finding.message,
+                            suggestion: finding.suggestion,
+                            line_number: finding.line_number,
+                            column: finding.column,
+                            confidence: finding.confidence,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
     }
 
     fn execute_tier1_rules(&self, source: &str, language: &str) -> Vec<TypesFinding> {
@@ -103,12 +192,9 @@ impl RulePipeline {
 
         if let Some(tier1_rules) = self.rules_by_tier.get(&1) {
             for rule in tier1_rules {
-                if rule.language.to_lowercase() == language.to_lowercase()
-                    || rule.language == "All"
+                if rule.language.to_lowercase() == language.to_lowercase() || rule.language == "All"
                 {
-                    if let Ok(Some((line, col))) =
-                        self.test_rule_patterns(source, language, rule)
-                    {
+                    if let Ok(Some((line, col))) = self.test_rule_patterns(source, language, rule) {
                         findings.push(TypesFinding {
                             rule_id: rule.id.clone(),
                             code: rule.code.clone(),

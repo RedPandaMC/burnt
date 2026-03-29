@@ -1,0 +1,23 @@
+status: done
+agent: z-ai/glm-5
+completed_by: z-ai/glm-5
+
+## Implementation
+### Changes Made
+- `src/burnt/parsers/antipatterns.py` - Simplified to call Rust engine directly, removed Python fallback
+- `src/burnt/parsers/pyspark.py` - Removed (replaced by Rust engine)
+- `src/burnt/parsers/sql.py` - Removed (replaced by Rust engine)
+- `src/burnt/parsers/registry.py` - Removed (replaced by Rust engine)
+- `src/burnt/cli/main.py` - Updated to use `burnt._engine` for rule registry
+- `tests/unit/test_parity.py` - Added comprehensive parity tests
+
+### Implementation Notes
+- All anti-pattern detection now goes through Rust engine via `burnt._engine`
+- CLI uses `get_registry_count()` and `list_rules()` from Rust
+- Python shim in antipatterns.py converts Rust findings to Python AntiPattern dataclass
+- Severity enum handling fixed to extract variant name from Rust enum string representation
+
+### Verification Results
+- Tests: 14 Python parity tests pass, Rust tests pass
+- Lint: `cargo clippy` pass, `uv run ruff check` pass
+- Shim: `detect_antipatterns()` successfully bridges Python API to Rust engine

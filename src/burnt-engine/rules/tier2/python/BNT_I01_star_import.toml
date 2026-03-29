@@ -1,0 +1,30 @@
+# BNT-I01 - from pyspark.sql.functions import * shadows Python built-ins
+# Category: NotebookStyle
+# Severity: error
+# Language: python
+# Tier: 2
+
+[rule]
+id = "star_import_pyspark_functions"
+code = "BNT-I01"
+severity = "error"
+language = "python"
+description = "from pyspark.sql.functions import * shadows Python built-ins (max, min, sum, map, round)"
+suggestion = "Use: from pyspark.sql import functions as F"
+category = "NotebookStyle"
+tier = 2
+
+[query]
+detect = """
+(import_statement
+  (import_from
+    module: (dotted_name
+      (identifier) @pyspark
+      (identifier) @functions
+    )
+    (import_star)
+  )
+  (#eq? @pyspark "pyspark")
+  (#eq? @functions "functions")
+)
+"""

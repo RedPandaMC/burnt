@@ -1,0 +1,31 @@
+# BP012 - repartition(1) creates a single-partition bottleneck
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "repartition_one"
+code = "BP012"
+severity = "warning"
+language = "python"
+description = "repartition(1) forces all data through a single partition"
+suggestion = "Use coalesce(1) when reducing partitions, or keep natural parallelism"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  arguments: (argument_list
+    (integer) @n
+  )
+  (#eq? @method_name "repartition")
+  (#eq? @n "1")
+)
+"""
+

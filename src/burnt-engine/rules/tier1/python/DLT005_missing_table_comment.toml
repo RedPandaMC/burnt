@@ -1,0 +1,31 @@
+# DLT005 - DLT table missing comment metadata
+# Category: DLT
+# Severity: info
+# Language: python
+# Tier: 1
+
+[rule]
+id = "missing_table_comment"
+code = "DLT005"
+severity = "info"
+language = "python"
+description = "DLT table missing comment metadata"
+suggestion = "Add table comment for documentation"
+category = "DLT"
+tier = 1
+
+[query]
+detect = """
+(decorated_definition
+  (decorator
+    (call
+      function: (attribute
+        object: (identifier) @dlt_obj
+        attribute: (identifier) @table_decorator
+      )
+      (#eq? @dlt_obj "dlt")
+      (#eq? @table_decorator "table")
+    )
+  )
+)
+"""

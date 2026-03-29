@@ -1,0 +1,33 @@
+# BP009 - SELECT * without LIMIT
+# Category: BestPractice
+# Severity: error
+# Language: sql
+# Tier: 1
+
+[rule]
+id = "select_star"
+code = "BP009"
+severity = "error"
+language = "sql"
+description = "SELECT * without LIMIT returns all rows and prevents column pruning"
+suggestion = "Add LIMIT clause or select specific columns"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(select_statement
+  select: (select_clause
+    (star)
+  )
+)
+"""
+exclude = """
+(select_statement
+  select: (select_clause
+    (star)
+  )
+  (limit_clause)
+)
+"""
+

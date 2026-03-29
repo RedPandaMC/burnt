@@ -1,0 +1,27 @@
+# DLT003 - Streaming source without explicit schema
+# Category: Dlt
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "dlt_streaming_no_schema"
+code = "DLT003"
+severity = "warning"
+language = "python"
+description = "Streaming source missing explicit schema — schema inference on streams is unreliable"
+suggestion = "Pass schema= to spark.readStream or use cloudFiles with schemaLocation"
+category = "Dlt"
+tier = 1
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "readStream")
+)
+"""
+

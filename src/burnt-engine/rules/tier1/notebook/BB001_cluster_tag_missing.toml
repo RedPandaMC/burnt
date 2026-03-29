@@ -1,0 +1,22 @@
+# BB001 - Notebook missing cluster cost allocation tag
+# Category: Databricks
+# Severity: info
+# Language: notebook
+# Tier: 1
+
+[rule]
+id = "cluster_tag_missing"
+code = "BB001"
+severity = "info"
+language = "notebook"
+description = "Notebook missing cluster cost allocation tag"
+suggestion = "Add tag for cost attribution and monitoring"
+category = "Databricks"
+tier = 1
+
+[context]
+# This is a notebook metadata rule - requires notebook context analysis
+# Placeholder for now - Tier 2 infrastructure needed
+type = "notebook_metadata"
+field = "tags"
+required = false

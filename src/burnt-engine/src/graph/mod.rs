@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::types::{CostEdge, CostNode, PipelineTable};
+use crate::types::{CostEdge, CostNode, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
 
 pub mod dlt;
 pub mod python;
@@ -44,68 +44,22 @@ impl CostGraph {
     }
 }
 
-#[pyclass]
-#[derive(Clone)]
-pub struct PyCostNode {
-    #[pyo3(get)]
-    pub id: String,
-    #[pyo3(get)]
-    pub kind: String,
-    #[pyo3(get)]
-    pub scaling_type: String,
-    #[pyo3(get)]
-    pub photon_eligible: bool,
-    #[pyo3(get)]
-    pub shuffle_required: bool,
-    #[pyo3(get)]
-    pub driver_bound: bool,
-    #[pyo3(get)]
-    pub tables_referenced: Vec<String>,
-    #[pyo3(get)]
-    pub estimated_input_bytes: Option<u64>,
-    #[pyo3(get)]
-    pub estimated_cost_usd: Option<f64>,
-    #[pyo3(get)]
-    pub line_number: Option<u32>,
-    #[pyo3(get)]
-    pub source_code: Option<String>,
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PipelineGraph {
+    pub tables: Vec<PipelineTable>,
+    pub mode: String,
+    pub confidence: String,
 }
 
-impl From<CostNode> for PyCostNode {
-    fn from(n: CostNode) -> Self {
-        PyCostNode {
-            id: n.id,
-            kind: n.kind.to_string(),
-            scaling_type: n.scaling_type.to_string(),
-            photon_eligible: n.photon_eligible,
-            shuffle_required: n.shuffle_required,
-            driver_bound: n.driver_bound,
-            tables_referenced: n.tables_referenced,
-            estimated_input_bytes: n.estimated_input_bytes,
-            estimated_cost_usd: n.estimated_cost_usd,
-            line_number: n.line_number,
-            source_code: n.source_code,
-        }
-    }
-}
+impl PipelineGraph {
+    pub fn from_dlt(source: &str) -> Self {
+        let mut builder = DltGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
 
-#[pyclass]
-#[derive(Clone)]
-pub struct PyCostEdge {
-    #[pyo3(get)]
-    pub source: String,
-    #[pyo3(get)]
-    pub target: String,
-    #[pyo3(get)]
-    pub edge_type: String,
-}
-
-impl From<CostEdge> for PyCostEdge {
-    fn from(e: CostEdge) -> Self {
-        PyCostEdge {
-            source: e.source,
-            target: e.target,
-            edge_type: e.edge_type,
+        PipelineGraph {
+            tables,
+            mode: "dlt".to_string(),
+            confidence: "low".to_string(),
         }
     }
 }
@@ -134,45 +88,6 @@ impl From<CostGraph> for CostGraphPy {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PipelineGraph {
-    pub tables: Vec<PipelineTable>,
-    pub mode: String,
-    pub confidence: String,
-}
-
-impl PipelineGraph {
-    pub fn from_dlt(source: &str) -> Self {
-        let mut builder = DltGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
-
-        PipelineGraph {
-            tables,
-            mode: "dlt".to_string(),
-            confidence: "low".to_string(),
-        }
-    }
-}
-
-#[pyclass]
-#[derive(Clone)]
-pub struct PyPipelineTable {
-    #[pyo3(get)]
-    pub id: String,
-    #[pyo3(get)]
-    pub name: String,
-    #[pyo3(get)]
-    pub kind: String,
-    #[pyo3(get)]
-    pub source_type: String,
-    #[pyo3(get)]
-    pub inner_nodes: Vec<PyCostNode>,
-    #[pyo3(get)]
-    pub expectations: Vec<String>,
-    #[pyo3(get)]
-    pub is_incremental: bool,
-}
-
 #[pyclass]
 #[derive(Clone)]
 pub struct PipelineGraphPy {
@@ -182,20 +97,6 @@ pub struct PipelineGraphPy {
     pub mode: String,
     #[pyo3(get)]
     pub confidence: String,
-}
-
-impl From<PipelineTable> for PyPipelineTable {
-    fn from(t: PipelineTable) -> Self {
-        PyPipelineTable {
-            id: t.id,
-            name: t.name,
-            kind: t.kind.to_string(),
-            source_type: t.source_type.to_string(),
-            inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
-            expectations: t.expectations,
-            is_incremental: t.is_incremental,
-        }
-    }
 }
 
 impl From<PipelineGraph> for PipelineGraphPy {

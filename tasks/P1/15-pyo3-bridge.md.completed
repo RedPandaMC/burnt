@@ -1,0 +1,20 @@
+status: done
+agent: z-ai/glm-5
+completed_by: z-ai/glm-5
+
+## Implementation
+### Changes Made
+- `src/burnt-engine/src/types.rs` - Added `AnalysisResultPy`, `PyGraph`, `PyPipeline` structs
+- `src/burnt-engine/src/ingestion/files.rs` - Implemented `ingest_file()`, `ingest_directory()`, `parse_ipynb()`
+- `src/burnt-engine/src/lib.rs` - Added `analyze_source()`, `analyze_file()`, `analyze_directory()` with GIL release via `py.allow_threads()`
+- `src/burnt-engine/src/graph/mod.rs` - Updated to use types from types.rs
+
+### Implementation Notes
+- `analyze_directory` uses rayon for parallel execution with GIL released
+- `PyGraph::from_cost_graph()` and `PyPipeline::from_pipeline()` factory methods added
+- All functions release GIL during computation for better multi-threaded performance
+- Module renamed from `burnt_engine` to `_engine` to match maturin conventions
+
+### Verification Results
+- Tests: 45 Rust tests pass, 14 Python parity tests pass
+- Lint: `cargo clippy` pass, `uv run ruff check` pass

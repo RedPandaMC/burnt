@@ -1,0 +1,19 @@
+# BP020 - .withColumn() inside a loop causes O(n²) Catalyst plan analysis
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 2
+
+[rule]
+id = "with_column_in_loop"
+code = "BP020"
+severity = "warning"
+language = "python"
+description = ".withColumn() inside a loop causes O(n²) Catalyst plan analysis"
+suggestion = "Use .withColumns() (Spark 3.3+) or a single .select() statement"
+category = "BestPractice"
+tier = 2
+
+[context]
+type = "loop_with_column"
+required = true

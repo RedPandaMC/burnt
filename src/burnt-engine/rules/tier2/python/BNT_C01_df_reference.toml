@@ -1,0 +1,19 @@
+# BNT-C01 - df['col'] or df.col outside a join can cause stale reference bugs
+# Category: NotebookStyle
+# Severity: warning
+# Language: python
+# Tier: 2
+
+[rule]
+id = "df_bracket_or_dot_reference"
+code = "BNT-C01"
+severity = "warning"
+language = "python"
+description = "df['col'] or df.col outside a join can cause stale reference bugs after withColumn"
+suggestion = "Use F.col('col') which resolves at evaluation time"
+category = "NotebookStyle"
+tier = 2
+
+[context]
+type = "column_reference"
+allowed = ["F.col", "col"]

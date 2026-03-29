@@ -1,6 +1,6 @@
 //! Tests for Tier 1 rules (simple tree-sitter pattern matching)
 
-use burnt_engine::rules::{run, RulePipeline};
+use _engine::rules::{run, RulePipeline};
 use insta::assert_yaml_snapshot;
 
 #[test]

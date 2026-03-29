@@ -1,0 +1,19 @@
+# DLT004 - Materialized view defined without incremental strategy
+# Category: DLT
+# Severity: warning
+# Language: python
+# Tier: 2
+
+[rule]
+id = "materialized_view_full_refresh"
+code = "DLT004"
+severity = "warning"
+language = "python"
+description = "Materialized view defined without incremental strategy"
+suggestion = "Consider incremental materialized view for large datasets"
+category = "DLT"
+tier = 2
+
+[context]
+type = "dlt_materialized_view"
+incremental_required = true

@@ -1,0 +1,20 @@
+# BN001 - Missing %run target file
+# Category: BasicNotebook
+# Severity: error
+# Language: notebook
+# Tier: 1
+
+[rule]
+id = "missing_run_target"
+code = "BN001"
+severity = "error"
+language = "notebook"
+description = "Missing %run target file"
+suggestion = "Ensure the referenced file exists"
+category = "BasicNotebook"
+tier = 1
+
+[context]
+type = "notebook_magic"
+magic = "run"
+required = true

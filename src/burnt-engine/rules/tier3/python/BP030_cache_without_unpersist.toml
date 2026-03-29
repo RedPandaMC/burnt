@@ -1,0 +1,19 @@
+# BP030 - .cache() with no .unpersist() in the same scope
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 3
+
+[rule]
+id = "cache_without_unpersist"
+code = "BP030"
+severity = "warning"
+language = "python"
+description = ".cache() with no .unpersist() in the same scope — potential memory leak"
+suggestion = "Call .unpersist() when the cached DataFrame is no longer needed"
+category = "BestPractice"
+tier = 3
+
+[dataflow]
+type = "cache_lifecycle"
+track = ["cache", "unpersist"]

@@ -1,0 +1,28 @@
+# BQ002 - UNION instead of UNION ALL (forces dedup sort)
+# Category: SqlQuality
+# Severity: warning
+# Language: sql
+# Tier: 1
+
+[rule]
+id = "union_not_all"
+code = "BQ002"
+severity = "warning"
+language = "sql"
+description = "UNION deduplicates rows with an expensive sort — use UNION ALL if duplicates are acceptable"
+suggestion = "Replace UNION with UNION ALL"
+category = "SqlQuality"
+tier = 1
+
+[query]
+detect = """
+(union_expression
+  operator: "UNION"
+)
+"""
+exclude = """
+(union_expression
+  operator: "UNION ALL"
+)
+"""
+

@@ -1,0 +1,26 @@
+# BD002 - OPTIMIZE without ZORDER
+# Category: Delta
+# Severity: info
+# Language: sql
+# Tier: 1
+
+[rule]
+id = "missing_zorder"
+code = "BD002"
+severity = "info"
+language = "sql"
+description = "Large Delta table missing ZORDER optimization"
+suggestion = "Add ZORDER BY on frequently filtered columns"
+category = "Delta"
+tier = 1
+
+[query]
+detect = """
+(optimize_statement)
+"""
+exclude = """
+(optimize_statement
+  (zorder_clause)
+)
+"""
+

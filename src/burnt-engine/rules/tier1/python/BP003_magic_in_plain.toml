@@ -1,0 +1,22 @@
+# BP003 - Databricks magic (# MAGIC) in plain Python file
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "magic_in_plain"
+code = "BP003"
+severity = "warning"
+language = "python"
+description = "Databricks magic (# MAGIC) in plain Python file"
+suggestion = "Remove magic or use .py (Databricks) extension"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(magic_line
+  (magic_command) @cmd
+)
+"""

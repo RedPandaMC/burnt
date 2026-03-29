@@ -1,0 +1,42 @@
+# BP016 - count() without filter/where
+# Category: BestPractice
+# Severity: warning
+# Language: python
+# Tier: 1
+
+[rule]
+id = "count_without_filter"
+code = "BP016"
+severity = "warning"
+language = "python"
+description = "count() without filter scans the entire table"
+suggestion = "Apply .filter() or .where() before count()"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "count")
+)
+"""
+exclude = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @filter_method
+      )
+      (#match? @filter_method "^(filter|where)$")
+    )
+    attribute: (identifier) @count_method
+  )
+  (#eq? @count_method "count")
+)
+"""
+

@@ -327,3 +327,162 @@ impl std::fmt::Display for ExecutionPhase {
         }
     }
 }
+
+impl std::fmt::Display for AnalysisMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnalysisMode::Python => write!(f, "python"),
+            AnalysisMode::Sql => write!(f, "sql"),
+            AnalysisMode::Dlt => write!(f, "dlt"),
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct AnalysisResultPy {
+    #[pyo3(get)]
+    pub mode: String,
+    #[pyo3(get)]
+    pub graph: Option<PyGraph>,
+    #[pyo3(get)]
+    pub pipeline: Option<PyPipeline>,
+    #[pyo3(get)]
+    pub findings: Vec<Finding>,
+    #[pyo3(get)]
+    pub cells: Vec<Cell>,
+    #[pyo3(get)]
+    pub path: Option<String>,
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyGraph {
+    #[pyo3(get)]
+    pub nodes: Vec<PyCostNode>,
+    #[pyo3(get)]
+    pub edges: Vec<PyCostEdge>,
+}
+
+impl PyGraph {
+    pub fn from_cost_graph(g: crate::graph::CostGraph) -> Self {
+        PyGraph {
+            nodes: g.nodes.into_iter().map(|n| n.into()).collect(),
+            edges: g.edges.into_iter().map(|e| e.into()).collect(),
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyPipeline {
+    #[pyo3(get)]
+    pub tables: Vec<PyPipelineTable>,
+}
+
+impl PyPipeline {
+    pub fn from_pipeline(g: crate::graph::PipelineGraph) -> Self {
+        PyPipeline {
+            tables: g.tables.into_iter().map(|t| t.into()).collect(),
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyCostNode {
+    #[pyo3(get)]
+    pub id: String,
+    #[pyo3(get)]
+    pub kind: String,
+    #[pyo3(get)]
+    pub scaling_type: String,
+    #[pyo3(get)]
+    pub photon_eligible: bool,
+    #[pyo3(get)]
+    pub shuffle_required: bool,
+    #[pyo3(get)]
+    pub driver_bound: bool,
+    #[pyo3(get)]
+    pub tables_referenced: Vec<String>,
+    #[pyo3(get)]
+    pub estimated_input_bytes: Option<u64>,
+    #[pyo3(get)]
+    pub estimated_cost_usd: Option<f64>,
+    #[pyo3(get)]
+    pub line_number: Option<u32>,
+    #[pyo3(get)]
+    pub source_code: Option<String>,
+}
+
+impl From<CostNode> for PyCostNode {
+    fn from(n: CostNode) -> Self {
+        PyCostNode {
+            id: n.id,
+            kind: n.kind.to_string(),
+            scaling_type: n.scaling_type.to_string(),
+            photon_eligible: n.photon_eligible,
+            shuffle_required: n.shuffle_required,
+            driver_bound: n.driver_bound,
+            tables_referenced: n.tables_referenced,
+            estimated_input_bytes: n.estimated_input_bytes,
+            estimated_cost_usd: n.estimated_cost_usd,
+            line_number: n.line_number,
+            source_code: n.source_code,
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyCostEdge {
+    #[pyo3(get)]
+    pub source: String,
+    #[pyo3(get)]
+    pub target: String,
+    #[pyo3(get)]
+    pub edge_type: String,
+}
+
+impl From<CostEdge> for PyCostEdge {
+    fn from(e: CostEdge) -> Self {
+        PyCostEdge {
+            source: e.source,
+            target: e.target,
+            edge_type: e.edge_type,
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyPipelineTable {
+    #[pyo3(get)]
+    pub id: String,
+    #[pyo3(get)]
+    pub name: String,
+    #[pyo3(get)]
+    pub kind: String,
+    #[pyo3(get)]
+    pub source_type: String,
+    #[pyo3(get)]
+    pub inner_nodes: Vec<PyCostNode>,
+    #[pyo3(get)]
+    pub expectations: Vec<String>,
+    #[pyo3(get)]
+    pub is_incremental: bool,
+}
+
+impl From<PipelineTable> for PyPipelineTable {
+    fn from(t: PipelineTable) -> Self {
+        PyPipelineTable {
+            id: t.id,
+            name: t.name,
+            kind: t.kind.to_string(),
+            source_type: t.source_type.to_string(),
+            inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
+            expectations: t.expectations,
+            is_incremental: t.is_incremental,
+        }
+    }
+}

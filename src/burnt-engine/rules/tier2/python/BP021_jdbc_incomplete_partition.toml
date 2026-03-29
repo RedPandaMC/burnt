@@ -1,0 +1,30 @@
+# BP021 - JDBC read missing required partition options
+# Category: BestPractice
+# Severity: error
+# Language: python
+# Tier: 2
+
+[rule]
+id = "jdbc_incomplete_partition"
+code = "BP021"
+severity = "error"
+language = "python"
+description = "JDBC read missing required partition options — reads entire table on single thread"
+suggestion = "Add partitionColumn, numPartitions, lowerBound, and upperBound options"
+category = "BestPractice"
+tier = 2
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method
+  )
+  arguments: (argument_list
+    (string) @url
+  )
+  (#eq? @method "read")
+  (#match? @url "jdbc")
+)
+"""

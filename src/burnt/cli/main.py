@@ -55,11 +55,16 @@ def main(
 # burnt check
 # ---------------------------------------------------------------------------
 
-def _build_rule_severities() -> dict[str, str]:
-    """Build the rule-id → severity dict from the REGISTRY."""
-    from ..parsers.registry import REGISTRY
 
-    return {rule_id: str(rule.severity) for rule_id, rule in REGISTRY.items()}
+def _build_rule_severities() -> dict[str, str]:
+    """Build the rule-id → severity dict from the Rust engine."""
+    try:
+        from burnt._engine import list_rules
+
+        rules = list_rules()
+        return {r.code: str(r.severity) for r in rules}
+    except ImportError:
+        return {}
 
 
 _RULE_SEVERITIES: dict[str, str] = _build_rule_severities()
@@ -132,7 +137,9 @@ def check(
 
         issues = detect_antipatterns(source, lang)
         # Filter to active rules
-        issues = [i for i in issues if i.name not in file_ignores and i.name in active_rules]
+        issues = [
+            i for i in issues if i.name not in file_ignores and i.name in active_rules
+        ]
 
         for issue in issues:
             all_issues.append((file_path, issue))
@@ -159,8 +166,16 @@ def check(
         console.print(json.dumps(data, indent=2))
     elif output == "text":
         for file_path, issue in all_issues:
-            color = "red" if issue.severity == "error" else "yellow" if issue.severity == "warning" else "blue"
-            console.print(f"{file_path}: [{color}]{issue.severity.upper()}[/{color}] {issue.name}: {issue.description}")
+            color = (
+                "red"
+                if issue.severity == "error"
+                else "yellow"
+                if issue.severity == "warning"
+                else "blue"
+            )
+            console.print(
+                f"{file_path}: [{color}]{issue.severity.upper()}[/{color}] {issue.name}: {issue.description}"
+            )
             console.print(f"  [dim]Suggestion: {issue.suggestion}[/dim]")
     else:
         # table (default)
@@ -172,8 +187,10 @@ def check(
 
         for file_path, issue in all_issues:
             sev_color = (
-                "red" if issue.severity == "error"
-                else "yellow" if issue.severity == "warning"
+                "red"
+                if issue.severity == "error"
+                else "yellow"
+                if issue.severity == "warning"
                 else "blue"
             )
             table.add_row(
@@ -188,23 +205,9 @@ def check(
         raise typer.Exit(1)
 
 
-def _complexity_label(score: float) -> str:
-    if score < 10:
-        return "low"
-    if score <= 30:
-        return "moderate"
-    return "high"
-
-
 def _check_inline_sql(sql: str, console: Console) -> None:
-    """Print complexity + anti-pattern warnings for an inline SQL string."""
+    """Print anti-pattern warnings for an inline SQL string."""
     from ..parsers.antipatterns import detect_antipatterns
-    from ..parsers.sql import analyze_query
-
-    profile = analyze_query(sql)
-    complexity = profile.complexity_score
-    label = _complexity_label(complexity)
-    console.print(f"Complexity: {complexity} ({label})")
 
     issues = detect_antipatterns(sql, "sql")
     if issues:
@@ -234,7 +237,9 @@ def advise(
     statement_id: str = typer.Option(None, "--statement-id", help="SQL statement ID"),
     job_id: str = typer.Option(None, "--job-id", help="Databricks Job ID"),
     job_name: str = typer.Option(None, "--job-name", help="Databricks Job name"),
-    output: str = typer.Option("table", "--output", "-o", help="Output format: table|json|text"),
+    output: str = typer.Option(
+        "table", "--output", "-o", help="Output format: table|json|text"
+    ),
 ) -> None:
     """Analyze a historical run and recommend an optimized cluster configuration."""
     import burnt
@@ -253,12 +258,17 @@ def advise(
         elif run_id or statement_id:
             advice = burnt.advise(run_id=run_id, statement_id=statement_id)
         else:
-            console.print("[red]Error:[/red] Provide --run-id, --statement-id, --job-id, or --job-name.")
-            console.print("[dim]Hint: to analyze a notebook session, use burnt.advise() in Python.[/dim]")
+            console.print(
+                "[red]Error:[/red] Provide --run-id, --statement-id, --job-id, or --job-name."
+            )
+            console.print(
+                "[dim]Hint: to analyze a notebook session, use burnt.advise() in Python.[/dim]"
+            )
             raise typer.Exit(1)
 
         if output == "json":
             import json
+
             console.print(json.dumps(advice.model_dump(), indent=2))
         elif output == "text":
             console.print(advice.comparison_table())
@@ -332,6 +342,7 @@ def init() -> None:
             # Check if [tool.burnt] already there
             try:
                 import tomllib
+
                 with open(target, "rb") as f:
                     data = tomllib.load(f)
                 if data.get("tool", {}).get("burnt") and not typer.confirm(
@@ -522,7 +533,7 @@ def rules() -> None:
 
     if config_path is None:
         console.print(
-            '[red]Error:[/red] No config found. Run [bold]burnt init[/bold] first.'
+            "[red]Error:[/red] No config found. Run [bold]burnt init[/bold] first."
         )
         raise typer.Exit(1)
 
@@ -539,7 +550,9 @@ def rules() -> None:
     table.add_column("Status")
 
     for i, rule_id in enumerate(rule_ids, 1):
-        status = "[red]disabled[/red]" if rule_id in ignored else "[green]enabled[/green]"
+        status = (
+            "[red]disabled[/red]" if rule_id in ignored else "[green]enabled[/green]"
+        )
         table.add_row(str(i), rule_id, _RULE_SEVERITIES[rule_id], status)
 
     console.print(table)
@@ -692,7 +705,9 @@ def _check_table_access(
 @app.command()
 def doctor(
     warehouse_id: str | None = typer.Option(
-        None, "--warehouse-id", help="SQL warehouse ID for system table permission checks"
+        None,
+        "--warehouse-id",
+        help="SQL warehouse ID for system table permission checks",
     ),
 ) -> None:
     """Diagnose burnt setup and Databricks connectivity."""
@@ -850,9 +865,13 @@ def doctor(
         console.print(f"    {'workspace-url':<16} {url_val}")
         console.print(f"    {'lint.fail-on':<16} {settings.lint.fail_on}")
 
-        from ..parsers.registry import REGISTRY
+        try:
+            from burnt._engine import get_registry_count
 
-        total_rules = len(REGISTRY)
+            total_rules = get_registry_count()
+        except ImportError:
+            total_rules = 0
+
         ignored_count = len(settings.lint.ignore)
         if settings.lint.select == ["ALL"]:
             rules_str = f"ALL  ({total_rules} rules, {ignored_count} ignored)"

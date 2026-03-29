@@ -7,7 +7,7 @@ readme = "README.md"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "burnt_engine"
+name = "_engine"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

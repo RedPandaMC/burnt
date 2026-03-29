@@ -1,0 +1,29 @@
+# BP013 - ORDER BY without LIMIT
+# Category: BestPractice
+# Severity: warning
+# Language: sql
+# Tier: 1
+
+[rule]
+id = "order_by_without_limit"
+code = "BP013"
+severity = "warning"
+language = "sql"
+description = "ORDER BY without LIMIT sorts the entire result set"
+suggestion = "Add LIMIT or use window functions with RANK/ROW_NUMBER"
+category = "BestPractice"
+tier = 1
+
+[query]
+detect = """
+(select_statement
+  (order_by_clause)
+)
+"""
+exclude = """
+(select_statement
+  (order_by_clause)
+  (limit_clause)
+)
+"""
+

@@ -1,0 +1,20 @@
+# BP005 - Notebook cell missing type metadata
+# Category: BestPractice
+# Severity: warning
+# Language: notebook
+# Tier: 1
+
+[rule]
+id = "missing_cell_type"
+code = "BP005"
+severity = "warning"
+language = "notebook"
+description = "Notebook cell missing type metadata"
+suggestion = "Add proper cell type annotation"
+category = "BestPractice"
+tier = 1
+
+[context]
+type = "cell_metadata"
+field = "cell_type"
+required = true

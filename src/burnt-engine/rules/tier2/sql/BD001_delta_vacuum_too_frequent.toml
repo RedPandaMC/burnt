@@ -1,0 +1,20 @@
+# BD001 - VACUUM called more frequently than needed
+# Category: Delta
+# Severity: warning
+# Language: sql
+# Tier: 2
+
+[rule]
+id = "delta_vacuum_too_frequent"
+code = "BD001"
+severity = "warning"
+language = "sql"
+description = "VACUUM called more frequently than needed"
+suggestion = "Adjust vacuum retention based on table size and update frequency"
+category = "Delta"
+tier = 2
+
+[query]
+detect = """
+(vacuum_statement)
+"""

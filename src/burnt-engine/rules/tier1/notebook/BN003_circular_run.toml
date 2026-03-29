@@ -1,0 +1,20 @@
+# BN003 - Circular %run reference detected
+# Category: BasicNotebook
+# Severity: error
+# Language: notebook
+# Tier: 1
+
+[rule]
+id = "circular_run"
+code = "BN003"
+severity = "error"
+language = "notebook"
+description = "Circular %run reference detected"
+suggestion = "Remove circular dependency"
+category = "BasicNotebook"
+tier = 1
+
+[context]
+type = "circular_dependency"
+magic = "run"
+required = true
