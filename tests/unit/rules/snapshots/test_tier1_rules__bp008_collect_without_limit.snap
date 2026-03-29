@@ -1,0 +1,11 @@
+---
+source: "../../tests/unit/rules/test_tier1_rules.rs"
+expression: snapshot_data
+---
+findings:
+  - code: BP008
+    line: 3
+    message: collect() without limit() can OOM the driver
+    rule_id: collect_without_limit
+    severity: Error
+rule_count: 1

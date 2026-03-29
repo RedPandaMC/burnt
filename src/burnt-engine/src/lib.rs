@@ -4,7 +4,7 @@ mod detect;
 mod graph;
 mod ingestion;
 mod parse;
-mod rules;
+pub mod rules;
 mod semantic;
 mod types;
 
@@ -48,9 +48,9 @@ fn check(source: &str, language: Option<&str>) -> PyResult<PyObject> {
 
 #[pyfunction]
 #[pyo3(signature = (source, language=None))]
-fn run_rules(source: &str, language: Option<&str>) -> Result<Vec<types::Finding>, PyErr> {
+fn run_rules(source: &str, language: Option<&str>) -> PyResult<Vec<types::Finding>> {
     let lang = language.unwrap_or("auto");
-    rules::run(source, lang)
+    rules::run(source, lang).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
 }
 
 #[pyfunction]

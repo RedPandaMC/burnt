@@ -35,9 +35,9 @@ Phase 6: Validation ──────────────── Dogfood, se
 | `P1/05-tree-sitter-sql` | todo | tree-sitter and sqlparser-rs for SQL |
 | `P1/06-mode-detection` | todo | Detect if Python, SQL, or DLT mode |
 | `P1/07-semantic-model` | todo | Scope, bindings, and call chains |
-| `P1/08-python-cost-graph` | todo | Build CostGraph for Python code |
-| `P1/09-sql-cost-graph` | todo | Build CostGraph for SQL statements |
-| `P1/10-dlt-pipeline-graph` | todo | Build PipelineGraph for DLT |
+| `P1/08-python-cost-graph` | done | Build CostGraph for Python code |
+| `P1/09-sql-cost-graph` | done | Build CostGraph for SQL statements |
+| `P1/10-dlt-pipeline-graph` | done | Build PipelineGraph for DLT |
 | `P1/11-tier1-rules` | todo | ~48 TOML-based rules |
 | `P1/12-tier2-rules` | todo | ~25 Rust context-aware rules |
 | `P1/13-tier3-rules` | todo | ~11 Rust semantic rules |

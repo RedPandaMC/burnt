@@ -2,6 +2,14 @@ use pyo3::prelude::*;
 
 use crate::types::{CostEdge, CostNode, PipelineTable};
 
+pub mod dlt;
+pub mod python;
+pub mod sql;
+
+use dlt::DltGraphBuilder;
+use python::PythonGraphBuilder;
+use sql::SqlGraphBuilder;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CostGraph {
     pub nodes: Vec<CostNode>,
@@ -11,19 +19,25 @@ pub struct CostGraph {
 }
 
 impl CostGraph {
-    pub fn from_python(_source: &str) -> Result<Self, PyErr> {
+    pub fn from_python(source: &str) -> Result<Self, PyErr> {
+        let mut builder = PythonGraphBuilder::new();
+        let (nodes, edges) = builder.build_from_source(source);
+
         Ok(CostGraph {
-            nodes: vec![],
-            edges: vec![],
+            nodes,
+            edges,
             mode: "python".to_string(),
             confidence: "low".to_string(),
         })
     }
 
-    pub fn from_sql(_source: &str) -> Result<Self, PyErr> {
+    pub fn from_sql(source: &str) -> Result<Self, PyErr> {
+        let mut builder = SqlGraphBuilder::new();
+        let (nodes, edges) = builder.build_from_source(source);
+
         Ok(CostGraph {
-            nodes: vec![],
-            edges: vec![],
+            nodes,
+            edges,
             mode: "sql".to_string(),
             confidence: "low".to_string(),
         })
@@ -61,8 +75,8 @@ impl From<CostNode> for PyCostNode {
     fn from(n: CostNode) -> Self {
         PyCostNode {
             id: n.id,
-            kind: n.kind,
-            scaling_type: n.scaling_type,
+            kind: n.kind.to_string(),
+            scaling_type: n.scaling_type.to_string(),
             photon_eligible: n.photon_eligible,
             shuffle_required: n.shuffle_required,
             driver_bound: n.driver_bound,
@@ -128,9 +142,12 @@ pub struct PipelineGraph {
 }
 
 impl PipelineGraph {
-    pub fn from_dlt(_source: &str) -> Self {
+    pub fn from_dlt(source: &str) -> Self {
+        let mut builder = DltGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
+
         PipelineGraph {
-            tables: vec![],
+            tables,
             mode: "dlt".to_string(),
             confidence: "low".to_string(),
         }
@@ -172,8 +189,8 @@ impl From<PipelineTable> for PyPipelineTable {
         PyPipelineTable {
             id: t.id,
             name: t.name,
-            kind: t.kind,
-            source_type: t.source_type,
+            kind: t.kind.to_string(),
+            source_type: t.source_type.to_string(),
             inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
             expectations: t.expectations,
             is_incremental: t.is_incremental,

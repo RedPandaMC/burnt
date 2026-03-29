@@ -29,11 +29,59 @@ pub struct PythonParseResult {
     pub findings: Vec<Finding>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OperationKind {
+    Read,
+    Transform,
+    Shuffle,
+    Action,
+    Write,
+    UdfCall,
+    Maintenance,
+    Unknown,
+}
+
+impl std::fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OperationKind::Read => write!(f, "read"),
+            OperationKind::Transform => write!(f, "transform"),
+            OperationKind::Shuffle => write!(f, "shuffle"),
+            OperationKind::Action => write!(f, "action"),
+            OperationKind::Write => write!(f, "write"),
+            OperationKind::UdfCall => write!(f, "udf_call"),
+            OperationKind::Maintenance => write!(f, "maintenance"),
+            OperationKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ScalingBehavior {
+    Linear,
+    LinearWithCliff,
+    Quadratic,
+    StepFailure,
+    Maintenance,
+}
+
+impl std::fmt::Display for ScalingBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScalingBehavior::Linear => write!(f, "linear"),
+            ScalingBehavior::LinearWithCliff => write!(f, "linear_with_cliff"),
+            ScalingBehavior::Quadratic => write!(f, "quadratic"),
+            ScalingBehavior::StepFailure => write!(f, "step_failure"),
+            ScalingBehavior::Maintenance => write!(f, "maintenance"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostNode {
     pub id: String,
-    pub kind: String,
-    pub scaling_type: String,
+    pub kind: OperationKind,
+    pub scaling_type: ScalingBehavior,
     pub photon_eligible: bool,
     pub shuffle_required: bool,
     pub driver_bound: bool,
@@ -51,12 +99,52 @@ pub struct CostEdge {
     pub edge_type: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DltTableKind {
+    StreamingTable,
+    MaterializedView,
+    TemporaryView,
+}
+
+impl std::fmt::Display for DltTableKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DltTableKind::StreamingTable => write!(f, "streaming_table"),
+            DltTableKind::MaterializedView => write!(f, "materialized_view"),
+            DltTableKind::TemporaryView => write!(f, "temporary_view"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DltSourceType {
+    CloudFiles,
+    Kafka,
+    DltRead,
+    DpRead,
+    LiveRef,
+    Unknown,
+}
+
+impl std::fmt::Display for DltSourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DltSourceType::CloudFiles => write!(f, "cloud_files"),
+            DltSourceType::Kafka => write!(f, "kafka"),
+            DltSourceType::DltRead => write!(f, "dlt_read"),
+            DltSourceType::DpRead => write!(f, "dp_read"),
+            DltSourceType::LiveRef => write!(f, "live_ref"),
+            DltSourceType::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineTable {
     pub id: String,
     pub name: String,
-    pub kind: String,
-    pub source_type: String,
+    pub kind: DltTableKind,
+    pub source_type: DltSourceType,
     pub inner_nodes: Vec<CostNode>,
     pub expectations: Vec<String>,
     pub is_incremental: bool,
@@ -191,6 +279,51 @@ impl RuleTable {
             (self.bits[word] >> bit) & 1 == 1
         } else {
             false
+        }
+    }
+}
+
+// Types for enhanced rule system with tree-sitter queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryPattern {
+    pub match_pattern: String,
+    pub is_negative: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompiledRule {
+    pub id: String,
+    pub code: String,
+    pub severity: Severity,
+    pub language: String,
+    pub description: String,
+    pub suggestion: String,
+    pub category: String,
+    pub tier: u8,
+    pub patterns: Vec<QueryPattern>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionPhase {
+    Syntax = 0,
+    SimplePatterns = 1,
+    ContextRules = 2,
+    SemanticRules = 3,
+    DltRules = 4,
+    CrossCell = 5,
+    Finalize = 6,
+}
+
+impl std::fmt::Display for ExecutionPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionPhase::Syntax => write!(f, "syntax"),
+            ExecutionPhase::SimplePatterns => write!(f, "simple_patterns"),
+            ExecutionPhase::ContextRules => write!(f, "context_rules"),
+            ExecutionPhase::SemanticRules => write!(f, "semantic_rules"),
+            ExecutionPhase::DltRules => write!(f, "dlt_rules"),
+            ExecutionPhase::CrossCell => write!(f, "cross_cell"),
+            ExecutionPhase::Finalize => write!(f, "finalize"),
         }
     }
 }

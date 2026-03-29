@@ -1,0 +1,11 @@
+---
+source: "../../tests/unit/rules/test_tier1_rules.rs"
+expression: phase_names
+---
+- Syntax
+- SimplePatterns
+- ContextRules
+- SemanticRules
+- DltRules
+- CrossCell
+- Finalize

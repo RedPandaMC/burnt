@@ -1,0 +1,456 @@
+# Enhanced Rule Registry with tree-sitter query patterns
+# Each [[rules]] entry carries its patterns as an inline array.
+# Format: patterns = [{ match = "...", negative = false }, ...]
+
+# ------------------------------------------------------------------
+# BP008 — collect() without limit()
+# ------------------------------------------------------------------
+[[rules]]
+id = "collect_without_limit"
+code = "BP008"
+severity = "Error"
+language = "Python"
+description = "collect() without limit() can OOM the driver"
+suggestion = "Add .limit(n).collect() or use .take(n)"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # Positive: any .collect() call
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "collect")
+)
+""", negative = false },
+  # Negative: .limit(...).collect() — should NOT fire
+  { match = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @limit_method
+      )
+      (#eq? @limit_method "limit")
+    )
+    attribute: (identifier) @collect_method
+  )
+  (#eq? @collect_method "collect")
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BP009 — SELECT * without LIMIT
+# ------------------------------------------------------------------
+[[rules]]
+id = "select_star"
+code = "BP009"
+severity = "Error"
+language = "SQL"
+description = "SELECT * without LIMIT returns all rows and prevents column pruning"
+suggestion = "Add LIMIT clause or select specific columns"
+category = "BestPractice"
+tier = 1
+patterns = [
+  { match = """
+(select_statement
+  select: (select_clause
+    (star)
+  )
+)
+""", negative = false },
+  # Negative: SELECT * ... LIMIT n — should NOT fire
+  { match = """
+(select_statement
+  select: (select_clause
+    (star)
+  )
+  (limit_clause)
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BP010 — Python UDF (10-100x overhead vs Pandas UDF)
+# ------------------------------------------------------------------
+[[rules]]
+id = "python_udf"
+code = "BP010"
+severity = "Error"
+language = "Python"
+description = "Python UDF has 10-100x overhead vs Pandas UDF"
+suggestion = "Use @pandas_udf for vectorized operations"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # udf() call
+  { match = """
+(call
+  function: (identifier) @func_name
+  (#eq? @func_name "udf")
+)
+""", negative = false },
+  # spark.udf.register(...)
+  { match = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier) @spark_var
+      attribute: (identifier) @udf_module
+    )
+    attribute: (identifier) @register_method
+  )
+  (#eq? @spark_var "spark")
+  (#eq? @udf_module "udf")
+  (#eq? @register_method "register")
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# BP011 — toPandas() brings all data to driver
+# ------------------------------------------------------------------
+[[rules]]
+id = "to_pandas"
+code = "BP011"
+severity = "Error"
+language = "Python"
+description = "toPandas() brings the entire DataFrame to the driver"
+suggestion = "Add .limit(n).toPandas() or use Spark-native aggregations"
+category = "BestPractice"
+tier = 1
+patterns = [
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "toPandas")
+)
+""", negative = false },
+  # Negative: .limit(...).toPandas()
+  { match = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @limit_method
+      )
+      (#eq? @limit_method "limit")
+    )
+    attribute: (identifier) @pandas_method
+  )
+  (#eq? @pandas_method "toPandas")
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BP012 — repartition(1) creates a single-partition bottleneck
+# ------------------------------------------------------------------
+[[rules]]
+id = "repartition_one"
+code = "BP012"
+severity = "Warning"
+language = "Python"
+description = "repartition(1) forces all data through a single partition"
+suggestion = "Use coalesce(1) when reducing partitions, or keep natural parallelism"
+category = "BestPractice"
+tier = 1
+patterns = [
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  arguments: (argument_list
+    (integer) @n
+  )
+  (#eq? @method_name "repartition")
+  (#eq? @n "1")
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# BP013 — ORDER BY without LIMIT
+# ------------------------------------------------------------------
+[[rules]]
+id = "order_by_without_limit"
+code = "BP013"
+severity = "Warning"
+language = "SQL"
+description = "ORDER BY without LIMIT sorts the entire result set"
+suggestion = "Add LIMIT or use window functions with RANK/ROW_NUMBER"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # Positive: any ORDER BY
+  { match = """
+(select_statement
+  (order_by_clause)
+)
+""", negative = false },
+  # Negative: ORDER BY ... LIMIT — should NOT fire
+  { match = """
+(select_statement
+  (order_by_clause)
+  (limit_clause)
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BP014 — CROSS JOIN (SQL and PySpark)
+# ------------------------------------------------------------------
+[[rules]]
+id = "cross_join"
+code = "BP014"
+severity = "Warning"
+language = "All"
+description = "CROSS JOIN creates O(n*m) rows"
+suggestion = "Use INNER JOIN with explicit ON clause"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # SQL CROSS JOIN keyword
+  { match = """
+(join_clause
+  (cross_join)
+)
+""", negative = false },
+  # PySpark .crossJoin()
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "crossJoin")
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# BP015 — @pandas_udf (overhead vs native Spark)
+# ------------------------------------------------------------------
+[[rules]]
+id = "pandas_udf"
+code = "BP015"
+severity = "Info"
+language = "Python"
+description = "pandas_udf still serialises data via Arrow — consider Spark-native functions"
+suggestion = "Use built-in Spark SQL functions where available"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # @pandas_udf decorator
+  { match = """
+(decorated_definition
+  (decorator
+    (identifier) @decorator_name
+  )
+  (#eq? @decorator_name "pandas_udf")
+)
+""", negative = false },
+  # pandas_udf() call
+  { match = """
+(call
+  function: (identifier) @func_name
+  (#eq? @func_name "pandas_udf")
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# BP016 — count() without filter/where
+# ------------------------------------------------------------------
+[[rules]]
+id = "count_without_filter"
+code = "BP016"
+severity = "Warning"
+language = "Python"
+description = "count() without filter scans the entire table"
+suggestion = "Apply .filter() or .where() before count()"
+category = "BestPractice"
+tier = 1
+patterns = [
+  # Positive: .count() on a bare read (no filter in chain)
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "count")
+)
+""", negative = false },
+  # Negative: .filter(...).count()
+  { match = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @filter_method
+      )
+      (#match? @filter_method "^(filter|where)$")
+    )
+    attribute: (identifier) @count_method
+  )
+  (#eq? @count_method "count")
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BQ001 — NOT IN (subquery) silently empty on NULLs
+# ------------------------------------------------------------------
+[[rules]]
+id = "not_in_with_nulls"
+code = "BQ001"
+severity = "Warning"
+language = "SQL"
+description = "NOT IN (subquery) silently returns empty result when the subquery contains NULLs"
+suggestion = "Use NOT EXISTS or add WHERE col IS NOT NULL to the subquery"
+category = "SqlQuality"
+tier = 1
+patterns = [
+  { match = """
+(binary_expression
+  left: (_)
+  operator: "NOT IN"
+  right: (subquery)
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# BQ002 — UNION instead of UNION ALL (forces dedup sort)
+# ------------------------------------------------------------------
+[[rules]]
+id = "union_not_all"
+code = "BQ002"
+severity = "Warning"
+language = "SQL"
+description = "UNION deduplicates rows with an expensive sort — use UNION ALL if duplicates are acceptable"
+suggestion = "Replace UNION with UNION ALL"
+category = "SqlQuality"
+tier = 1
+patterns = [
+  { match = """
+(union_expression
+  operator: "UNION"
+)
+""", negative = false },
+  # Negative: UNION ALL — should NOT fire
+  { match = """
+(union_expression
+  operator: "UNION ALL"
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# BD002 — OPTIMIZE without ZORDER
+# ------------------------------------------------------------------
+[[rules]]
+id = "missing_zorder"
+code = "BD002"
+severity = "Info"
+language = "SQL"
+description = "Large Delta table missing ZORDER optimization"
+suggestion = "Add ZORDER BY on frequently filtered columns"
+category = "Delta"
+tier = 1
+patterns = [
+  { match = """
+(optimize_statement)
+""", negative = false },
+  { match = """
+(optimize_statement
+  (zorder_clause)
+)
+""", negative = true },
+]
+
+# ------------------------------------------------------------------
+# DLT002 — Incremental table without primary key
+# ------------------------------------------------------------------
+[[rules]]
+id = "dlt_incremental_no_key"
+code = "DLT002"
+severity = "Warning"
+language = "Python"
+description = "DLT incremental table defined without a primary key"
+suggestion = "Add keys= parameter to @dlt.table or use APPLY CHANGES INTO"
+category = "Dlt"
+tier = 1
+patterns = [
+  # @dlt.table(table_properties=...) but no keys= argument
+  { match = """
+(decorated_definition
+  (decorator
+    (call
+      function: (attribute
+        object: (identifier) @dlt_obj
+        attribute: (identifier) @decorator_name
+      )
+      (#eq? @dlt_obj "dlt")
+      (#eq? @decorator_name "table")
+    )
+  )
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# DLT003 — Streaming source without explicit schema
+# ------------------------------------------------------------------
+[[rules]]
+id = "dlt_streaming_no_schema"
+code = "DLT003"
+severity = "Warning"
+language = "Python"
+description = "Streaming source missing explicit schema — schema inference on streams is unreliable"
+suggestion = "Pass schema= to spark.readStream or use cloudFiles with schemaLocation"
+category = "Dlt"
+tier = 1
+patterns = [
+  # spark.readStream.format("cloudFiles") or .format("kafka") — positive signal
+  { match = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method_name
+  )
+  (#eq? @method_name "readStream")
+)
+""", negative = false },
+]
+
+# ------------------------------------------------------------------
+# Configuration for rule pipeline
+# ------------------------------------------------------------------
+
+[config]
+phases = ["syntax", "simple_patterns", "context_rules", "semantic_rules", "dlt_rules", "cross_cell", "finalize"]
+default_tier = 1
+enable_suppression = true
+
+[suppression]
+inline_prefix = "# burnt: ignore["
+file_config_name = ".burnt.toml"
+rule_name_key = "ignore"
+rule_code_key = "ignore_codes"
+
+[dlt]
+escalation_severity = true
+detection_keywords = ["dlt", "dp", "LIVE", "STREAMING", "MATERIALIZED"]

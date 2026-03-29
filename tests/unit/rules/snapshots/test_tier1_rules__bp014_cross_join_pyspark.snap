@@ -1,0 +1,8 @@
+---
+source: "../../tests/unit/rules/test_tier1_rules.rs"
+expression: snapshot_data
+---
+findings:
+  - code: BP014
+    rule_id: cross_join
+rule_count: 1
