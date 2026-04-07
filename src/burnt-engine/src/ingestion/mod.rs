@@ -1,5 +1,5 @@
 pub mod dabs;
 pub mod files;
 
-pub use self::dabs::parse_dabs;
+#[allow(unused_imports)]
 pub use self::files::ingest_file;

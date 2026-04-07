@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::types::{CellKind, Confidence, Finding, Severity};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -92,7 +93,7 @@ pub fn parse_file_content(content: &str, format: &FileFormat) -> Vec<(CellKind, 
     let mut line_offset: u32 = 0;
 
     for line in content.lines() {
-        let line_byte_offset = current_byte_offset;
+        let _line_byte_offset = current_byte_offset;
         current_byte_offset += line.len() as u32 + 1;
 
         if let Some(kind) = classify_magic(line) {
@@ -201,14 +202,16 @@ mod tests {
 
 pub fn find_run_directive(line: &str) -> Option<String> {
     let trimmed = line.trim();
-    if trimmed.starts_with(RUN_DIRECTIVE) {
-        let rest = trimmed[RUN_DIRECTIVE.len()..].trim();
+    if let Some(stripped) = trimmed.strip_prefix(RUN_DIRECTIVE) {
+        let rest = stripped.trim();
         if !rest.is_empty() {
             return Some(rest.to_string());
         }
     }
     None
 }
+
+type ResolvedCells = (Vec<(CellKind, String, u32, Option<PathBuf>)>, Vec<Finding>);
 
 #[derive(Debug, Clone)]
 struct ResolutionContext {
@@ -236,7 +239,7 @@ impl ResolutionContext {
 pub fn parse_and_resolve(
     path: &str,
     root: Option<&str>,
-) -> Result<(Vec<(CellKind, String, u32, Option<PathBuf>)>, Vec<Finding>), String> {
+) -> Result<ResolvedCells, String> {
     let root_path = match root {
         Some(r) => PathBuf::from(r),
         None => PathBuf::from("."),
@@ -256,7 +259,7 @@ pub fn parse_and_resolve(
 fn resolve_file(
     path: &Path,
     ctx: &mut ResolutionContext,
-) -> Result<(Vec<(CellKind, String, u32, Option<PathBuf>)>, Vec<Finding>), String> {
+) -> Result<ResolvedCells, String> {
     if ctx.is_visited(path) {
         let finding = Finding {
             rule_id: "BN003".to_string(),

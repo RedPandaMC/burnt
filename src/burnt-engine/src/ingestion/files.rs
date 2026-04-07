@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 use crate::parse::notebooks::{parse_file_content, FileFormat};
 use crate::types::{Cell, CellKind};
 use serde::{Deserialize, Serialize};

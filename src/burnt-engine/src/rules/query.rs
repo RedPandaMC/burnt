@@ -123,6 +123,12 @@ pub struct QueryMatch {
     pub captures: Vec<QueryCapture>,
 }
 
+impl Default for QueryEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

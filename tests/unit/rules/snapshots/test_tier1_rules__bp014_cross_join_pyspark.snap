@@ -5,4 +5,8 @@ expression: snapshot_data
 findings:
   - code: BP014
     rule_id: cross_join
-rule_count: 1
+  - code: BNT-N01
+    rule_id: BNT-N01
+  - code: BNT-N01
+    rule_id: BNT-N01
+rule_count: 3

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::types::Finding;
 use std::collections::{HashMap, HashSet};
 
@@ -21,7 +22,7 @@ impl DataflowTracker {
     pub fn track_cache(&mut self, df_name: &str, line: u32) {
         self.cache_operations
             .entry(df_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(line);
     }
 
@@ -33,7 +34,7 @@ impl DataflowTracker {
         if ["collect", "count", "show", "take", "first"].contains(&action) {
             self.action_operations
                 .entry(df_name.to_string())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(line);
         }
     }
@@ -171,7 +172,6 @@ pub fn check_dataflow_rules(source: &str) -> Vec<Finding> {
     let mut unpersist_ops: HashSet<String> = HashSet::new();
     let mut action_ops: HashMap<String, Vec<u32>> = HashMap::new();
 
-    let known_dfs: Vec<String> = cache_ops.keys().chain(action_ops.keys()).cloned().collect();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         let line_num = (i + 1) as u32;
@@ -188,14 +188,14 @@ pub fn check_dataflow_rules(source: &str) -> Vec<Finding> {
                 if trimmed.contains(".cache()") {
                     cache_ops
                         .entry(var_name.to_string())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(line_num);
                 } else if trimmed.contains(".unpersist()") {
                     unpersist_ops.insert(var_name.to_string());
                 } else if let Some(_action) = extract_action(trimmed) {
                     action_ops
                         .entry(var_name.to_string())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(line_num);
                 }
             }
@@ -206,7 +206,7 @@ pub fn check_dataflow_rules(source: &str) -> Vec<Finding> {
             if trimmed.contains(&format!("{}.cache()", df_name)) {
                 cache_ops
                     .entry(df_name.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(line_num);
             } else if trimmed.contains(&format!("{}.unpersist()", df_name)) {
                 unpersist_ops.insert(df_name.clone());
@@ -214,7 +214,7 @@ pub fn check_dataflow_rules(source: &str) -> Vec<Finding> {
                 if trimmed.contains(&format!("{}.", df_name)) {
                     action_ops
                         .entry(df_name.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(line_num);
                 }
             }

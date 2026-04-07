@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::types::Finding;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::DatabricksDialect;
@@ -127,17 +128,14 @@ pub fn extract_table_refs(source: &str) -> Vec<String> {
 }
 
 fn collect_from_statement(stmt: &Statement, refs: &mut Vec<String>) {
-    match stmt {
-        Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = &*query.body {
-                for table in &select.from {
-                    if let sqlparser::ast::TableFactor::Table { name, .. } = &table.relation {
-                        refs.push(name.to_string());
-                    }
+    if let Statement::Query(query) = stmt {
+        if let sqlparser::ast::SetExpr::Select(select) = &*query.body {
+            for table in &select.from {
+                if let sqlparser::ast::TableFactor::Table { name, .. } = &table.relation {
+                    refs.push(name.to_string());
                 }
             }
         }
-        _ => {}
     }
 }
 

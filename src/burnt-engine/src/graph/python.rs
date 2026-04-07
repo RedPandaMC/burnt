@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::semantic::{Binding, SemanticModel};
+use crate::semantic::SemanticModel;
 use crate::types::{CostEdge, CostNode, OperationKind, ScalingBehavior};
 use tree_sitter::{Node, Parser};
 
@@ -164,6 +164,7 @@ impl PythonGraphBuilder {
         }
     }
 
+    #[allow(dead_code)]
     fn get_call_info(&self, node: &Node, source: &str) -> Option<(String, String)> {
         let mut cursor = node.walk();
         let children: Vec<Node> = node.children(&mut cursor).collect();
@@ -184,6 +185,7 @@ impl PythonGraphBuilder {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_node(
         &mut self,
         kind: OperationKind,
@@ -215,6 +217,7 @@ impl PythonGraphBuilder {
         node_id
     }
 
+    #[allow(dead_code)]
     fn create_edge(&mut self, source: &str, target: &str, edge_type: &str) {
         let edge = CostEdge {
             source: source.to_string(),

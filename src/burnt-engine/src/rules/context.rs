@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::types::Finding;
 use std::collections::HashSet;
 
@@ -75,14 +76,12 @@ fn check_with_column_in_loop(source: &str) -> Vec<Finding> {
     let lines: Vec<&str> = source.lines().collect();
 
     let mut in_for_loop = false;
-    let mut for_loop_line = 0;
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
         if trimmed.starts_with("for ") && trimmed.contains(" in ") {
             in_for_loop = true;
-            for_loop_line = i + 1;
         } else if in_for_loop
             && (trimmed.starts_with("withColumn") || trimmed.contains(".withColumn("))
         {
@@ -200,8 +199,6 @@ fn check_star_import_pyspark(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.contains("from pyspark.sql.functions import *")
-            || trimmed.contains("from pyspark.sql import functions as F") == false
-                && trimmed.starts_with("from pyspark.sql.functions import *")
         {
             findings.push(Finding {
                 rule_id: "BNT-I01".to_string(),

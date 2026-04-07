@@ -151,7 +151,7 @@ pub struct PipelineTable {
 }
 
 // Core types for Task 01
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CellKind {
     Python,
@@ -174,7 +174,7 @@ pub struct Cell {
     pub origin_path: Option<PathBuf>,
 }
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AnalysisMode {
     Python,
@@ -182,7 +182,7 @@ pub enum AnalysisMode {
     Dlt,
 }
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -190,7 +190,7 @@ pub enum Severity {
     Info,
 }
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Confidence {
     Low,
@@ -283,6 +283,12 @@ impl RuleTable {
     }
 }
 
+impl Default for RuleTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Types for enhanced rule system with tree-sitter queries
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryPattern {
@@ -324,6 +330,16 @@ impl std::fmt::Display for ExecutionPhase {
             ExecutionPhase::DltRules => write!(f, "dlt_rules"),
             ExecutionPhase::CrossCell => write!(f, "cross_cell"),
             ExecutionPhase::Finalize => write!(f, "finalize"),
+        }
+    }
+}
+
+impl AnalysisMode {
+    pub fn as_lang_str(&self) -> &'static str {
+        match self {
+            AnalysisMode::Dlt => "dlt",
+            AnalysisMode::Sql => "sql",
+            AnalysisMode::Python => "python",
         }
     }
 }

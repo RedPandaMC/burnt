@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use sqlparser::ast::{
-    BinaryOperator, Expr, Join, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
-};
+use sqlparser::ast::{Join, Query, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::DatabricksDialect;
 use sqlparser::parser::Parser;
 
@@ -147,79 +145,73 @@ impl SqlGraphBuilder {
         statement_index: u32,
         write_node_id: Option<&String>,
     ) {
-        match &*query.body {
-            SetExpr::Select(select) => {
-                let mut read_nodes = Vec::new();
+        if let SetExpr::Select(select) = &*query.body {
+            let mut read_nodes = Vec::new();
 
-                // Process FROM clause
-                for table in &select.from {
-                    self.process_table_with_joins(table, statement_index, &mut read_nodes);
+            // Process FROM clause
+            for table in &select.from {
+                self.process_table_with_joins(table, statement_index, &mut read_nodes);
+            }
+
+            // Check for GROUP BY to add shuffle
+            let has_group_by = !matches!(&select.group_by, sqlparser::ast::GroupByExpr::Expressions(exprs, _) if exprs.is_empty());
+
+            if has_group_by {
+                let shuffle_node_id = self.create_node(
+                    OperationKind::Shuffle,
+                    ScalingBehavior::LinearWithCliff,
+                    false,
+                    true,
+                    false,
+                    statement_index + 1,
+                    Some("GROUP BY shuffle".to_string()),
+                );
+
+                // Connect reads to shuffle
+                for read_node_id in &read_nodes {
+                    self.create_edge(read_node_id, &shuffle_node_id, "data_flow");
                 }
 
-                // Check for GROUP BY to add shuffle
-                let has_group_by = !matches!(&select.group_by, sqlparser::ast::GroupByExpr::Expressions(exprs, _) if exprs.is_empty());
-
-                if has_group_by {
-                    let shuffle_node_id = self.create_node(
-                        OperationKind::Shuffle,
-                        ScalingBehavior::LinearWithCliff,
+                // If final SELECT (no write), create action node
+                if write_node_id.is_none() {
+                    let action_node_id = self.create_node(
+                        OperationKind::Action,
+                        ScalingBehavior::StepFailure,
                         false,
-                        true,
                         false,
+                        true, // driver_bound for final result
                         statement_index + 1,
-                        Some("GROUP BY shuffle".to_string()),
+                        Some("SELECT result".to_string()),
                     );
 
-                    // Connect reads to shuffle
+                    self.create_edge(&shuffle_node_id, &action_node_id, "data_flow");
+                } else if let Some(write_id) = write_node_id {
+                    self.create_edge(&shuffle_node_id, write_id, "data_flow");
+                }
+            } else if !read_nodes.is_empty() {
+                // Simple SELECT without GROUP BY
+                if write_node_id.is_none() {
+                    let action_node_id = self.create_node(
+                        OperationKind::Action,
+                        ScalingBehavior::StepFailure,
+                        false,
+                        false,
+                        true,
+                        statement_index + 1,
+                        Some("SELECT result".to_string()),
+                    );
+
+                    // Connect first read to action
+                    if let Some(first_read) = read_nodes.first() {
+                        self.create_edge(first_read, &action_node_id, "data_flow");
+                    }
+                } else if let Some(write_id) = write_node_id {
+                    // Connect reads to write
                     for read_node_id in &read_nodes {
-                        self.create_edge(read_node_id, &shuffle_node_id, "data_flow");
-                    }
-
-                    // If final SELECT (no write), create action node
-                    if write_node_id.is_none() {
-                        let action_node_id = self.create_node(
-                            OperationKind::Action,
-                            ScalingBehavior::StepFailure,
-                            false,
-                            false,
-                            true, // driver_bound for final result
-                            statement_index + 1,
-                            Some("SELECT result".to_string()),
-                        );
-
-                        self.create_edge(&shuffle_node_id, &action_node_id, "data_flow");
-                    } else if let Some(write_id) = write_node_id {
-                        self.create_edge(&shuffle_node_id, write_id, "data_flow");
-                    }
-                } else if !read_nodes.is_empty() {
-                    // Simple SELECT without GROUP BY
-                    if write_node_id.is_none() {
-                        let action_node_id = self.create_node(
-                            OperationKind::Action,
-                            ScalingBehavior::StepFailure,
-                            false,
-                            false,
-                            true,
-                            statement_index + 1,
-                            Some("SELECT result".to_string()),
-                        );
-
-                        // Connect first read to action
-                        if let Some(first_read) = read_nodes.first() {
-                            self.create_edge(first_read, &action_node_id, "data_flow");
-                        }
-                    } else if let Some(write_id) = write_node_id {
-                        // Connect reads to write
-                        for read_node_id in &read_nodes {
-                            self.create_edge(read_node_id, write_id, "data_flow");
-                        }
+                        self.create_edge(read_node_id, write_id, "data_flow");
                     }
                 }
-
-                // Note: LIMIT handling would be here, but sqlparser Query struct
-                // doesn't have a direct limit field in this version
             }
-            _ => {}
         }
     }
 
@@ -263,28 +255,25 @@ impl SqlGraphBuilder {
     }
 
     fn process_join(&mut self, join: &Join, statement_index: u32, read_nodes: &mut Vec<String>) {
-        match &join.relation {
-            TableFactor::Table { name, .. } => {
-                let table_name = name.to_string();
-                let read_node_id = self.create_node(
-                    OperationKind::Read,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some(format!("Join read {}", table_name)),
-                );
+        if let TableFactor::Table { name, .. } = &join.relation {
+            let table_name = name.to_string();
+            let read_node_id = self.create_node(
+                OperationKind::Read,
+                ScalingBehavior::Linear,
+                false,
+                false,
+                false,
+                statement_index + 1,
+                Some(format!("Join read {}", table_name)),
+            );
 
-                read_nodes.push(read_node_id.clone());
+            read_nodes.push(read_node_id.clone());
 
-                // Record table reference
-                self.table_references
-                    .entry(table_name)
-                    .or_default()
-                    .push(read_node_id);
-            }
-            _ => {}
+            // Record table reference
+            self.table_references
+                .entry(table_name)
+                .or_default()
+                .push(read_node_id);
         }
 
         // JOIN creates a shuffle operation
@@ -321,6 +310,7 @@ impl SqlGraphBuilder {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_node(
         &mut self,
         kind: OperationKind,

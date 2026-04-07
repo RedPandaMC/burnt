@@ -58,11 +58,10 @@ fn collect_rules_from_dir(
     }
 }
 
-fn parse_rule_file(
-    content: &str,
-    tier: u8,
-    language: &str,
-) -> Option<(String, Option<(String, Vec<String>, Vec<String>)>)> {
+type TestCase = (String, Vec<String>, Vec<String>);
+type RuleParseResult = Option<(String, Option<TestCase>)>;
+
+fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
     let value: toml::Value = toml::from_str(content).ok()?;
 
     let rule = value.get("rule")?;
@@ -222,45 +221,6 @@ fn parse_rule_file(
     Some((rule_code, test_case))
 }
 
-fn compile_cpl_pattern(pattern: &str) -> String {
-    let mut result = String::new();
-    let mut chars = pattern.chars().peekable();
-    let mut in_string = false;
-    let mut string_char = '\0';
-
-    while let Some(c) = chars.next() {
-        if in_string {
-            if c == '\\' && chars.peek() == Some(&string_char) {
-                result.push(c);
-                result.push(chars.next().unwrap());
-            } else if c == string_char {
-                in_string = false;
-                result.push(c);
-            } else {
-                result.push(c);
-            }
-        } else if c == '"' || c == '\'' {
-            in_string = true;
-            string_char = c;
-            result.push(c);
-        } else if c == '$' {
-            while let Some(&next) = chars.peek() {
-                if next.is_alphanumeric() || next == '_' {
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            result.push_str("(_)");
-        } else if c == '.' {
-            result.push_str("->");
-        } else {
-            result.push(c);
-        }
-    }
-
-    result.trim().to_string()
-}
 
 fn generate_registry_code(
     rules: &[String],

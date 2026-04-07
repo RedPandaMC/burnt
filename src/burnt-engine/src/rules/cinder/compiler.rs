@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Cinder Compiler - Transforms CPL patterns to tree-sitter S-expressions
 //!
 //! This is the core of Cinder. It takes human-readable code patterns like:
@@ -65,17 +66,16 @@ impl CinderCompiler {
         match kind {
             "identifier" => {
                 let text = self.get_node_text(node, source);
-                if text.starts_with('$') {
-                    if text.starts_with("$:") {
-                        let literal_value = &text[2..];
+                if let Some(rest) = text.strip_prefix('$') {
+                    if let Some(literal_value) = text.strip_prefix("$:") {
                         format!("(@{})", literal_value).parse().map_err(|_| {
                             CompileError::InvalidPattern("Invalid literal".to_string())
                         })
                     } else {
-                        Ok(format!("(@{})", &text[1..]))
+                        Ok(format!("(@{})", rest))
                     }
                 } else {
-                    Ok(format!("(identifier)"))
+                    Ok("(identifier)".to_string())
                 }
             }
             "string" | "integer" | "float" => Ok(self.literal_to_s_expression(node, source)),
@@ -143,10 +143,10 @@ impl CinderCompiler {
 
     fn literal_to_s_expression(&self, node: tree_sitter::Node, source: &str) -> String {
         let text = self.get_node_text(node, source);
-        if text.starts_with('$') {
-            format!("(@{})", &text[1..])
+        if let Some(rest) = text.strip_prefix('$') {
+            format!("(@{})", rest)
         } else {
-            format!("(string)")
+            "(string)".to_string()
         }
     }
 

@@ -8,4 +8,9 @@ findings:
     message: collect() without limit() can OOM the driver
     rule_id: collect_without_limit
     severity: Error
-rule_count: 1
+  - code: BNT-N01
+    line: 2
+    message: "Variable named 'df' is too generic — hinders readability"
+    rule_id: BNT-N01
+    severity: Info
+rule_count: 2

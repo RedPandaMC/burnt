@@ -2,5 +2,7 @@
 source: "../../tests/unit/rules/test_tier1_rules.rs"
 expression: snapshot_data
 ---
-findings: []
-rule_count: 0
+findings:
+  - code: BQ004
+    rule_id: BQ004
+rule_count: 1

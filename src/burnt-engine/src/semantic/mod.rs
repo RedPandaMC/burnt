@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::types::Finding;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -185,7 +186,7 @@ impl Default for SemanticModel {
 }
 
 pub fn analyze_bindings(source: &str) -> Vec<Binding> {
-    let mut model = SemanticModel::new();
+    let model = SemanticModel::new();
     crate::parse::python::parse_python(source);
     model.get_bindings().values().cloned().collect()
 }

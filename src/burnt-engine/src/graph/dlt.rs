@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::graph::python::PythonGraphBuilder;
-use crate::types::{
-    CostEdge, CostNode, DltSourceType, DltTableKind, OperationKind, PipelineTable, ScalingBehavior,
-};
+use crate::types::{CostEdge, DltSourceType, DltTableKind, PipelineTable};
 use tree_sitter::{Node, Parser};
 
 #[derive(Debug, Clone)]
@@ -171,7 +169,7 @@ impl DltGraphBuilder {
         }
     }
 
-    fn handle_dp_read(&mut self, node: &Node, source: &str) {
+    fn handle_dp_read(&mut self, _node: &Node, _source: &str) {
         if let Some(table) = &mut self.current_table {
             table.source_type = DltSourceType::DpRead;
         }

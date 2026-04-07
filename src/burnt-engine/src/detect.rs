@@ -1,27 +1,4 @@
-use crate::parse::python::parse_python;
 use crate::types::AnalysisMode;
-
-pub fn detect_mode(cells: &[(String, String)]) -> AnalysisMode {
-    let mut has_dlt_signal = false;
-    let mut all_sql = true;
-
-    for (_kind, source) in cells {
-        all_sql = false;
-
-        let result = parse_python(source);
-        if !result.dlt_signals.is_empty() {
-            has_dlt_signal = true;
-        }
-    }
-
-    if has_dlt_signal {
-        AnalysisMode::Dlt
-    } else if all_sql {
-        AnalysisMode::Sql
-    } else {
-        AnalysisMode::Python
-    }
-}
 
 pub fn detect_mode_from_source(source: &str) -> AnalysisMode {
     let source_lower = source.to_lowercase();
