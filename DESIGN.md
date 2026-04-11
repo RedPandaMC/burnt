@@ -173,37 +173,61 @@ sqlparser = { version = "0.60", features = ["visitor"] }
 
 ## 8. Rules
 
-### Three Tiers
+### Rule Categories
 
-**Tier 1 (~48).** TOML + tree-sitter queries. No Rust to contribute.
+Rules are organized by **category** (not tiers) for user-facing clarity:
+
+| Category | Prefix | Description |
+|----------|--------|-------------|
+| **Performance** | BP | PySpark/SQL performance issues (collect without limit, cross joins, etc.) |
+| **SQL** | BQ, SQ | SQL anti-patterns (NOT IN with NULLs, correlated subqueries, etc.) |
+| **SDP** | SDP | Spark Declarative Pipelines (DLT) - missing expectations, no schema, etc. |
+| **Style** | BNT | Code style & naming conventions |
+| **Notebook** | BN, BB | Notebook structure and metadata |
+| **Delta** | BD | Delta Lake optimizations (ZORDER, vacuum, etc.) |
+
+### Implementation Tiers (Internal)
+
+| Tier | Implementation | Description |
+|------|----------------|-------------|
+| **Tier 1** | TOML + CPL/tree-sitter | Simple pattern matching, no Rust required |
+| **Tier 2** | TOML + Rust context | Loop detection, naming patterns, chain context |
+| **Tier 3** | TOML + Rust dataflow | Cross-cell binding analysis, cache lifecycle |
+
+### Rule File Format
+
+Rules are defined in TOML files organized by category:
 
 ```toml
 [rule]
 id = "collect_without_limit"
-code = "BP001"
+code = "BP008"
 severity = "error"
 language = "python"
 description = "collect() without limit() can OOM the driver"
-suggestion = "Add .limit(n).collect() or use .take()"
+suggestion = "Add .limit(n).collect() or use .take(n)"
+category = "Performance"
+tier = 1
 
-[pattern]
-match = """(call function: (attribute attribute: (identifier) @m) (#eq? @m "collect"))"""
+[query]
+# CPL pattern (preferred) or raw tree-sitter
+cpl_detect = """
+$df.collect()
+$method == "collect"
+"""
 ```
 
-**Tier 2 (~25).** Rust context functions. Loop detection, DLT scope, chain context.
+### CPL Syntax
 
-**Tier 3 (~11).** Rust semantic. Cross-cell binding analysis.
+Cinder Pattern Language (CPL) provides human-readable syntax for tree-sitter patterns:
 
-### Categories
-
-| Prefix | Scope | Count |
-|--------|-------|-------|
-| BP | PySpark performance | 31 |
-| BQ | SQL anti-patterns | 10 |
-| BSQ | SQL-notebook | 5 |
-| DLT | DLT/SDP | 5 |
-| BNT | Style & naming | 20+ |
-| BD | Delta | 3 |
+```
+$df.collect()                          # Capture method chain
+SELECT * FROM $tbl                    # SQL patterns
+$method == "collect"                  # Predicate: exact match
+$cmd =~ "^(run|sql)$"                # Predicate: regex match
+$var != "forbidden"                   # Predicate: negation
+```
 
 ### Execution
 
