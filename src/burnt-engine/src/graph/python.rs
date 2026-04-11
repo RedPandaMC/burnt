@@ -1,16 +1,17 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::semantic::SemanticModel;
 use crate::types::{CostEdge, CostNode, OperationKind, ScalingBehavior};
 use tree_sitter::{Node, Parser};
 
-#[derive(Debug, Clone)]
 pub struct PythonGraphBuilder {
     nodes: Vec<CostNode>,
     edges: Vec<CostEdge>,
     node_counter: u32,
-    bindings: HashMap<String, String>, // variable name -> node id
+    bindings: HashMap<String, String>,
     semantic_model: SemanticModel,
+    parser: Mutex<Parser>,
 }
 
 impl PythonGraphBuilder {
@@ -21,18 +22,21 @@ impl PythonGraphBuilder {
             node_counter: 0,
             bindings: HashMap::new(),
             semantic_model: SemanticModel::new(),
+            parser: Mutex::new(Parser::new()),
         }
     }
 
     pub fn build_from_source(&mut self, source: &str) -> (Vec<CostNode>, Vec<CostEdge>) {
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_python::LANGUAGE.into())
-            .expect("tree-sitter-python grammar failed to load");
-
-        let tree = parser
-            .parse(source, None)
-            .expect("tree-sitter failed to parse");
+        let tree = {
+            let mut parser = self.parser.lock().unwrap();
+            parser.reset();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .expect("tree-sitter-python grammar failed to load");
+            parser
+                .parse(source, None)
+                .expect("tree-sitter failed to parse")
+        };
         let root = tree.root_node();
 
         self.visit_node(&root, source);

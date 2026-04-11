@@ -1,17 +1,18 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::graph::python::PythonGraphBuilder;
 use crate::types::{CostEdge, DltSourceType, DltTableKind, PipelineTable};
 use tree_sitter::{Node, Parser};
 
-#[derive(Debug, Clone)]
 pub struct DltGraphBuilder {
     tables: Vec<PipelineTable>,
     edges: Vec<CostEdge>,
     table_counter: u32,
     current_table: Option<PipelineTable>,
     python_builder: PythonGraphBuilder,
-    table_references: HashMap<String, String>, // table name -> table id
+    table_references: HashMap<String, String>,
+    parser: Mutex<Parser>,
 }
 
 impl DltGraphBuilder {
@@ -23,18 +24,21 @@ impl DltGraphBuilder {
             current_table: None,
             python_builder: PythonGraphBuilder::new(),
             table_references: HashMap::new(),
+            parser: Mutex::new(Parser::new()),
         }
     }
 
     pub fn build_from_source(&mut self, source: &str) -> (Vec<PipelineTable>, Vec<CostEdge>) {
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_python::LANGUAGE.into())
-            .expect("tree-sitter-python grammar failed to load");
-
-        let tree = parser
-            .parse(source, None)
-            .expect("tree-sitter failed to parse");
+        let tree = {
+            let mut parser = self.parser.lock().unwrap();
+            parser.reset();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .expect("tree-sitter-python grammar failed to load");
+            parser
+                .parse(source, None)
+                .expect("tree-sitter failed to parse")
+        };
         let root = tree.root_node();
 
         self.visit_node(&root, source);

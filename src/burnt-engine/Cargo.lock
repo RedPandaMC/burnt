@@ -98,6 +98,7 @@ dependencies = [
  "pyo3",
  "pyo3-build-config",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "sqlparser",

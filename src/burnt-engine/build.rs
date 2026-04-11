@@ -13,14 +13,7 @@ fn main() {
     let mut test_cases = Vec::new();
 
     if rules_dir.exists() {
-        for tier in &[1, 2, 3] {
-            for lang in &["python", "sql", "notebook", "all"] {
-                let tier_dir = rules_dir.join(format!("tier{}", tier)).join(lang);
-                if tier_dir.exists() {
-                    collect_rules_from_dir(&tier_dir, &mut all_rules, &mut test_cases, *tier, lang);
-                }
-            }
-        }
+        collect_rules_recursive(rules_dir, &mut all_rules, &mut test_cases);
     }
 
     let registry_code = generate_registry_code(&all_rules, &test_cases);
@@ -33,25 +26,42 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-fn collect_rules_from_dir(
+fn collect_rules_recursive(
     dir: &Path,
     rules: &mut Vec<String>,
     tests: &mut Vec<(String, String, Vec<String>, Vec<String>)>,
-    tier: u8,
-    language: &str,
 ) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("toml") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Some((rule_code, test_case)) = parse_rule_file(&content, tier, language)
-                    {
-                        rules.push(rule_code);
-                        if let Some((code, pass_tests, fail_tests)) = test_case {
-                            tests.push((language.to_string(), code, pass_tests, fail_tests));
+            if path.is_dir() {
+                let dir_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                let subdirs_with_rules = ["python", "sql", "notebook"];
+                if subdirs_with_rules.contains(&dir_name) {
+                    if let Ok(sub_entries) = fs::read_dir(&path) {
+                        for sub_entry in sub_entries.flatten() {
+                            let sub_path = sub_entry.path();
+                            if sub_path.extension().and_then(|s| s.to_str()) == Some("toml") {
+                                if let Ok(content) = fs::read_to_string(&sub_path) {
+                                    if let Some((rule_code, test_case)) =
+                                        parse_rule_file(&content, dir_name)
+                                    {
+                                        rules.push(rule_code);
+                                        if let Some((code, pass_tests, fail_tests)) = test_case {
+                                            tests.push((
+                                                dir_name.to_string(),
+                                                code,
+                                                pass_tests,
+                                                fail_tests,
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
+                } else {
+                    collect_rules_recursive(&path, rules, tests);
                 }
             }
         }
@@ -61,7 +71,7 @@ fn collect_rules_from_dir(
 type TestCase = (String, Vec<String>, Vec<String>);
 type RuleParseResult = Option<(String, Option<TestCase>)>;
 
-fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
+fn parse_rule_file(content: &str, language: &str) -> RuleParseResult {
     let value: toml::Value = toml::from_str(content).ok()?;
 
     let rule = value.get("rule")?;
@@ -103,6 +113,36 @@ fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
         } else {
             (vec![], None, false)
         };
+
+    let cpl_detect: Vec<String> = query
+        .and_then(|q| q.get("cpl_detect"))
+        .map(|v| {
+            if let Some(arr) = v.as_array() {
+                arr.iter()
+                    .filter_map(|e| e.as_str().map(|s| s.to_string()))
+                    .collect()
+            } else if let Some(s) = v.as_str() {
+                vec![s.to_string()]
+            } else {
+                vec![]
+            }
+        })
+        .unwrap_or_default();
+
+    let cpl_exclude: Vec<String> = query
+        .and_then(|q| q.get("cpl_exclude"))
+        .map(|v| {
+            if let Some(arr) = v.as_array() {
+                arr.iter()
+                    .filter_map(|e| e.as_str().map(|s| s.to_string()))
+                    .collect()
+            } else if let Some(s) = v.as_str() {
+                vec![s.to_string()]
+            } else {
+                vec![]
+            }
+        })
+        .unwrap_or_default();
 
     let pass_tests: Vec<String> = value
         .get("tests")
@@ -160,38 +200,12 @@ fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
         _ => "Info",
     };
 
-    if !has_patterns && context.is_none() && dataflow.is_none() {
+    if !has_patterns && cpl_detect.is_empty() && context.is_none() && dataflow.is_none() {
         eprintln!(
-            "Warning: Rule {} has no patterns, context, or dataflow - skipping",
+            "Warning: Rule {} has no patterns, CPL, context, or dataflow - skipping",
             code
         );
         return None;
-    }
-
-    if context.is_some() {
-        eprintln!(
-            "Note: Rule {} has context block - Tier 2 processing needed",
-            code
-        );
-    }
-    if dataflow.is_some() {
-        eprintln!(
-            "Note: Rule {} has dataflow block - Tier 3 processing needed",
-            code
-        );
-    }
-
-    if context.is_some() {
-        eprintln!(
-            "Note: Rule {} has context block - Tier 2 processing needed",
-            code
-        );
-    }
-    if dataflow.is_some() {
-        eprintln!(
-            "Note: Rule {} has dataflow block - Tier 3 processing needed",
-            code
-        );
     }
 
     let patterns_vec = if has_patterns {
@@ -203,6 +217,36 @@ fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
         String::from("vec![]")
     };
 
+    let cpl_detect_str = if cpl_detect.is_empty() {
+        String::from("vec![]")
+    } else {
+        let patterns: Vec<String> = cpl_detect
+            .iter()
+            .map(|s| {
+                format!(
+                    "\"{}\".to_string()",
+                    s.replace('\\', "\\\\").replace('"', "\\\"")
+                )
+            })
+            .collect();
+        format!("vec![{}]", patterns.join(", "))
+    };
+
+    let cpl_exclude_str = if cpl_exclude.is_empty() {
+        String::from("vec![]")
+    } else {
+        let patterns: Vec<String> = cpl_exclude
+            .iter()
+            .map(|s| {
+                format!(
+                    "\"{}\".to_string()",
+                    s.replace('\\', "\\\\").replace('"', "\\\"")
+                )
+            })
+            .collect();
+        format!("vec![{}]", patterns.join(", "))
+    };
+
     let rule_code = format!(
         "CompiledRule {{\n\
             id: \"{id}\".to_string(),\n\
@@ -212,15 +256,17 @@ fn parse_rule_file(content: &str, tier: u8, language: &str) -> RuleParseResult {
             description: \"{desc}\".to_string(),\n\
             suggestion: \"{suggestion}\".to_string(),\n\
             category: \"{category}\".to_string(),\n\
-            tier: {tier},\n\
             patterns: {patterns},\n\
+            cpl_detect: {cpl_detect},\n\
+            cpl_exclude: {cpl_exclude},\n\
         }}",
-        patterns = patterns_vec
+        patterns = patterns_vec,
+        cpl_detect = cpl_detect_str,
+        cpl_exclude = cpl_exclude_str
     );
 
     Some((rule_code, test_case))
 }
-
 
 fn generate_registry_code(
     rules: &[String],
@@ -247,11 +293,10 @@ fn generate_registry_code(
                          description: r.description.clone(),\n\
                          suggestion: r.suggestion.clone(),\n\
                          category: r.category.clone(),\n\
-                         tier: r.tier,\n\
-                     }})\n\
-                     .collect()\n\
-             }}).clone()\n\
-         }}\n\
+                      }})\n\
+                      .collect()\n\
+              }}).clone()\n\
+          }}\n\
          \n\
          pub fn load_compiled_rules() -> Vec<CompiledRule> {{\n\
              COMPILED_RULES_CACHE.get_or_init(|| {{\n\

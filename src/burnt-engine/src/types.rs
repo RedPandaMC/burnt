@@ -237,8 +237,6 @@ pub struct RuleEntry {
     pub suggestion: String,
     #[pyo3(get)]
     pub category: String,
-    #[pyo3(get)]
-    pub tier: u8,
 }
 
 // 128-bit bitset for rule matching
@@ -305,33 +303,11 @@ pub struct CompiledRule {
     pub description: String,
     pub suggestion: String,
     pub category: String,
-    pub tier: u8,
     pub patterns: Vec<QueryPattern>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionPhase {
-    Syntax = 0,
-    SimplePatterns = 1,
-    ContextRules = 2,
-    SemanticRules = 3,
-    DltRules = 4,
-    CrossCell = 5,
-    Finalize = 6,
-}
-
-impl std::fmt::Display for ExecutionPhase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExecutionPhase::Syntax => write!(f, "syntax"),
-            ExecutionPhase::SimplePatterns => write!(f, "simple_patterns"),
-            ExecutionPhase::ContextRules => write!(f, "context_rules"),
-            ExecutionPhase::SemanticRules => write!(f, "semantic_rules"),
-            ExecutionPhase::DltRules => write!(f, "dlt_rules"),
-            ExecutionPhase::CrossCell => write!(f, "cross_cell"),
-            ExecutionPhase::Finalize => write!(f, "finalize"),
-        }
-    }
+    #[serde(default)]
+    pub cpl_detect: Vec<String>,
+    #[serde(default)]
+    pub cpl_exclude: Vec<String>,
 }
 
 impl AnalysisMode {

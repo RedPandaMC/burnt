@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::types::Finding;
 use std::collections::{HashMap, HashSet};
 
@@ -204,10 +203,7 @@ pub fn check_dataflow_rules(source: &str) -> Vec<Finding> {
         let known_dfs: Vec<String> = cache_ops.keys().chain(action_ops.keys()).cloned().collect();
         for df_name in &known_dfs {
             if trimmed.contains(&format!("{}.cache()", df_name)) {
-                cache_ops
-                    .entry(df_name.clone())
-                    .or_default()
-                    .push(line_num);
+                cache_ops.entry(df_name.clone()).or_default().push(line_num);
             } else if trimmed.contains(&format!("{}.unpersist()", df_name)) {
                 unpersist_ops.insert(df_name.clone());
             } else if let Some(_action) = extract_action(trimmed) {

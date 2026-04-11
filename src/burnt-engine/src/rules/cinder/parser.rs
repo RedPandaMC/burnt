@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! CPL Pattern Parser
 //!
 //! Parses Cinder Pattern Language (CPL) strings into an intermediate representation.

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 use crate::types::Finding;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::DatabricksDialect;

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 use crate::types::{DltSignal, Finding, Provenance, PythonParseResult, SqlFragment};
 use tree_sitter::Parser;
 

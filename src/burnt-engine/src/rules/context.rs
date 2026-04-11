@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::types::Finding;
 use std::collections::HashSet;
 
@@ -60,7 +59,11 @@ pub fn analyze_context_for_rule(
         "BD001" => check_vacuum_frequency(source),
         "BQ003" => check_count_distinct_at_scale(source),
         "BQ004" => check_correlated_subquery(source),
-        "SQ001" | "SQ002" | "SQ003" => vec![], // SQL context rules handled by patterns
+        "SQ001" | "SQ002" | "SQ003" => vec![],
+        "BP001" => check_cell_no_comment(source),
+        "BP002" => check_long_line(source),
+        "BP003" => check_magic_in_plain(source),
+        "BP004" => check_deprecated_magic(source),
         _ => vec![],
     }
 }
@@ -198,8 +201,7 @@ fn check_star_import_pyspark(source: &str) -> Vec<Finding> {
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.contains("from pyspark.sql.functions import *")
-        {
+        if trimmed.contains("from pyspark.sql.functions import *") {
             findings.push(Finding {
                 rule_id: "BNT-I01".to_string(),
                 code: "BNT-I01".to_string(),
@@ -392,6 +394,127 @@ fn check_correlated_subquery(source: &str) -> Vec<Finding> {
     findings
 }
 
+fn check_cell_no_comment(source: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+
+    let mut in_cell = false;
+    let mut cell_start_line = 0;
+    let mut has_comment = false;
+    let cell_markers = ["# cell", "#%%", "# %%", "# In["];
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+
+        for marker in &cell_markers {
+            if trimmed.starts_with(marker) {
+                if in_cell && !has_comment && cell_start_line < i {
+                    findings.push(Finding {
+                        rule_id: "BP001".to_string(),
+                        code: "BP001".to_string(),
+                        severity: crate::types::Severity::Info,
+                        message: "Cell has no comments".to_string(),
+                        suggestion: Some("Add comments for clarity".to_string()),
+                        line_number: Some((cell_start_line + 1) as u32),
+                        column: None,
+                        confidence: crate::types::Confidence::Low,
+                    });
+                }
+                in_cell = true;
+                cell_start_line = i;
+                has_comment = false;
+                break;
+            }
+        }
+
+        if in_cell && (trimmed.starts_with('#') && !trimmed.starts_with("# MAGIC")) {
+            has_comment = true;
+        }
+    }
+
+    findings
+}
+
+fn check_long_line(source: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let max_line_length = 120;
+
+    for (i, line) in lines.iter().enumerate() {
+        if line.len() > max_line_length {
+            findings.push(Finding {
+                rule_id: "BP002".to_string(),
+                code: "BP002".to_string(),
+                severity: crate::types::Severity::Info,
+                message: format!("Line exceeds {} characters", max_line_length),
+                suggestion: Some("Break line for readability".to_string()),
+                line_number: Some((i + 1) as u32),
+                column: Some(max_line_length as u32),
+                confidence: crate::types::Confidence::High,
+            });
+        }
+    }
+
+    findings
+}
+
+fn check_magic_in_plain(source: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# MAGIC") {
+            findings.push(Finding {
+                rule_id: "BP003".to_string(),
+                code: "BP003".to_string(),
+                severity: crate::types::Severity::Warning,
+                message: "Databricks magic (# MAGIC) in plain Python file".to_string(),
+                suggestion: Some("Remove magic or use .py (Databricks) extension".to_string()),
+                line_number: Some((i + 1) as u32),
+                column: None,
+                confidence: crate::types::Confidence::High,
+            });
+        }
+    }
+
+    findings
+}
+
+fn check_deprecated_magic(source: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let deprecated_commands = ["run", "sql", "md"];
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# MAGIC") {
+            let magic_len = "# MAGIC".len();
+            let after_magic = trimmed[magic_len..].trim();
+            if !after_magic.is_empty() {
+                let first_cmd = after_magic.split_whitespace().next().unwrap_or("");
+                if deprecated_commands.contains(&first_cmd) {
+                    findings.push(Finding {
+                        rule_id: "BP004".to_string(),
+                        code: "BP004".to_string(),
+                        severity: crate::types::Severity::Warning,
+                        message: format!(
+                            "Deprecated Databricks magic syntax used: # MAGIC {}",
+                            first_cmd
+                        ),
+                        suggestion: Some("Use new-style magic format".to_string()),
+                        line_number: Some((i + 1) as u32),
+                        column: None,
+                        confidence: crate::types::Confidence::High,
+                    });
+                }
+            }
+        }
+    }
+
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,5 +539,61 @@ df1 = df.filter(col("id") > 10)
         let findings = check_generic_df_name_var(source);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].code, "BNT-N01");
+    }
+
+    #[test]
+    fn test_long_line() {
+        let source = "This is a very long line that exceeds the maximum line length of 120 characters and should trigger a finding for BP002 because it is longer than 120 characters";
+        let findings = check_long_line(source);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP002");
+    }
+
+    #[test]
+    fn test_long_line_ok() {
+        let source = "Short line";
+        let findings = check_long_line(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_magic_in_plain() {
+        let source = "some_var = 1\n# MAGIC run some_command\ndf.collect()\n";
+        let findings = check_magic_in_plain(source);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP003");
+    }
+
+    #[test]
+    fn test_magic_not_in_plain() {
+        let source = "# This is a regular comment\ndf.collect()\n";
+        let findings = check_magic_in_plain(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_deprecated_magic() {
+        let source = "# MAGIC run some_command\n";
+        let findings = check_deprecated_magic(source);
+        eprintln!(
+            "DEBUG deprecated_magic: source={:?}, findings.len={}",
+            source,
+            findings.len()
+        );
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP004");
+    }
+
+    #[test]
+    fn test_deprecated_magic_sql() {
+        let source = "# MAGIC sql SELECT * FROM table\n";
+        let findings = check_deprecated_magic(source);
+        eprintln!(
+            "DEBUG deprecated_magic_sql: source={:?}, findings.len={}",
+            source,
+            findings.len()
+        );
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP004");
     }
 }
