@@ -27,23 +27,27 @@ Phase 6: Validation ──────────────── Dogfood, se
 ### Phase 1: Rust Engine
 
 | Task | Status | What |
-|------|--------|------|
+|------|--------|-------|
 | `P1/01-cargo-setup` | done | Basic Cargo and core Rust types |
 | `P1/02-format-parsers` | done | Databricks .py, .ipynb, and .sql formats |
 | `P1/03-run-resolution` | done | Handle %run directives in Rust engine |
-| `P1/04-tree-sitter-python` | todo | tree-sitter for Python and SQL fragments |
-| `P1/05-tree-sitter-sql` | todo | tree-sitter and sqlparser-rs for SQL |
-| `P1/06-mode-detection` | todo | Detect if Python, SQL, or DLT mode |
-| `P1/07-semantic-model` | todo | Scope, bindings, and call chains |
+| `P1/04-tree-sitter-python` | done | tree-sitter for Python and SQL fragments |
+| `P1/05-tree-sitter-sql` | done | tree-sitter and sqlparser-rs for SQL |
+| `P1/06-mode-detection` | done | Detect if Python, SQL, or DLT mode |
+| `P1/07-semantic-model` | done | Scope, bindings, and call chains |
 | `P1/08-python-cost-graph` | done | Build CostGraph for Python code |
 | `P1/09-sql-cost-graph` | done | Build CostGraph for SQL statements |
 | `P1/10-dlt-pipeline-graph` | done | Build PipelineGraph for DLT |
-| `P1/11-tier1-rules` | todo | ~48 TOML-based rules |
-| `P1/12-tier2-rules` | todo | ~25 Rust context-aware rules |
-| `P1/13-tier3-rules` | todo | ~11 Rust semantic rules |
-| `P1/14-rule-pipeline` | todo | Rule execution and suppression |
+| `P1/11-tier1-rules` | done | ~48 TOML-based rules |
+| `P1/12-tier2-rules` | done | ~25 Rust context-aware rules |
+| `P1/13-tier3-rules` | done | ~11 Rust semantic rules |
+| `P1/14-rule-pipeline` | done | Rule execution and suppression |
 | `P1/15-pyo3-bridge` | done | Expose engine to Python via PyO3 |
 | `P1/16-parity-validation` | done | Ensure parity with v1.0 |
+| `P1/17-better-rule-creation-system` | done | Improved rule creation framework |
+| `P1/18-refactor-code-base` | done | Code refactoring and optimizations |
+| `P1/19-rework-rules-to-use-cpl` | done | CPL pattern language integration |
+| `P1/20-rework-burnt-engine` | done | Engine cleanup and optimization |
 
 ### Phase 2: Python Intelligence
 
