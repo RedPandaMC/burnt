@@ -1,0 +1,18 @@
+# BP002 - Line exceeds 120 characters
+# Category: BestPractice
+# Severity: info
+# Language: python
+
+[rule]
+id = "long_line"
+code = "BP002"
+severity = "info"
+language = "python"
+description = "Line exceeds 120 characters"
+suggestion = "Break line for readability"
+category = "BestPractice"
+
+[query]
+cpl_detect = """
+# line_length
+"""

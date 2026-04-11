@@ -1,0 +1,24 @@
+# BP015 - @pandas_udf (overhead vs native Spark)
+# Category: BestPractice
+# Severity: info
+# Language: python
+
+[rule]
+id = "pandas_udf"
+code = "BP015"
+severity = "info"
+language = "python"
+description = "pandas_udf still serialises data via Arrow — consider Spark-native functions"
+suggestion = "Use built-in Spark SQL functions where available"
+category = "BestPractice"
+
+[query]
+cpl_detect = [
+    """
+    @pandas_udf
+    def $func():
+    """,
+    """
+    pandas_udf()
+    """
+]

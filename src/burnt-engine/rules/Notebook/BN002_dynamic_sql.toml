@@ -1,0 +1,18 @@
+# BN002 - Dynamic SQL detected in notebook
+# Category: Notebook
+# Severity: warning
+# Language: notebook
+
+[rule]
+id = "dynamic_sql"
+code = "BN002"
+severity = "warning"
+language = "notebook"
+description = "Dynamic SQL construction detected - potential SQL injection risk"
+suggestion = "Use parameterized queries instead of string concatenation"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook_dynamic_sql
+"""

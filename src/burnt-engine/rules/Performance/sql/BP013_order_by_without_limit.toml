@@ -1,0 +1,30 @@
+# BP013 - ORDER BY without LIMIT
+# Category: BestPractice
+# Severity: warning
+# Language: sql
+
+[rule]
+id = "order_by_without_limit"
+code = "BP013"
+severity = "warning"
+language = "sql"
+description = "ORDER BY without LIMIT sorts the entire result set"
+suggestion = "Add LIMIT or use window functions with RANK/ROW_NUMBER"
+category = "BestPractice"
+
+[query]
+# CPL pattern - matches SELECT with ORDER BY without LIMIT
+cpl_detect = """
+SELECT *
+FROM $tbl
+ORDER BY $col
+"""
+
+# CPL exclude - ORDER BY with LIMIT is OK
+cpl_exclude = """
+SELECT *
+FROM $tbl
+ORDER BY $col
+LIMIT $n
+"""
+

@@ -1,0 +1,18 @@
+# SQ002 - CROSS JOIN without explicit condition
+# Category: SqlQuality
+# Severity: warning
+# Language: sql
+
+[rule]
+id = "cross_join"
+code = "SQ002"
+severity = "warning"
+language = "sql"
+description = "CROSS JOIN without explicit condition"
+suggestion = "Use INNER JOIN with explicit condition"
+category = "SqlQuality"
+
+[query]
+cpl_detect = """
+SELECT * FROM $a CROSS JOIN $b
+"""

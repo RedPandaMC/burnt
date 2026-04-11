@@ -1,0 +1,20 @@
+# BQ004 - Correlated subquery references outer columns
+# Category: SqlQuality
+# Severity: error
+# Language: sql
+
+[rule]
+id = "correlated_subquery"
+code = "BQ004"
+severity = "error"
+language = "sql"
+description = "Correlated subquery references outer columns — Spark may execute as a nested loop join"
+suggestion = "Rewrite as a join or use window functions"
+category = "SqlQuality"
+
+[query]
+# Note: Correlated subquery detection requires context analysis
+# Placeholder pattern for subquery detection
+cpl_detect = """
+SELECT * FROM $outer WHERE $col IN (SELECT $col FROM $inner)
+"""

@@ -1,0 +1,18 @@
+# BN001 - Notebook missing run target
+# Category: Notebook
+# Severity: info
+# Language: notebook
+
+[rule]
+id = "missing_run_target"
+code = "BN001"
+severity = "info"
+language = "notebook"
+description = "Notebook missing run directive or target"
+suggestion = "Add a run directive or specify a target"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook
+"""

@@ -1,0 +1,18 @@
+# BP005 - Cell missing type declaration
+# Category: Notebook
+# Severity: info
+# Language: notebook
+
+[rule]
+id = "missing_cell_type"
+code = "BP005"
+severity = "info"
+language = "notebook"
+description = "Cell missing type declaration"
+suggestion = "Add cell type (python, sql, or markdown)"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook_cell
+"""

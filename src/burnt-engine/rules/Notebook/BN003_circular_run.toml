@@ -1,0 +1,18 @@
+# BN003 - Circular run directive detected
+# Category: Notebook
+# Severity: error
+# Language: notebook
+
+[rule]
+id = "circular_run"
+code = "BN003"
+severity = "error"
+language = "notebook"
+description = "Circular run directive detected - notebook would call itself"
+suggestion = "Remove the circular reference"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook_circular_run
+"""

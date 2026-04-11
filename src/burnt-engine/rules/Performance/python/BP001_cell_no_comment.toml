@@ -1,0 +1,18 @@
+# BP001 - Cell has no comments
+# Category: BestPractice
+# Severity: info
+# Language: python
+
+[rule]
+id = "cell_no_comment"
+code = "BP001"
+severity = "info"
+language = "python"
+description = "Cell has no comments"
+suggestion = "Add comments for clarity"
+category = "BestPractice"
+
+[query]
+cpl_detect = """
+# cell_comment
+"""

@@ -1,0 +1,26 @@
+# BP022 - Prohibited operation inside Spark Declarative Pipeline function
+# Category: BestPractice
+# Severity: error
+# Language: python
+
+[rule]
+id = "sdp_prohibited_ops"
+code = "BP022"
+severity = "error"
+language = "python"
+description = "Prohibited operation inside Spark Declarative Pipeline function"
+suggestion = "Remove this operation from SDP pipeline code"
+category = "BestPractice"
+
+[query]
+cpl_detect = [
+    """
+    $df.write()
+    """,
+    """
+    $df.collect()
+    """,
+    """
+    $df.show()
+    """
+]

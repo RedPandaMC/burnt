@@ -1,0 +1,18 @@
+# BP007 - Notebook has no markdown cells
+# Category: Notebook
+# Severity: info
+# Language: notebook
+
+[rule]
+id = "no_markdown"
+code = "BP007"
+severity = "info"
+language = "notebook"
+description = "Notebook has no markdown cells for documentation"
+suggestion = "Add markdown cells to document your notebook"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook_markdown
+"""

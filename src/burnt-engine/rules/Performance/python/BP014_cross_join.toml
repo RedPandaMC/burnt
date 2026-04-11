@@ -1,0 +1,19 @@
+# BP014 - CROSS JOIN (SQL and PySpark)
+# Category: BestPractice
+# Severity: warning
+# Language: python
+
+[rule]
+id = "cross_join"
+code = "BP014"
+severity = "warning"
+language = "python"
+description = "CROSS JOIN creates O(n*m) rows"
+suggestion = "Use INNER JOIN with explicit ON clause"
+category = "BestPractice"
+
+[query]
+cpl_detect = """
+$df.crossJoin()
+$method == "crossJoin"
+"""

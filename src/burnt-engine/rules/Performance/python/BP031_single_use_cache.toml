@@ -1,0 +1,20 @@
+# BP031 - .cache() on a DataFrame used only once
+# Category: BestPractice
+# Severity: info
+# Language: python
+
+[rule]
+id = "single_use_cache"
+code = "BP031"
+severity = "info"
+language = "python"
+description = ".cache() on a DataFrame used only once adds overhead with no benefit"
+suggestion = "Remove .cache() if the DataFrame is only used in one action"
+category = "BestPractice"
+
+[query]
+# CPL pattern - basic cache detection
+# Note: Full detection requires usage count analysis
+cpl_detect = """
+$df.cache()
+"""

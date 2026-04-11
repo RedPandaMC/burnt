@@ -1,0 +1,23 @@
+# BP032 - Same DataFrame has 2+ action calls without .cache()
+# Category: BestPractice
+# Severity: warning
+# Language: python
+
+[rule]
+id = "repeated_actions_no_cache"
+code = "BP032"
+severity = "warning"
+language = "python"
+description = "Same DataFrame has 2+ action calls without .cache() — plan executed multiple times"
+suggestion = "Call .cache() before the first action and .unpersist() afterward"
+category = "BestPractice"
+
+[query]
+cpl_detect = [
+    """
+    $df.collect()
+    """,
+    """
+    $df.count()
+    """
+]

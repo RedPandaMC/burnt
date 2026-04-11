@@ -1,0 +1,18 @@
+# BB001 - Cluster tag missing from notebook configuration
+# Category: Notebook
+# Severity: warning
+# Language: notebook
+
+[rule]
+id = "cluster_tag_missing"
+code = "BB001"
+severity = "warning"
+language = "notebook"
+description = "Cluster tag missing from notebook configuration"
+suggestion = "Add cluster tags for cost attribution"
+category = "Notebook"
+
+[query]
+cpl_detect = """
+# notebook_config
+"""

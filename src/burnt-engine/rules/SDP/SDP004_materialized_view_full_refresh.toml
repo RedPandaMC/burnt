@@ -1,0 +1,21 @@
+# SDP004 - Materialized view defined without incremental strategy
+# Category: SDP
+# Severity: warning
+# Language: python
+
+[rule]
+id = "materialized_view_full_refresh"
+code = "SDP004"
+severity = "warning"
+language = "python"
+description = "Materialized view defined without incremental strategy"
+suggestion = "Consider incremental materialized view for large datasets"
+category = "SDP"
+
+[query]
+# CPL pattern - @dlt.table decorator
+# Note: Full detection requires SDP context analysis
+cpl_detect = """
+@dlt.table()
+def $func():
+"""
