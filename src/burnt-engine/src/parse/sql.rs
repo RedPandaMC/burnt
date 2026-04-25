@@ -1,4 +1,3 @@
-
 use crate::types::Finding;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::DatabricksDialect;
@@ -180,5 +179,81 @@ mod tests {
     fn test_tree_sitter_sequel_parsing() {
         let result = parse_sql_with_tree_sitter("SELECT * FROM users WHERE id = 1");
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_print_sequel_tree() {
+        let source = "SELECT id FROM users WHERE id NOT IN (SELECT id FROM deleted_users)";
+        let tree = parse_sql_with_tree_sitter(source).unwrap();
+
+        fn print_tree(node: tree_sitter::Node, source: &str, indent: usize) {
+            let prefix = "  ".repeat(indent);
+            let kind = node.kind();
+            let text = &source[node.byte_range()];
+            let trimmed = if text.len() > 40 { &text[..40] } else { text };
+            println!("{}[{}] '{}'", prefix, kind, trimmed);
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    print_tree(child, source, indent + 1);
+                }
+            }
+        }
+
+        print_tree(tree.root_node(), source, 0);
+    }
+
+    #[test]
+    fn test_print_select_star_tree() {
+        let source = "SELECT * FROM users";
+        let tree = parse_sql_with_tree_sitter(source).unwrap();
+
+        fn print_tree(node: tree_sitter::Node, source: &str, indent: usize) {
+            let prefix = "  ".repeat(indent);
+            let kind = node.kind();
+            let text = &source[node.byte_range()];
+            let trimmed = if text.len() > 40 { &text[..40] } else { text };
+            println!("{}[{}] '{}'", prefix, kind, trimmed);
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    print_tree(child, source, indent + 1);
+                }
+            }
+        }
+
+        print_tree(tree.root_node(), source, 0);
+    }
+
+    #[test]
+    fn test_print_bq001_pass_case() {
+        let source = "SELECT * FROM users";
+        let tree = parse_sql_with_tree_sitter(source).unwrap();
+
+        fn collect_all_nodes(
+            node: tree_sitter::Node,
+            source: &str,
+            results: &mut Vec<(String, String)>,
+        ) {
+            let kind = node.kind();
+            let text = &source[node.byte_range()];
+            results.push((kind.to_string(), text.to_string()));
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    collect_all_nodes(child, source, results);
+                }
+            }
+        }
+
+        let mut results = Vec::new();
+        collect_all_nodes(tree.root_node(), source, &mut results);
+
+        println!("All nodes:");
+        for (kind, text) in results {
+            let trimmed = if text.len() > 40 {
+                format!("{}...", &text[..40])
+            } else {
+                text
+            };
+            println!("  [{}] '{}'", kind, trimmed);
+        }
     }
 }

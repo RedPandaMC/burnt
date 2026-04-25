@@ -237,6 +237,8 @@ pub struct RuleEntry {
     pub suggestion: String,
     #[pyo3(get)]
     pub category: String,
+    #[pyo3(get)]
+    pub tags: Vec<String>,
 }
 
 // 128-bit bitset for rule matching
@@ -305,9 +307,11 @@ pub struct CompiledRule {
     pub category: String,
     pub patterns: Vec<QueryPattern>,
     #[serde(default)]
-    pub cpl_detect: Vec<String>,
+    pub tags: Vec<String>,
     #[serde(default)]
-    pub cpl_exclude: Vec<String>,
+    pub has_context: bool,
+    #[serde(default)]
+    pub has_dataflow: bool,
 }
 
 impl AnalysisMode {

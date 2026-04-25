@@ -1,11 +1,11 @@
-use crate::rules::cinder::CinderCompiler;
 use crate::types::{CompiledRule, Confidence, Finding as TypesFinding, RuleEntry};
 use pyo3::prelude::*;
 use std::sync::OnceLock;
 
-mod cinder;
 mod context;
 mod dataflow;
+mod notebook_queries;
+mod query;
 mod registry {
     include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 }
@@ -14,7 +14,7 @@ mod generated_tests {
     include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));
 }
 
-mod query;
+pub use notebook_queries::NotebookQueryEngine;
 pub use query::{QueryEngine, QueryError};
 
 #[pyclass]
@@ -43,50 +43,8 @@ pub struct RulePipeline {
 
 impl RulePipeline {
     pub fn new() -> Self {
-        let compiled_rules = registry::load_compiled_rules();
-        let cinder_compiler = CinderCompiler::new();
-        let mut rules = Vec::new();
-
-        for mut rule in compiled_rules {
-            for cpl_detect in &rule.cpl_detect {
-                match cinder_compiler.compile(cpl_detect, &rule.language) {
-                    Ok(sexp) => {
-                        rule.patterns.push(crate::types::QueryPattern {
-                            match_pattern: sexp,
-                            is_negative: false,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Error compiling CPL detect pattern for rule {}: {}",
-                            rule.code, e
-                        );
-                    }
-                }
-            }
-
-            for cpl_exclude in &rule.cpl_exclude {
-                match cinder_compiler.compile(cpl_exclude, &rule.language) {
-                    Ok(sexp) => {
-                        rule.patterns.push(crate::types::QueryPattern {
-                            match_pattern: sexp,
-                            is_negative: true,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Error compiling CPL exclude pattern for rule {}: {}",
-                            rule.code, e
-                        );
-                    }
-                }
-            }
-
-            rules.push(rule);
-        }
-
         Self {
-            rules,
+            rules: registry::load_compiled_rules(),
             query_engine: QueryEngine::new(),
         }
     }
@@ -133,7 +91,7 @@ impl RulePipeline {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
-            if lang_matches(&rule.language, language) {
+            if rule.has_context && lang_matches(&rule.language, language) {
                 let ctx_findings = context::analyze_context_for_rule(
                     &rule.code,
                     source,
@@ -153,7 +111,7 @@ impl RulePipeline {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
-            if lang_matches(&rule.language, language) {
+            if rule.has_dataflow && lang_matches(&rule.language, language) {
                 findings.extend(dataflow::analyze_dataflow_for_rule(&rule.code, source));
             }
         }
