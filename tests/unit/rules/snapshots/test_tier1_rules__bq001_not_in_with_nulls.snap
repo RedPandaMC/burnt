@@ -3,6 +3,6 @@ source: "../../tests/unit/rules/test_tier1_rules.rs"
 expression: snapshot_data
 ---
 findings:
-  - code: BQ004
-    rule_id: BQ004
+  - code: BQ001
+    rule_id: not_in_with_nulls
 rule_count: 1

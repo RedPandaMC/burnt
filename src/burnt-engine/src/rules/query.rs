@@ -139,16 +139,89 @@ mod tests {
     use insta::assert_yaml_snapshot;
 
     #[test]
+    fn test_not_in_pattern() {
+        let engine = QueryEngine::new();
+        let source = r#"SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)"#;
+
+        let pattern = r#"
+        (binary_expression
+          (not_in)
+          (subquery))
+        "#;
+
+        let result = engine.test_pattern(source, "sql", pattern);
+        println!("Not IN pattern test result: {:?}", result);
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Pattern should match NOT IN with subquery");
+    }
+
+    #[test]
+    fn test_select_star_pattern_direct() {
+        let engine = QueryEngine::new();
+
+        // Test various SELECT * cases
+        let cases = vec![
+            ("SELECT * FROM users", true, "sql"), // Should match
+            ("SELECT * FROM users WHERE id = 1", true, "sql"), // Should match
+            ("SELECT * FROM users LIMIT 100", true, "sql"), // Should match (exclude handles it)
+            ("SELECT id, name FROM users", false, "sql"), // Should NOT match
+        ];
+
+        let pattern = r#"
+        (select
+          (select_expression
+            (term
+              (all_fields))))
+        "#;
+
+        for (source, should_match, lang) in cases {
+            let result = engine.test_pattern(source, lang, pattern);
+            println!(
+                "SELECT * pattern on '{}': {:?} (expected {})",
+                source, result, should_match
+            );
+            if should_match {
+                assert!(result.unwrap(), "Pattern should match for: {}", source);
+            } else {
+                assert!(!result.unwrap(), "Pattern should NOT match for: {}", source);
+            }
+        }
+    }
+
+    #[test]
+    fn test_rule_pipeline_sq001() {
+        let source = "SELECT * FROM users WHERE id = 1";
+        let findings = crate::rules::run(source, "SQL").unwrap();
+        let sq001_findings: Vec<_> = findings.iter().filter(|f| f.code == "SQ001").collect();
+        println!("SQ001 findings for '{}': {:?}", source, sq001_findings);
+        assert!(
+            !sq001_findings.is_empty(),
+            "SQ001 should fire for: {}",
+            source
+        );
+    }
+
+    #[test]
+    fn test_rule_pipeline_bq001() {
+        let source = "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)";
+        let findings = crate::rules::run(source, "SQL").unwrap();
+        let bq001_findings: Vec<_> = findings.iter().filter(|f| f.code == "BQ001").collect();
+        println!("BQ001 findings for '{}': {:?}", source, bq001_findings);
+        assert!(
+            !bq001_findings.is_empty(),
+            "BQ001 should fire for: {}",
+            source
+        );
+    }
+
+    #[test]
     fn test_python_collect_pattern() {
         let engine = QueryEngine::new();
         let source = r#"df.collect()"#;
 
-        // Test simplest possible pattern first
         let pattern = r#"(call)"#;
 
-        let result = engine.test_pattern(source, "python", pattern);
-        // TODO: This test will fail until execute_query is properly implemented
-        // For now, just verify no panic
+        let _result = engine.test_pattern(source, "python", pattern);
         println!("Query test completed without panic");
     }
 
@@ -165,9 +238,7 @@ mod tests {
         )
         "#;
 
-        let result = engine.test_pattern(source, "sql", pattern);
-        // TODO: This test will fail until execute_query is properly implemented
-        // For now, just verify no panic
+        let _result = engine.test_pattern(source, "sql", pattern);
         println!("SQL query test completed without panic");
     }
 
@@ -176,7 +247,6 @@ mod tests {
         let engine = QueryEngine::new();
         let source = r#"df.collect()"#;
 
-        // For now, just test that we can parse and create a query
         let tree = engine.parse_source(source, "python").unwrap();
         let pattern = r#"
         (call
@@ -190,11 +260,7 @@ mod tests {
 
         let query = engine.create_query(pattern, "python").unwrap();
 
-        // Basic assertions
         assert!(tree.root_node().kind() == "module");
-
-        // TODO: Implement proper query execution and snapshot testing
-        // For now, just verify we can create the structures
         assert!(query.pattern_count() > 0);
     }
 }

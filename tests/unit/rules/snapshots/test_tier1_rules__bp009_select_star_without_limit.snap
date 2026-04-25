@@ -2,5 +2,8 @@
 source: "../../tests/unit/rules/test_tier1_rules.rs"
 expression: snapshot_data
 ---
-findings: []
-rule_count: 0
+findings:
+  - code: SQ001
+    rule_id: select_star
+    severity: Warning
+rule_count: 1
