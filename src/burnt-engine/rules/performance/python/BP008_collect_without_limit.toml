@@ -13,6 +13,7 @@ language = "python"
 description = "collect() without limit() can OOM the driver"
 suggestion = "Add .limit(n).collect() or use .take(n)"
 category = "BestPractice"
+tags = ["pyspark", "memory", "driver-bound"]
 
 [query]
 detect = """
@@ -45,3 +46,4 @@ pass = [
 fail = [
     "df.collect()",
 ]
+

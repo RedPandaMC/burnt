@@ -13,6 +13,7 @@ language = "python"
 description = ".cache() with no .unpersist() in the same scope — potential memory leak"
 suggestion = "Call .unpersist() when the cached DataFrame is no longer needed"
 category = "BestPractice"
+tags = ["pyspark", "memory", "caching"]
 
 [query]
 detect = """
@@ -40,3 +41,4 @@ pass = [
 fail = [
     "df.cache()",
 ]
+

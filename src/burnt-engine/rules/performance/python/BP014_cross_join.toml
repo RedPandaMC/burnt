@@ -13,6 +13,7 @@ language = "python"
 description = "CROSS JOIN creates O(n*m) rows"
 suggestion = "Use INNER JOIN with explicit ON clause"
 category = "BestPractice"
+tags = ["pyspark", "join", "shuffle"]
 
 [query]
 detect = """
@@ -33,3 +34,4 @@ pass = [
 fail = [
     "df1.crossJoin(df2)",
 ]
+

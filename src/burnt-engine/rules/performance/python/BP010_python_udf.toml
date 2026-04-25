@@ -13,6 +13,7 @@ language = "python"
 description = "Python UDF has 10-100x overhead vs Pandas UDF"
 suggestion = "Use @pandas_udf for vectorized operations"
 category = "BestPractice"
+tags = ["pyspark", "udf", "performance"]
 
 [query]
 detect = """
@@ -49,3 +50,4 @@ fail = [
     "@udf(StringType()) def foo(s): return s",
     "spark.udf.register(lambda x: x)",
 ]
+

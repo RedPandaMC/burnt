@@ -10,3 +10,4 @@ tags = ["python", "databricks", "magic"]
 
 [context]
 type = "deprecated_magic"
+

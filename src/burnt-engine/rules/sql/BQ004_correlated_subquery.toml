@@ -29,3 +29,5 @@ detect = """
           (subquery))) @corr_condition))
 """
 
+[context]
+enabled = true

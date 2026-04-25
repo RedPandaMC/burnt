@@ -13,6 +13,7 @@ language = "sql"
 description = "NOT IN (subquery) silently returns empty result when the subquery contains NULLs"
 suggestion = "Use NOT EXISTS or add WHERE col IS NOT NULL to the subquery"
 category = "SqlQuality"
+tags = ["sql", "correctness", "null-safety"]
 
 [query]
 detect = """

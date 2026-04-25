@@ -13,6 +13,7 @@ language = "sql"
 description = "SELECT * without LIMIT"
 suggestion = "Add LIMIT or specify columns"
 category = "SqlQuality"
+tags = ["sql", "performance", "select-star"]
 
 [query]
 detect = """

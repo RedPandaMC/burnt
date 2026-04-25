@@ -13,22 +13,16 @@ language = "python"
 description = ".withColumn() inside a loop causes O(n²) Catalyst plan analysis"
 suggestion = "Use .withColumns() (Spark 3.3+) or a single .select() statement"
 category = "BestPractice"
+tags = ["pyspark", "catalyst", "loop"]
 
-[query]
-detect = """
-; Detects df.withColumn() call
-(call
-  function: (attribute
-    object: (_) @df
-    attribute: (identifier) @method)
-  (#eq? @method "withColumn"))
-"""
-
+[context]
+enabled = true
 
 [tests]
 pass = [
     "df.withColumns({'a': col('a') * 2, 'b': col('b') + 1})",
+    "df.withColumn('new', col('id') * 2)",
 ]
 fail = [
-    "df.withColumn('new', col('id') * 2)",
+    "for col_name in columns:\n    df = df.withColumn(col_name, col(col_name) * 2)",
 ]

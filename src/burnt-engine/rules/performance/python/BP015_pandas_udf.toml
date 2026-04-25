@@ -13,6 +13,7 @@ language = "python"
 description = "pandas_udf still serialises data via Arrow — consider Spark-native functions"
 suggestion = "Use built-in Spark SQL functions where available"
 category = "BestPractice"
+tags = ["pyspark", "udf", "arrow"]
 
 [query]
 detect = """

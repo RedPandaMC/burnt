@@ -13,6 +13,7 @@ language = "python"
 description = ".cache() on a DataFrame used only once adds overhead with no benefit"
 suggestion = "Remove .cache() if the DataFrame is only used in one action"
 category = "BestPractice"
+tags = ["pyspark", "memory", "caching"]
 
 [query]
 detect = """
@@ -32,3 +33,4 @@ pass = [
 fail = [
     "df.cache()",
 ]
+

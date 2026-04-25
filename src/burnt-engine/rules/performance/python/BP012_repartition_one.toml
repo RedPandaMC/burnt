@@ -13,6 +13,7 @@ language = "python"
 description = "repartition(1) forces all data through a single partition"
 suggestion = "Use coalesce(1) when reducing partitions, or keep natural parallelism"
 category = "BestPractice"
+tags = ["pyspark", "partitioning", "shuffle"]
 
 [query]
 detect = """
@@ -37,3 +38,4 @@ fail = [
     "df.repartition(1)",
     "df.repartition(1, 'col')",
 ]
+
