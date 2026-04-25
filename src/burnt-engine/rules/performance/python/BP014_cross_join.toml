@@ -1,0 +1,35 @@
+# BP014 - CROSS JOIN (SQL and PySpark)
+## Rule: BP014
+## Description: CROSS JOIN creates O(n*m) rows
+## Severity: warning
+## Category: Performance
+## Tags: ["pyspark", "join", "shuffle"]
+
+[rule]
+id = "cross_join"
+code = "BP014"
+severity = "warning"
+language = "python"
+description = "CROSS JOIN creates O(n*m) rows"
+suggestion = "Use INNER JOIN with explicit ON clause"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects df.crossJoin() calls
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "crossJoin"))
+"""
+
+
+[tests]
+pass = [
+    "df1.join(df2, 'id')",
+    "df1.innerJoin(df2, 'id')",
+]
+fail = [
+    "df1.crossJoin(df2)",
+]

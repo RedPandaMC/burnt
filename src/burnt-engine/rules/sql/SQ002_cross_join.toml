@@ -1,0 +1,18 @@
+[rule]
+id = "cross_join"
+code = "SQ002"
+severity = "warning"
+language = "sql"
+description = "CROSS JOIN without explicit condition"
+suggestion = "Use INNER JOIN with explicit condition"
+category = "SqlQuality"
+tags = ["sql", "join", "cartesian"]
+
+[query]
+detect = """
+; Detect cross join (JOIN without ON clause)
+(join
+  condition: (nil) @no_condition
+  (#eq? @no_condition "nil"))
+"""
+

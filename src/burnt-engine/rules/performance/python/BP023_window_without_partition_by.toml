@@ -1,0 +1,12 @@
+[rule]
+id = "window_without_partition_by"
+code = "BP023"
+severity = "warning"
+language = "python"
+description = "Window.orderBy() without .partitionBy() causes global sort"
+suggestion = "Add .partitionBy() before .orderBy() or use .orderBy().limit()"
+category = "BestPractice"
+tags = ["pyspark", "window", "shuffle"]
+
+[context]
+type = "window_partition"

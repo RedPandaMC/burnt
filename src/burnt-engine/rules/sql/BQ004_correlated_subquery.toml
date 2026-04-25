@@ -1,0 +1,31 @@
+[rule]
+id = "correlated_subquery"
+code = "BQ004"
+severity = "error"
+language = "sql"
+description = "Correlated subquery references outer columns — Spark may execute as a nested loop join"
+suggestion = "Rewrite as a join or use window functions"
+category = "SqlQuality"
+tags = ["sql", "performance", "subquery"]
+
+[query]
+detect = """
+; Detect correlated subquery
+(subquery
+  (where_clause
+    (binary_expression
+      left: (column_reference) @left_ref
+      right: (parenthesized
+        (subquery) @inner)) @where
+  (#is-not? @where "nil"))
+
+; Also detect EXISTS with correlated reference
+(exists
+  (subquery
+    (where_clause
+      (binary_expression
+        left: (column_reference) @ref
+        right: (parenthesized
+          (subquery))) @corr_condition))
+"""
+

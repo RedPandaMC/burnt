@@ -1,0 +1,35 @@
+# BP015 - @pandas_udf (overhead vs native Spark)
+## Rule: BP015
+## Description: pandas_udf still serialises data via Arrow - consider Spark-native functions
+## Severity: info
+## Category: Performance
+## Tags: ["pyspark", "udf", "arrow"]
+
+[rule]
+id = "pandas_udf"
+code = "BP015"
+severity = "info"
+language = "python"
+description = "pandas_udf still serialises data via Arrow — consider Spark-native functions"
+suggestion = "Use built-in Spark SQL functions where available"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects f.pandas_udf() call
+(call
+  function: (attribute
+    object: (identifier) @mod
+    attribute: (identifier) @udf_fn)
+  (#eq? @mod "f")
+  (#eq? @udf_fn "pandas_udf"))
+"""
+
+
+[tests]
+pass = [
+    "df.select(count('id')).show()",
+]
+fail = [
+    "f.pandas_udf(StringType(), lambda s: s)",
+]

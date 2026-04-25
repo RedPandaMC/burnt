@@ -1,0 +1,12 @@
+[rule]
+id = "star_import_pyspark_functions"
+code = "BNT-I01"
+severity = "error"
+language = "python"
+description = "from pyspark.sql.functions import * shadows Python built-ins (max, min, sum, map, round)"
+suggestion = "Use: from pyspark.sql import functions as F"
+category = "NotebookStyle"
+tags = ["python", "import", "style"]
+
+[context]
+type = "star_import"

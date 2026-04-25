@@ -1,0 +1,12 @@
+[rule]
+id = "cell_no_comment"
+code = "BP001"
+severity = "info"
+language = "python"
+description = "Cell has no comments"
+suggestion = "Add comments for clarity"
+category = "BestPractice"
+tags = ["python", "style", "readability"]
+
+[context]
+type = "cell_no_comment"

@@ -1,0 +1,34 @@
+# BP031 - .cache() on a DataFrame used only once
+## Rule: BP031
+## Description: cache() on DataFrame used only once adds overhead with no benefit
+## Severity: info
+## Category: Performance
+## Tags: ["pyspark", "memory", "caching"]
+
+[rule]
+id = "single_use_cache"
+code = "BP031"
+severity = "info"
+language = "python"
+description = ".cache() on a DataFrame used only once adds overhead with no benefit"
+suggestion = "Remove .cache() if the DataFrame is only used in one action"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detect DataFrame.cache()
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "cache"))
+"""
+
+
+[tests]
+pass = [
+    "df.take(5)",
+]
+fail = [
+    "df.cache()",
+]

@@ -1,0 +1,48 @@
+# BP011 - toPandas() brings all data to driver
+## Rule: BP011
+## Description: toPandas() brings entire DataFrame to driver
+## Severity: error
+## Category: Performance
+## Tags: ["pyspark", "memory", "driver-bound"]
+
+[rule]
+id = "to_pandas"
+code = "BP011"
+severity = "error"
+language = "python"
+description = "toPandas() brings the entire DataFrame to the driver"
+suggestion = "Add .limit(n).toPandas() or use Spark-native aggregations"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detect pandas DataFrame conversion
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#any-of? @method "toPandas" "to_pandas" "topandas"))
+"""
+exclude = """
+; Detects df.limit().toPandas() or df.take().toPandas() pattern (should be excluded)
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_) @df
+        attribute: (identifier) @limit_method))
+    attribute: (identifier) @to_pandas_method)
+  (#any-of? @limit_method "limit" "take")
+  (#any-of? @to_pandas_method "toPandas" "to_pandas" "topandas"))
+"""
+
+
+[tests]
+pass = [
+    "df.limit(100).toPandas()",
+    "df.take(5).to_pandas()",
+]
+fail = [
+    "df.toPandas()",
+    "df.to_pandas()",
+]

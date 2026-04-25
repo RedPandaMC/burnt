@@ -1,0 +1,43 @@
+# BP016 - count() without filter/where
+## Rule: BP016
+## Description: count() without filter scans the entire table
+## Severity: warning
+## Category: Performance
+## Tags: ["pyspark", "performance", "full-scan"]
+
+[rule]
+id = "count_without_filter"
+code = "BP016"
+severity = "warning"
+language = "python"
+description = "count() without filter scans the entire table"
+suggestion = "Apply .filter() or .where() before count()"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects df.count() call
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "count"))
+"""
+exclude = """
+; Detects count() when called on result of another method call (transformed DataFrame)
+; This is the inverse: match count when object is NOT a simple identifier
+(call
+  function: (attribute
+    object: (call) @transformed
+    attribute: (identifier) @count_method)
+  (#eq? @count_method "count"))
+"""
+
+
+[tests]
+pass = [
+    "df.filter(col('id') > 0).count()",
+]
+fail = [
+    "df.count()",
+]

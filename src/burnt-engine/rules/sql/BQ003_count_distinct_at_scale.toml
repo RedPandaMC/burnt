@@ -1,0 +1,21 @@
+[rule]
+id = "count_distinct_at_scale"
+code = "BQ003"
+severity = "info"
+language = "sql"
+description = "COUNT(DISTINCT col) requires full shuffle and sort — expensive at scale"
+suggestion = "Consider approx_count_distinct() for large datasets where exact count is not required"
+category = "SqlQuality"
+tags = ["sql", "performance", "aggregation"]
+
+[context]
+type = "count_distinct"
+
+[tests]
+pass = [
+    "SELECT COUNT(id) FROM users",
+    "SELECT approx_count_distinct(id) FROM users",
+]
+fail = [
+    "SELECT COUNT(DISTINCT id) FROM users",
+]

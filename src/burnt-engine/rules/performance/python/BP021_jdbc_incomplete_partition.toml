@@ -1,0 +1,12 @@
+[rule]
+id = "jdbc_incomplete_partition"
+code = "BP021"
+severity = "error"
+language = "python"
+description = "JDBC read missing required partition options — reads entire table on single thread"
+suggestion = "Add partitionColumn, numPartitions, lowerBound, and upperBound options"
+category = "BestPractice"
+tags = ["pyspark", "jdbc", "performance"]
+
+[context]
+type = "jdbc_partition"

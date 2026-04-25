@@ -1,0 +1,33 @@
+# BQ001 - NOT IN (subquery) silently empty on NULLs
+## Rule: BQ001
+## Description: NOT IN (subquery) silently returns empty when subquery contains NULLs
+## Severity: warning
+## Category: SQL Quality
+## Tags: ["sql", "correctness", "null-safety"]
+
+[rule]
+id = "not_in_with_nulls"
+code = "BQ001"
+severity = "warning"
+language = "sql"
+description = "NOT IN (subquery) silently returns empty result when the subquery contains NULLs"
+suggestion = "Use NOT EXISTS or add WHERE col IS NOT NULL to the subquery"
+category = "SqlQuality"
+
+[query]
+detect = """
+; Match NOT IN with a subquery on the right side
+; Simple pattern: binary_expression with operator NOT IN and right child is a subquery
+(binary_expression
+  (not_in)
+  (subquery))
+"""
+
+
+[tests]
+pass = [
+    "SELECT * FROM a WHERE id IN (SELECT id FROM b)",
+]
+fail = [
+    "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
+]

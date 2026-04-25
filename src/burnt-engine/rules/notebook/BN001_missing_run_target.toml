@@ -1,0 +1,12 @@
+[rule]
+id = "missing_run_target"
+code = "BN001"
+severity = "info"
+language = "notebook"
+description = "Notebook missing run directive or target"
+suggestion = "Add a run directive or specify a target"
+category = "Notebook"
+tags = ["notebook", "structure"]
+
+[context]
+type = "missing_run_target"

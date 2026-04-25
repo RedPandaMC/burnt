@@ -1,0 +1,39 @@
+# BP012 - repartition(1) creates a single-partition bottleneck
+## Rule: BP012
+## Description: repartition(1) forces all data through single partition
+## Severity: warning
+## Category: Performance
+## Tags: ["pyspark", "partitioning", "shuffle"]
+
+[rule]
+id = "repartition_one"
+code = "BP012"
+severity = "warning"
+language = "python"
+description = "repartition(1) forces all data through a single partition"
+suggestion = "Use coalesce(1) when reducing partitions, or keep natural parallelism"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects df.repartition(1) call
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (integer) @n)
+  (#eq? @method "repartition")
+  (#eq? @n "1"))
+"""
+
+
+[tests]
+pass = [
+    "df.repartition(4)",
+    "df.coalesce(2)",
+]
+fail = [
+    "df.repartition(1)",
+    "df.repartition(1, 'col')",
+]

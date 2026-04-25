@@ -1,0 +1,12 @@
+[rule]
+id = "deprecated_magic"
+code = "BP004"
+severity = "warning"
+language = "python"
+description = "Deprecated Databricks magic syntax used"
+suggestion = "Use new-style magic format"
+category = "BestPractice"
+tags = ["python", "databricks", "magic"]
+
+[context]
+type = "deprecated_magic"

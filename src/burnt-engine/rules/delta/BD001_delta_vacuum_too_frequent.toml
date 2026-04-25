@@ -1,0 +1,12 @@
+[rule]
+id = "delta_vacuum_too_frequent"
+code = "BD001"
+severity = "warning"
+language = "sql"
+description = "VACUUM called more frequently than needed"
+suggestion = "Adjust vacuum retention based on table size and update frequency"
+category = "Delta"
+tags = ["delta", "maintenance", "sql"]
+
+[context]
+type = "vacuum_frequency"

@@ -1,0 +1,30 @@
+[rule]
+id = "materialized_view_full_refresh"
+code = "SDP004"
+severity = "warning"
+language = "python"
+description = "Materialized view defined without incremental strategy"
+suggestion = "Consider incremental materialized view for large datasets"
+category = "SDP"
+tags = ["sdp", "dlt", "performance"]
+
+[query]
+detect = """
+; Detects @dlt.table() decorator
+(decorator
+  (call
+    function: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @func)
+    (#eq? @module "dlt")
+    (#eq? @func "table")))
+"""
+
+
+[tests]
+pass = [
+    "def foo(): pass",
+]
+fail = [
+    "@dlt.table()\ndef foo(): pass",
+]

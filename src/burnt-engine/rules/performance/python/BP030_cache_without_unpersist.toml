@@ -1,0 +1,42 @@
+# BP030 - .cache() with no .unpersist() in the same scope
+## Rule: BP030
+## Description: cache() without unpersist() - potential memory leak
+## Severity: warning
+## Category: Performance
+## Tags: ["pyspark", "memory", "caching"]
+
+[rule]
+id = "cache_without_unpersist"
+code = "BP030"
+severity = "warning"
+language = "python"
+description = ".cache() with no .unpersist() in the same scope — potential memory leak"
+suggestion = "Call .unpersist() when the cached DataFrame is no longer needed"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detect DataFrame.cache()
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "cache"))
+"""
+exclude = """
+; Detect DataFrame.unpersist()
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "unpersist"))
+"""
+
+
+[tests]
+pass = [
+    "df.cache().unpersist()",
+]
+fail = [
+    "df.cache()",
+]

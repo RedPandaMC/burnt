@@ -1,0 +1,34 @@
+# BP020 - .withColumn() inside a loop causes O(n²) Catalyst plan analysis
+## Rule: BP020
+## Description: withColumn() in loop causes O(n²) Catalyst plan analysis
+## Severity: warning
+## Category: Performance
+## Tags: ["pyspark", "catalyst", "loop"]
+
+[rule]
+id = "with_column_in_loop"
+code = "BP020"
+severity = "warning"
+language = "python"
+description = ".withColumn() inside a loop causes O(n²) Catalyst plan analysis"
+suggestion = "Use .withColumns() (Spark 3.3+) or a single .select() statement"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects df.withColumn() call
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "withColumn"))
+"""
+
+
+[tests]
+pass = [
+    "df.withColumns({'a': col('a') * 2, 'b': col('b') + 1})",
+]
+fail = [
+    "df.withColumn('new', col('id') * 2)",
+]

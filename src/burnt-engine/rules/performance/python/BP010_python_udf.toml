@@ -1,0 +1,51 @@
+# BP010 - Python UDF (10-100x overhead vs Pandas UDF)
+## Rule: BP010
+## Description: Python UDF has 10-100x overhead vs Pandas UDF
+## Severity: error
+## Category: Performance
+## Tags: ["pyspark", "udf", "performance"]
+
+[rule]
+id = "python_udf"
+code = "BP010"
+severity = "error"
+language = "python"
+description = "Python UDF has 10-100x overhead vs Pandas UDF"
+suggestion = "Use @pandas_udf for vectorized operations"
+category = "BestPractice"
+
+[query]
+detect = """
+; Detects @udf decorator
+(decorator
+  (attribute
+    object: (identifier) @obj
+    attribute: (identifier) @attr)
+  (#eq? @obj "udf"))
+
+; Detects udf() function call
+(call
+  function: (identifier) @fn
+  (#eq? @fn "udf"))
+
+; Detects spark.udf.register() or similar module.udf.register() patterns
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @sub_attr)
+    attribute: (identifier) @register_fn)
+  (#eq? @module "spark")
+  (#eq? @sub_attr "udf")
+  (#eq? @register_fn "register"))
+"""
+
+
+[tests]
+pass = [
+    "@pandas_udf(StringType()) def foo(s): return s",
+]
+fail = [
+    "@udf(StringType()) def foo(s): return s",
+    "spark.udf.register(lambda x: x)",
+]

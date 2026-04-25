@@ -1,0 +1,30 @@
+[rule]
+id = "dlt_incremental_no_key"
+code = "SDP002"
+severity = "warning"
+language = "python"
+description = "SDP incremental table defined without a primary key"
+suggestion = "Add keys= parameter to @dlt.table or use APPLY CHANGES INTO"
+category = "SDP"
+tags = ["sdp", "dlt", "incremental"]
+
+[query]
+detect = """
+; Detects @dlt.table() decorator
+(decorator
+  (call
+    function: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @func)
+    (#eq? @module "dlt")
+    (#eq? @func "table")))
+"""
+
+
+[tests]
+pass = [
+    "def foo(): pass",
+]
+fail = [
+    "@dlt.table()\ndef foo(): pass",
+]

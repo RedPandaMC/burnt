@@ -1,0 +1,30 @@
+[rule]
+id = "missing_table_comment"
+code = "SDP005"
+severity = "info"
+language = "python"
+description = "SDP table missing comment metadata"
+suggestion = "Add table comment for documentation"
+category = "SDP"
+tags = ["sdp", "dlt", "documentation"]
+
+[query]
+detect = """
+; Detects @dlt.table() decorator
+(decorator
+  (call
+    function: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @func)
+    (#eq? @module "dlt")
+    (#eq? @func "table")))
+"""
+
+
+[tests]
+pass = [
+    "def foo(): pass",
+]
+fail = [
+    "@dlt.table()\ndef foo(): pass",
+]

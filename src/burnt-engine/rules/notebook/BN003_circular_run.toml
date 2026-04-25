@@ -1,0 +1,12 @@
+[rule]
+id = "circular_run"
+code = "BN003"
+severity = "error"
+language = "notebook"
+description = "Circular run directive detected - notebook would call itself"
+suggestion = "Remove the circular reference"
+category = "Notebook"
+tags = ["notebook", "structure", "correctness"]
+
+[context]
+type = "circular_run"

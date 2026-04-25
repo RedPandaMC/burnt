@@ -1,0 +1,12 @@
+[rule]
+id = "missing_zorder"
+code = "BD002"
+severity = "info"
+language = "sql"
+description = "Large Delta table missing ZORDER optimization"
+suggestion = "Add ZORDER BY on frequently filtered columns"
+category = "Delta"
+tags = ["delta", "performance", "sql"]
+
+[context]
+type = "missing_zorder"

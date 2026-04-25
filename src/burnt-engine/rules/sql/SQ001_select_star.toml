@@ -1,0 +1,42 @@
+# SQ001 - SELECT * without LIMIT (SQL context-aware)
+## Rule: SQ001
+## Description: SELECT * without LIMIT
+## Severity: warning
+## Category: SQL Quality
+## Tags: ["sql", "performance", "select-star"]
+
+[rule]
+id = "select_star"
+code = "SQ001"
+severity = "warning"
+language = "sql"
+description = "SELECT * without LIMIT"
+suggestion = "Add LIMIT or specify columns"
+category = "SqlQuality"
+
+[query]
+detect = """
+; Match SELECT * via all_fields
+(select
+  (select_expression
+    (term
+      (all_fields))))
+"""
+exclude = """
+; Exclude SELECT * when LIMIT is present anywhere in the FROM clause
+; The FROM node contains both the table and the WHERE/LIMIT clauses
+(from
+  (limit))
+"""
+
+
+[tests]
+pass = [
+    "SELECT id, name FROM users LIMIT 100",
+    "SELECT * FROM users LIMIT 100",
+    "SELECT id, name FROM users",
+]
+fail = [
+    "SELECT * FROM users",
+    "SELECT * FROM users WHERE id = 1",
+]

@@ -1,0 +1,12 @@
+[rule]
+id = "large_notebook"
+code = "BP006"
+severity = "info"
+language = "notebook"
+description = "Large notebook detected (>50 cells) - consider splitting"
+suggestion = "Split into multiple notebooks for better maintainability"
+category = "Notebook"
+tags = ["notebook", "structure", "maintainability"]
+
+[context]
+type = "large_notebook"

@@ -1,0 +1,12 @@
+[rule]
+id = "missing_cell_type"
+code = "BP005"
+severity = "info"
+language = "notebook"
+description = "Cell missing type declaration"
+suggestion = "Add cell type (python, sql, or markdown)"
+category = "Notebook"
+tags = ["notebook", "style", "structure"]
+
+[context]
+type = "missing_cell_type"

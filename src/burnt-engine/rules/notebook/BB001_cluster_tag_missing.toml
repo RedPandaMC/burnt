@@ -1,0 +1,12 @@
+[rule]
+id = "cluster_tag_missing"
+code = "BB001"
+severity = "warning"
+language = "notebook"
+description = "Cluster tag missing from notebook configuration"
+suggestion = "Add cluster tags for cost attribution"
+category = "Notebook"
+tags = ["notebook", "cost", "governance"]
+
+[context]
+type = "cluster_tag"

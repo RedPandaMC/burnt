@@ -1,0 +1,36 @@
+# SDP001 - SDP table missing data quality expectation
+## Rule: SDP001
+## Description: SDP table missing data quality expectation
+## Severity: warning
+## Category: SDP
+## Tags: ["sdp", "data-quality", "declarative"]
+
+[rule]
+id = "missing_expectation"
+code = "SDP001"
+severity = "warning"
+language = "python"
+description = "SDP table missing data quality expectation"
+suggestion = "Add @dlt.expect or @dlt.expect_all constraint"
+category = "SDP"
+
+[query]
+detect = """
+; Detects @dlt.table() decorator
+(decorator
+  (call
+    function: (attribute
+      object: (identifier) @module
+      attribute: (identifier) @func)
+    (#eq? @module "dlt")
+    (#eq? @func "table")))
+"""
+
+
+[tests]
+pass = [
+    "def foo(): pass",
+]
+fail = [
+    "@dlt.table()\ndef foo(): pass",
+]

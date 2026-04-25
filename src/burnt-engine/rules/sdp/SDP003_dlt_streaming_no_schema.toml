@@ -1,0 +1,27 @@
+[rule]
+id = "dlt_streaming_no_schema"
+code = "SDP003"
+severity = "warning"
+language = "python"
+description = "Streaming source missing explicit schema — schema inference on streams is unreliable"
+suggestion = "Pass schema= to spark.readStream or use cloudFiles with schemaLocation"
+category = "SDP"
+tags = ["sdp", "streaming", "schema"]
+
+[query]
+detect = """
+; Detect .readStream attribute access (streaming source without schema check)
+(attribute
+  object: (_) @obj
+  attribute: (identifier) @attr
+  (#eq? @attr "readStream"))
+"""
+
+
+[tests]
+pass = [
+    "spark.read.format('delta').load(path)",
+]
+fail = [
+    "spark.readStream.format('delta').load(path)",
+]

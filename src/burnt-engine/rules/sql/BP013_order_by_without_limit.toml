@@ -1,0 +1,12 @@
+[rule]
+id = "order_by_without_limit"
+code = "BP013"
+severity = "warning"
+language = "sql"
+description = "ORDER BY without LIMIT sorts the entire result set"
+suggestion = "Add LIMIT or use window functions with RANK/ROW_NUMBER"
+category = "BestPractice"
+tags = ["sql", "performance", "sort"]
+
+[context]
+type = "order_by_without_limit"

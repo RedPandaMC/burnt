@@ -1,0 +1,12 @@
+[rule]
+id = "generic_dataframe_variable_name"
+code = "BNT-N01"
+severity = "info"
+language = "python"
+description = "Variable named df/df1-df9 is too generic — hinders readability"
+suggestion = "Use a descriptive name: orders_df, customers, filtered_events"
+category = "NotebookStyle"
+tags = ["python", "style", "naming"]
+
+[context]
+type = "generic_df_name"

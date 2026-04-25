@@ -1,0 +1,12 @@
+[rule]
+id = "long_line"
+code = "BP002"
+severity = "info"
+language = "python"
+description = "Line exceeds 120 characters"
+suggestion = "Break line for readability"
+category = "BestPractice"
+tags = ["python", "style", "readability"]
+
+[context]
+type = "long_line"
