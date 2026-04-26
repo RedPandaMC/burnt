@@ -79,20 +79,37 @@ def check(
     output: str = typer.Option(
         "table", "--output", "-o", help="Output format: table|text|json"
     ),
-    ignore_rule: list[str] = typer.Option(  # noqa: B008
-        [], "--ignore-rule", help="Skip a specific rule ID (repeatable)"
+    select: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--select",
+        help="Enable rules: exact ID (BP008), prefix (BP), tag (performance), or ALL",
+    ),
+    ignore: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--ignore",
+        help="Disable rules: exact ID, prefix, or tag (repeatable)",
+    ),
+    extend_select: list[str] = typer.Option(  # noqa: B008
+        [], "--extend-select", help="Add rules on top of config select"
+    ),
+    extend_ignore: list[str] = typer.Option(  # noqa: B008
+        [], "--extend-ignore", help="Add rules to ignore on top of config ignore"
     ),
 ) -> None:
     """Check SQL/PySpark files for cost anti-patterns."""
+    from ..core.rule_filter import RuleIndex
+    from ..core.suppression import apply_suppressions, parse_suppressions
     from ..parsers.antipatterns import detect_antipatterns
 
-    # Load config, merge with CLI overrides
     _config_path, settings = Settings.discover()
-    effective_ignore = set(settings.lint.ignore) | set(ignore_rule)
+
+    try:
+        index = RuleIndex.build()
+    except ImportError:
+        index = None
 
     target = Path(path)
     if not target.exists():
-        # Treat as inline SQL if it doesn't look like a file path
         _check_inline_sql(path, console)
         raise typer.Exit(0)
 
@@ -102,7 +119,6 @@ def check(
     else:
         for ext in ("*.sql", "*.py"):
             for f in sorted(target.rglob(ext)):
-                # Apply lint.exclude globs
                 if not _is_excluded(f, settings.lint.exclude, target):
                     files_to_check.append(f)
 
@@ -113,6 +129,31 @@ def check(
     severity_levels = {"info": 1, "warning": 2, "error": 3}
     fail_threshold = severity_levels.get(fail_on.lower(), 3)
 
+    # Resolve active rule set: config + CLI overrides
+    effective_select = settings.lint.select
+    effective_extend_select = settings.lint.extend_select + list(extend_select)
+    effective_ignore = settings.lint.ignore
+    effective_extend_ignore = settings.lint.extend_ignore + list(ignore) + list(extend_ignore)
+
+    if index is not None:
+        # CLI --select overrides config select when provided
+        if select:
+            effective_select = list(select)
+            effective_extend_select = list(extend_select)
+        active_rules = index.resolve_active(
+            effective_select,
+            effective_extend_select,
+            effective_ignore,
+            effective_extend_ignore,
+        )
+    else:
+        # Fallback: exact-ID matching only
+        if settings.lint.select == ["ALL"]:
+            active_rules = frozenset(_RULE_SEVERITIES.keys())
+        else:
+            active_rules = frozenset(settings.lint.select)
+        active_rules -= frozenset(effective_extend_ignore) | frozenset(effective_ignore)
+
     all_issues: list[tuple[Path, AntiPattern]] = []
     fail_build = False
 
@@ -120,26 +161,29 @@ def check(
         source = file_path.read_text(encoding="utf-8")
         lang = "pyspark" if file_path.suffix == ".py" else "sql"
 
-        # Determine per-file ignores
-        file_ignores = set(effective_ignore)
-        for glob_pattern, rule_ids in settings.lint.per_file_ignores.items():
-            if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
-                file_path.name, glob_pattern
-            ):
-                file_ignores.update(rule_ids)
-
-        # Determine active rules
-        if settings.lint.select == ["ALL"]:
-            active_rules = set(_RULE_SEVERITIES.keys())
+        # Per-file ignores from config
+        file_active = set(active_rules)
+        if index is not None:
+            for glob_pattern, patterns in settings.lint.per_file_ignores.items():
+                if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
+                    file_path.name, glob_pattern
+                ):
+                    for p in patterns:
+                        file_active -= index.resolve_pattern(p)
         else:
-            active_rules = set(settings.lint.select)
-        active_rules -= file_ignores
+            for glob_pattern, rule_ids in settings.lint.per_file_ignores.items():
+                if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
+                    file_path.name, glob_pattern
+                ):
+                    file_active -= set(rule_ids)
 
         issues = detect_antipatterns(source, lang)
-        # Filter to active rules
-        issues = [
-            i for i in issues if i.name not in file_ignores and i.name in active_rules
-        ]
+        issues = [i for i in issues if i.name in file_active]
+
+        # Apply comment-based suppressions
+        if index is not None:
+            file_sup, line_sup, standalone = parse_suppressions(source, index)
+            issues = apply_suppressions(issues, file_sup, line_sup, standalone)
 
         for issue in issues:
             all_issues.append((file_path, issue))
@@ -298,9 +342,14 @@ def advise(
 _BURNT_TOML_TEMPLATE = """\
 [lint]
 select = ["ALL"]
-ignore = []
+ignore = []           # exact ID (BP008), prefix (BP), or tag (performance)
+extend-ignore = []
 fail-on = "error"
 exclude = []
+
+# [lint.per-file-ignores]
+# "migrations/*.sql" = ["BQ*"]
+# "notebooks/*.py" = ["style"]
 
 [cache]
 enabled = true
@@ -312,7 +361,8 @@ _PYPROJECT_BURNT_SECTION = """
 
 [tool.burnt.lint]
 select = ["ALL"]
-ignore = []
+ignore = []           # exact ID (BP008), prefix (BP), or tag (performance)
+extend-ignore = []
 fail-on = "error"
 exclude = []
 

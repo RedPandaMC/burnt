@@ -12,7 +12,9 @@ class LintSettings(BaseModel):
     """Settings for the lint / check subsystem."""
 
     select: list[str] = ["ALL"]
+    extend_select: list[str] = []
     ignore: list[str] = []
+    extend_ignore: list[str] = []
     fail_on: str = "error"  # info | warning | error
     exclude: list[str] = []
     per_file_ignores: dict[str, list[str]] = {}

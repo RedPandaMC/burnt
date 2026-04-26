@@ -12,7 +12,6 @@ class Severity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
-    STYLE = "style"
 
 
 @dataclass
@@ -41,21 +40,15 @@ def detect_antipatterns(source: str, language: str = "sql") -> list[AntiPattern]
     """
     from burnt._engine import run_rules
 
-    lang_map = {"pyspark": "python", "python": "python", "sql": "sql", "auto": "auto"}
-    rust_lang = lang_map.get(language, language)
+    lang_map = {"pyspark": "python", "python": "python", "sql": "sql"}
+    rust_lang = lang_map.get(language, language if language != "auto" else None)
 
     findings = run_rules(source, rust_lang)
-
-    def severity_to_str(s):
-        s_str = str(s).lower()
-        if "." in s_str:
-            s_str = s_str.split(".")[-1]
-        return s_str
 
     return [
         AntiPattern(
             name=f.code,
-            severity=Severity(severity_to_str(f.severity)),
+            severity=Severity(str(f.severity)),
             description=f.message,
             suggestion=f.suggestion or "",
             line_number=f.line_number,
