@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestPySparkParity:
     """Test that Rust engine correctly detects PySpark anti-patterns."""

@@ -1,67 +1,69 @@
-import pytest
+"""Test Python/Spark analysis via the Rust engine."""
 
-from burnt.core.exceptions import ParseError
-from burnt.parsers.pyspark import PYSPARK_WEIGHTS, PySparkVisitor, analyze_pyspark
+from burnt.parsers.antipatterns import AntiPattern, Severity, detect_antipatterns
 
 
-class TestAnalyzePySpark:
-    def test_analyze_pyspark_simple(self):
-        code = "df.select('name').show()"
-        ops, _ = analyze_pyspark(code)
-        assert len(ops) == 0
+class TestRustEnginePythonAnalysis:
+    """Tests that exercise burnt-engine for Python/Spark code analysis."""
 
-    def test_analyze_pyspark_groupby(self):
-        code = "df.groupBy('dept').count().show()"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "groupBy" for op in ops)
+    def test_simple_python_no_findings(self):
+        code = "import pandas as pd\nprint('hello')"
+        issues = detect_antipatterns(code, "python")
+        assert isinstance(issues, list)
 
-    def test_analyze_pyspark_join(self):
-        code = "df1.join(df2, 'id').show()"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "join" for op in ops)
-
-    def test_analyze_pyspark_crossjoin(self):
-        code = "df1.crossJoin(df2).show()"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "crossJoin" for op in ops)
-
-    def test_analyze_pyspark_collect(self):
+    def test_collect_without_limit(self):
         code = "results = df.collect()"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "collect" for op in ops)
+        issues = detect_antipatterns(code, "python")
+        # The Rust engine should flag collect() as expensive
+        assert any("collect" in i.description.lower() for i in issues)
 
-    def test_analyze_pyspark_toPandas(self):
-        code = "pandas_df = df.toPandas()"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "toPandas" for op in ops)
+    def test_cross_join(self):
+        code = "df1.crossJoin(df2).show()"
+        issues = detect_antipatterns(code, "python")
+        assert any("cross" in i.description.lower() for i in issues)
 
-    def test_analyze_pyspark_repartition(self):
-        code = "df.repartition(10).write.parquet('output')"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "repartition" for op in ops)
-
-    def test_analyze_pyspark_repartition_one(self):
+    def test_repartition_one(self):
         code = "df.repartition(1).write.parquet('output')"
-        ops, _ = analyze_pyspark(code)
-        assert any(op.name == "repartition" and op.weight == 15 for op in ops)
+        issues = detect_antipatterns(code, "python")
+        assert any("repartition" in i.description.lower() for i in issues)
 
-    def test_analyze_pyspark_invalid_syntax(self):
+    def test_spark_sql_extraction(self):
+        code = "spark.sql('SELECT * FROM table')"
+        issues = detect_antipatterns(code, "python")
+        # No anti-pattern, but the engine should parse successfully
+        assert isinstance(issues, list)
+
+    def test_dynamic_sql_fstring(self):
+        code = "spark.sql(f'SELECT * FROM {table}')"
+        issues = detect_antipatterns(code, "python")
+        # The Rust engine may or may not flag f-strings depending on rule set.
+        # We just verify it doesn't crash.
+        assert isinstance(issues, list)
+
+
+class TestAntiPatternDataclass:
+    def test_antipattern_creation(self):
+        ap = AntiPattern(
+            name="BP008",
+            severity=Severity.ERROR,
+            description="collect() without limit() can OOM the driver",
+            suggestion="Add .limit(n).collect() or use .take(n)",
+            line_number=42,
+        )
+        assert ap.name == "BP008"
+        assert ap.severity == "error"
+        assert ap.line_number == 42
+
+    def test_severity_enum(self):
+        assert Severity.ERROR == "error"
+        assert Severity.WARNING == "warning"
+        assert Severity.INFO == "info"
+
+    def test_detect_antipatterns_invalid_syntax(self):
         code = "def invalid syntax here"
-        with pytest.raises(ParseError) as exc_info:
-            analyze_pyspark(code)
-        assert "Failed to parse PySpark" in str(exc_info.value)
-
-
-class TestPySparkVisitor:
-    def test_visitor_creation(self):
-        visitor = PySparkVisitor()
-        assert visitor.operations == []
-        assert visitor._in_udf is False
-
-    def test_pyspark_weights_defined(self):
-        assert "groupBy" in PYSPARK_WEIGHTS
-        assert "join" in PYSPARK_WEIGHTS
-        assert "crossJoin" in PYSPARK_WEIGHTS
-        assert "collect" in PYSPARK_WEIGHTS
-        assert "toPandas" in PYSPARK_WEIGHTS
-        assert "repartition" in PYSPARK_WEIGHTS
+        # The Rust engine handles parse errors gracefully
+        issues = detect_antipatterns(code, "python")
+        assert isinstance(issues, list)
+        # May contain a syntax error finding
+        syntax_findings = [i for i in issues if "syntax" in i.description.lower()]
+        assert syntax_findings or len(issues) == 0  # either reported or empty

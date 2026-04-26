@@ -1,5 +1,4 @@
-
-use crate::types::{DltSignal, Finding, Provenance, PythonParseResult, SqlFragment};
+use crate::types::{Finding, Provenance, PythonParseResult, SdpSignal, SqlFragment};
 use tree_sitter::Parser;
 
 pub fn parse_python(source: &str) -> PythonParseResult {
@@ -14,16 +13,16 @@ pub fn parse_python(source: &str) -> PythonParseResult {
     let root = tree.root_node();
 
     let mut sql_fragments = Vec::new();
-    let mut dlt_signals = Vec::new();
+    let mut sdp_signals = Vec::new();
     let mut findings = Vec::new();
 
     extract_sql_fragments(source, root, &mut sql_fragments, &mut findings);
-    extract_dlt_signals(source, root, &mut dlt_signals);
+    extract_sdp_signals(source, root, &mut sdp_signals);
     extract_syntax_errors(&tree, source, &mut findings);
 
     PythonParseResult {
         sql_fragments,
-        dlt_signals,
+        sdp_signals,
         findings,
     }
 }
@@ -172,32 +171,32 @@ impl<'a> FragmentVisitor<'a> {
     }
 }
 
-fn extract_dlt_signals(source: &str, root: tree_sitter::Node, dlt_signals: &mut Vec<DltSignal>) {
-    let mut visitor = DltSignalVisitor {
+fn extract_sdp_signals(source: &str, root: tree_sitter::Node, sdp_signals: &mut Vec<SdpSignal>) {
+    let mut visitor = SdpSignalVisitor {
         source,
-        signals: dlt_signals,
+        signals: sdp_signals,
     };
     visitor.visit(&root);
 }
 
-struct DltSignalVisitor<'a> {
+struct SdpSignalVisitor<'a> {
     source: &'a str,
-    signals: &'a mut Vec<DltSignal>,
+    signals: &'a mut Vec<SdpSignal>,
 }
 
-impl<'a> DltSignalVisitor<'a> {
+impl<'a> SdpSignalVisitor<'a> {
     fn visit(&mut self, node: &tree_sitter::Node) {
         match node.kind() {
             "import_statement" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
                 if text.contains("import sdp") || text.contains("import dp") {
-                    self.signals.push(DltSignal::Import);
+                    self.signals.push(SdpSignal::Import);
                 }
             }
             "import_from_statement" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
                 if text.contains("from sdp import") || text.contains("from dp import") {
-                    self.signals.push(DltSignal::Import);
+                    self.signals.push(SdpSignal::Import);
                 }
             }
             "decorator" => {
@@ -208,9 +207,9 @@ impl<'a> DltSignalVisitor<'a> {
                 {
                     if text.contains("materialized_view") {
                         self.signals
-                            .push(DltSignal::Decorator("materialized_view".to_string()));
+                            .push(SdpSignal::Decorator("materialized_view".to_string()));
                     } else if text.contains("table") {
-                        self.signals.push(DltSignal::Decorator("table".to_string()));
+                        self.signals.push(SdpSignal::Decorator("table".to_string()));
                     }
                 }
             }
@@ -271,7 +270,7 @@ mod tests {
     #[test]
     fn test_dlt_import_detection() {
         let result = parse_python("import dlt\n@dlt.table\ndef my_table(): pass");
-        assert!(!result.dlt_signals.is_empty());
+        assert!(!result.sdp_signals.is_empty());
     }
 
     #[test]

@@ -1,33 +1,45 @@
-"""Export to various formats."""
+"""Export results to JSON and Markdown."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
 def to_json(result: Any) -> str:
-    """Export result as JSON.
+    """Render result as JSON string.
 
     Args:
-        result: CheckResult or WatchResult to export.
+        result: CheckResult to render.
 
     Returns:
         JSON string.
     """
-    raise NotImplementedError(
-        "JSON export requires burnt-engine. Install with: pip install burnt[engine]"
-    )
+    data = {
+        "file_path": getattr(result, "file_path", None),
+        "mode": getattr(result, "mode", "python"),
+        "compute_seconds": getattr(result, "compute_seconds", None),
+        "findings": [
+            {
+                "rule_id": f.rule_id,
+                "severity": f.severity,
+                "message": f.message,
+                "suggestion": f.suggestion,
+                "line_number": f.line_number,
+            }
+            for f in getattr(result, "findings", [])
+        ],
+    }
+    return json.dumps(data, indent=2)
 
 
 def to_markdown(result: Any) -> str:
-    """Export result as Markdown.
+    """Render result as Markdown string.
 
     Args:
-        result: CheckResult or WatchResult to export.
+        result: CheckResult to render.
 
     Returns:
         Markdown string.
     """
-    raise NotImplementedError(
-        "Markdown export requires burnt-engine. Install with: pip install burnt[engine]"
-    )
+    return result.to_markdown() if hasattr(result, "to_markdown") else ""

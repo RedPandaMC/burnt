@@ -39,13 +39,21 @@ class EstimationError(BurntError):
 
 
 class DatabricksConnectionError(BurntError):
-    """Raised when connection to Databricks workspace fails."""
+    """Raised when connection to Databricks workspace fails.
+
+    Deprecated: import from burnt.databricks.exceptions instead.
+    """
 
     pass
 
 
 class DatabricksQueryError(BurntError):
-    """Raised when a SQL statement execution fails on Databricks."""
+    """Raised when a SQL statement execution fails on Databricks.
+
+    Deprecated: import from burnt.databricks.exceptions instead.
+    """
+
+    pass
 
 
 class NotAvailableError(BurntError):

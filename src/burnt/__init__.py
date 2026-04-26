@@ -1,8 +1,8 @@
 """
-burnt - Pre-Orchestration FinOps & Cost Estimation for Databricks.
+burnt - Performance coach for Spark data engineers.
 
-CLI = static analysis. Zero credentials. Works offline. CI-friendly.
-Python API = runtime cost intelligence. Requires Databricks credentials for live features.
+Watches your practice runs, learns from Spark metrics,
+and tells you how to ship cheaper code.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from .core.exceptions import (
     BurntError,
     ConfigError,
     CostBudgetExceeded,
-    DatabricksConnectionError,
     EstimationError,
+    NotAvailableError,
     ParseError,
     PricingError,
 )
@@ -27,15 +27,60 @@ __all__ = [
     "ConfigError",
     "CostBudgetExceeded",
     "CostEstimate",
-    "DatabricksConnectionError",
     "EstimationError",
+    "NotAvailableError",
     "ParseError",
     "PricingError",
     "check",
     "config",
+    "start_session",
     "version",
     "watch",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Session
+# ---------------------------------------------------------------------------
+
+_SESSION: Any = None
+
+
+def start_session(
+    *,
+    capture_sql: bool = True,
+    capture_stages: bool = True,
+    capture_cells: bool = True,
+) -> None:
+    """Start listening to the active Spark session.
+
+    Registers a SparkListener to capture stage metrics, SQL execution,
+    and cell timings during your notebook session. Call this once at
+    the top of your notebook, then run your code normally.
+
+    Args:
+        capture_sql: Capture SQL query text and duration.
+        capture_stages: Capture stage-level metrics (shuffle, spill, etc.).
+        capture_cells: Capture cell execution times.
+    """
+    global _SESSION
+    from . import _session
+
+    _SESSION = _session.start(
+        capture_sql=capture_sql,
+        capture_stages=capture_stages,
+        capture_cells=capture_cells,
+    )
+
+
+def _get_session() -> Any:
+    """Return the active session state, or None."""
+    return _SESSION
+
+
+# ---------------------------------------------------------------------------
+# Check
+# ---------------------------------------------------------------------------
 
 
 def check(
@@ -49,20 +94,23 @@ def check(
     json: bool = False,
     markdown: bool = False,
 ) -> Any:
-    """Analyze a notebook, Python file, or SQL file for cost and best practices.
+    """Analyze code for cost anti-patterns and runtime performance.
+
+    Combines static analysis (Rust engine) with runtime metrics (if
+    start_session() was called) to produce actionable recommendations.
 
     Args:
         path: Path to a .py, .sql, or .ipynb file. Defaults to current directory.
-        max_cost: Exit with error if estimated cost exceeds this amount (USD).
+        max_cost: Exit with error if estimated cost exceeds this amount.
         severity: Minimum severity to report (error, warning, info).
-        skip: List of rule IDs to skip (e.g., ["BP001", "BNT-A01"]).
+        skip: List of rule IDs to skip.
         only: List of rule IDs to run (exclusive with skip).
-        cluster: Cluster config for cost estimation (DABs path or inline JSON).
+        cluster: Cluster config for cost estimation.
         json: Output results as JSON.
         markdown: Output results as Markdown.
 
     Returns:
-        CheckResult with findings, cost estimate, and graph.
+        CheckResult with findings, graph, and optional runtime metrics.
     """
     from . import _check
 
@@ -75,7 +123,13 @@ def check(
         cluster=cluster,
         json=json,
         markdown=markdown,
+        session=_SESSION,
     )
+
+
+# ---------------------------------------------------------------------------
+# Watch
+# ---------------------------------------------------------------------------
 
 
 def watch(
@@ -88,25 +142,19 @@ def watch(
     job_id: int | None = None,
     pipeline_id: str | None = None,
 ) -> Any:
-    """Monitor Databricks costs via system tables.
+    """Monitor Databricks workspace costs.
 
-    Requires Databricks connectivity. Use in notebooks or scheduled jobs.
-
-    Args:
-        tag_key: Databricks tag to group costs by (e.g., "team", "project").
-        drift_threshold: Alert if cost changes by more than this percentage.
-        idle_threshold: Alert if cluster idle time exceeds this percentage.
-        budget: Monthly budget for alerts.
-        days: Number of days to look back.
-        job_id: Filter to specific job.
-        pipeline_id: Filter to specific DLT pipeline.
-
-    Returns:
-        WatchResult with cost metrics, idle detection, and drift analysis.
+    Requires ``pip install burnt[databricks]``.
     """
-    from . import _watch
+    try:
+        from burnt.databricks.watch.core import watch as _watch_impl
+    except ImportError:
+        raise NotAvailableError(
+            "Workspace monitoring requires burnt[databricks]. "
+            "Install with: pip install burnt[databricks]"
+        ) from None
 
-    return _watch.run(
+    return _watch_impl(
         tag_key=tag_key,
         drift_threshold=drift_threshold,
         idle_threshold=idle_threshold,
@@ -115,6 +163,11 @@ def watch(
         job_id=job_id,
         pipeline_id=pipeline_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
 
 def config(
@@ -135,21 +188,6 @@ def config(
     """Configure burnt programmatically.
 
     These settings override config files but are overridden by CLI flags.
-
-    Args:
-        warehouse_id: SQL warehouse for queries.
-        billing_table: Override for system.billing.usage table.
-        skip: Rules to skip.
-        max_cost: Default max cost threshold.
-        severity: Default severity level.
-        tag_key: Default tag key for watch().
-        drift_threshold: Default drift threshold.
-        idle_threshold: Default idle threshold.
-        budget: Default budget.
-        alert_slack: Default Slack webhook URL.
-        alert_teams: Default Teams webhook URL.
-        alert_webhook: Generic webhook URL.
-        calibration_store: Where to store calibration data ("local" or "delta:...").
     """
     from . import _config
 
@@ -168,6 +206,11 @@ def config(
         alert_webhook=alert_webhook,
         calibration_store=calibration_store,
     )
+
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
 
 
 def version() -> str:

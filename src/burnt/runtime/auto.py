@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from .rest_backend import RestBackend
-
 if TYPE_CHECKING:
     from .backend import Backend
 
@@ -15,40 +13,35 @@ def auto_backend() -> Backend | None:
     """Auto-detect execution context and return appropriate backend.
 
     Detection order:
-    1. In-cluster (Databricks Runtime) - checks DATABRICKS_RUNTIME_VERSION
-    2. External with credentials - checks DATABRICKS_HOST + auth credentials
+    1. In-cluster (any Spark environment) - checks for active SparkSession
+    2. External Databricks - checks DATABRICKS_HOST + auth credentials
     3. Offline mode - returns None (static estimation only)
-
-    Environment variables used:
-    - DATABRICKS_RUNTIME_VERSION: Set when running inside Databricks
-    - DATABRICKS_HOST: Workspace URL for external access
-    - DATABRICKS_TOKEN: PAT token (legacy, not recommended)
-    - DATABRICKS_CLIENT_ID: OAuth client ID for service principals
-    - DATABRICKS_CLIENT_SECRET: OAuth client secret for service principals
 
     Returns:
         Backend instance if execution context detected, None for offline mode
     """
-    if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
-        return _create_spark_backend()
+    # Try generic Spark first
+    spark_backend = _create_spark_backend()
+    if spark_backend is not None:
+        return spark_backend
 
+    # Try Databricks REST if credentials are present
     if os.environ.get("DATABRICKS_HOST"):
         return _create_rest_backend()
 
     return None
 
 
-def _create_spark_backend() -> Backend:
+def _create_spark_backend() -> Backend | None:
     """Create SparkBackend from active SparkSession."""
-    from pyspark.sql import SparkSession
+    try:
+        from pyspark.sql import SparkSession
+    except ImportError:
+        return None
 
     spark = SparkSession.getActiveSession()
     if spark is None:
-        raise RuntimeError(
-            "No active SparkSession found. "
-            "Ensure you are running inside a Databricks notebook or "
-            "have created a SparkSession."
-        )
+        return None
 
     from .spark_backend import SparkBackend
 
@@ -57,7 +50,14 @@ def _create_spark_backend() -> Backend:
 
 def _create_rest_backend() -> Backend:
     """Create RestBackend using Databricks SDK with unified auth."""
-    from databricks.sdk import WorkspaceClient
+    try:
+        from databricks.sdk import WorkspaceClient
+        from .rest_backend import RestBackend
+    except ImportError as err:
+        raise ImportError(
+            "Databricks REST backend requires databricks-sdk. "
+            "Install with: pip install burnt[databricks]"
+        ) from err
 
     client = WorkspaceClient()
     return RestBackend(workspace_client=client)
@@ -67,8 +67,8 @@ def current_notebook_path() -> str | None:
     """Get the current notebook or script path.
 
     Detection order:
-    1. SparkConf: spark.databricks.notebook.path (most reliable in DBR)
-    2. dbutils: Notebook context (interactive notebooks)
+    1. SparkConf: spark.databricks.notebook.path (Databricks)
+    2. dbutils: Notebook context (Databricks interactive)
     3. ipynbname: Local Jupyter notebooks
     4. inspect.stack(): Python scripts
 
@@ -97,6 +97,7 @@ def _get_spark_notebook_path() -> str | None:
 
         spark = SparkSession.getActiveSession()
         if spark is not None:
+            # Databricks-specific key
             path = spark.conf.get("spark.databricks.notebook.path", None)
             if path:
                 return path
