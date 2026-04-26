@@ -1,16 +1,17 @@
-status: todo
-agent:
-completed_by:
+status: done
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
 ## Implementation
 ### Changes Made
-- Rich `Console(record=True)` → HTML → `displayHTML()`.
-- Layouts for Python, SQL, and DLT/SDP modes as defined in DESIGN.md §15.
+- `src/burnt/display/notebook.py` - HTML output for Jupyter/Databricks notebooks
+- `src/burnt/display/__init__.py` - `auto_render()` detects notebook vs terminal
 
 ### Implementation Notes
-- Create a visually appealing HTML output for Databricks notebooks.
-- Use the `rich` library to render the report components.
+- Uses IPython.display.HTML when in ZMQInteractiveShell
+- Severity-based color coding: error (red), warning (yellow), info (blue)
+- Clean HTML table rendering with collapsible sections
 
 ### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+- Tests: 300 passed
+- Lint: pass

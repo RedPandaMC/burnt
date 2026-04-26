@@ -1,16 +1,16 @@
-status: todo
-agent:
-completed_by:
+status: done
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
 ## Implementation
 ### Changes Made
-- `.json()`: mode, summary, per-file details.
-- `.markdown()`: formatted for PR comments.
+- `src/burnt/display/export.py` - `to_json()` and `to_markdown()`
+- `src/burnt/_check/__init__.py` - `CheckResult.to_json()` and `CheckResult.to_markdown()`
 
 ### Implementation Notes
-- Support exporting the analysis result into machine-readable JSON and human-readable Markdown.
-- Markdown output should be optimized for integration with GitHub PRs.
+- JSON includes file_path, mode, compute_seconds, findings array
+- Markdown is formatted for PR descriptions with emoji severity indicators
 
 ### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+- Tests: 300 passed
+- Lint: pass

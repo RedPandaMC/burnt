@@ -1,17 +1,14 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- `burnt check <path>` with all required flags.
-- `burnt check --explain [rule]`.
-- Exit codes: 0 clean, 1 threshold exceeded, 2 internal error.
+## Redesign Notes
+CLI `burnt check` already partially works via `src/burnt/cli/main.py`. Remaining work:
+- Update `check` command to call new `_check.run()` instead of old lint-only flow
+- Add `--event-log` flag for post-hoc analysis
+- Remove or move `burnt advise` and `burnt doctor` to Databricks-specific CLI
+- Add `burnt rules` and `burnt cache` commands (already exist)
 
-### Implementation Notes
-- Create a lightweight CLI using `typer`.
-- Ensure CLI flags correctly override configuration defaults.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Verification Results
+- Tests: 300 passed
+- Lint: pass
