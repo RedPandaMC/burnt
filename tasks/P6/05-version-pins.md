@@ -1,17 +1,16 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- `Cargo.lock` committed.
-- Python upper bounds.
-- Test on DBR 14.3 LTS + 15.x.
+## Redesign Notes
+Version pinning remains important:
+- `Cargo.lock` committed in repo
+- Python upper bounds in `pyproject.toml`
+- Test on multiple Python versions (3.12+)
 
-### Implementation Notes
-- Finalize all dependency pins and ensure compatibility with current Databricks Runtime (DBR) versions.
-- Prepare for a stable release.
+No longer DBR-specific since core package is generic Spark.
 
-### Verification Results
-- Tests: `pytest` on multiple DBR versions pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Verify `Cargo.lock` is committed
+- Pin Python dependency upper bounds
+- Test on clean Python 3.12 environment

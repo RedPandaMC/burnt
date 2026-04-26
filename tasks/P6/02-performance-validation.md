@@ -1,17 +1,14 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Real-notebook latency.
-- Memory profiling.
-- Fix > 3s or > 50 MB.
+## Redesign Notes
+Performance targets updated for new architecture:
+- **Static analysis latency**: < 3s for 50-cell notebook (Rust engine)
+- **Memory overhead**: < 50 MB (mostly Rust engine footprint)
+- **Listener overhead**: < 5% CPU, negligible memory
 
-### Implementation Notes
-- Final performance tuning to meet the stated targets in a production-like environment.
-- Use profiling tools to ensure memory and CPU usage is within limits.
-
-### Verification Results
-- Tests: `pytest` benchmarks pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Profile `burnt.check()` with large notebooks (static-only)
+- Measure listener overhead in running Spark sessions
+- Optimize if targets are exceeded

@@ -1,21 +1,23 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Empty notebook.
-- 100+ cells.
-- Nested `%run`.
-- Circular `%run`.
-- Every cell syntax error.
-- `.ipynb` markdown only.
-- Mixed DLT + non-DLT.
+## Redesign Notes
+Edge cases remain mostly the same, but DLT-specific cases should be tested in `burnt[databricks]` context:
 
-### Implementation Notes
-- Thoroughly test the tool against all identified edge cases.
-- Verify that the tool handles each case gracefully and as expected.
+Core edge cases:
+- Empty notebook / file
+- 100+ cells
+- Every cell syntax error
+- `.ipynb` markdown only
+- Mixed Python + SQL in single notebook
+- Dynamic SQL (f-strings)
 
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+Databricks-specific (test with extra installed):
+- Nested `%run`
+- Circular `%run`
+- DLT + non-DLT mixed notebook
+
+## Remaining Work
+- Write tests for all core edge cases
+- Separate Databricks-specific edge case tests

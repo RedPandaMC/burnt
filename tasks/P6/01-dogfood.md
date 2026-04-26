@@ -1,16 +1,16 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- 5+ real notebooks across 2+ workspaces (Python, SQL, DLT).
-- Document accuracy vs actual billing.
+## Redesign Notes
+Dogfooding now targets the new workflow:
+1. `burnt.start_session()` → run Spark code → `burnt.check()` → review findings
+2. Test across multiple environments: local pyspark, Databricks, EMR/Dataproc (if possible)
+3. Focus on actionable advice quality, not dollar accuracy
 
-### Implementation Notes
-- Test the tool with real-world Databricks workloads to verify accuracy and usability.
-- Identify and address any discrepancies between estimates and actual costs.
+Remove DLT-specific dogfooding from core — that belongs in `burnt[databricks]` testing.
 
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Run `burnt.check()` on 5+ real-world notebooks
+- Verify actionable advice is specific and correct
+- Document compute time estimates vs actual Spark metrics
