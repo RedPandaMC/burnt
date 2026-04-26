@@ -114,7 +114,7 @@ impl DltGraphBuilder {
             for child in &children {
                 if child.kind() == "block" {
                     let body_source = child.utf8_text(source.as_bytes()).unwrap_or("");
-                    let (inner_nodes, _) = self.python_builder.build_from_source(body_source);
+                    let (inner_nodes, _, _) = self.python_builder.build_from_source(body_source);
 
                     if let Some(table) = &mut self.current_table {
                         table.inner_nodes = inner_nodes;

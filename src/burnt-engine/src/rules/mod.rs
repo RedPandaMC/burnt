@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 mod context;
 mod dataflow;
+pub(crate) mod finding;
 mod notebook_queries;
 mod query;
 mod registry {
@@ -92,15 +93,7 @@ impl RulePipeline {
 
         for rule in &self.rules {
             if rule.has_context && lang_matches(&rule.language, language) {
-                let ctx_findings = context::analyze_context_for_rule(
-                    &rule.code,
-                    source,
-                    &context::ContextConfig {
-                        rule_code: rule.code.clone(),
-                        context_type: String::new(),
-                    },
-                );
-                findings.extend(ctx_findings);
+                findings.extend(context::analyze_context_for_rule(&rule.code, source));
             }
         }
 
@@ -112,7 +105,7 @@ impl RulePipeline {
 
         for rule in &self.rules {
             if rule.has_dataflow && lang_matches(&rule.language, language) {
-                findings.extend(dataflow::analyze_dataflow_for_rule(&rule.code, source));
+                findings.extend(dataflow::check_dataflow_rules(source));
             }
         }
 

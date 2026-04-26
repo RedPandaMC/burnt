@@ -22,7 +22,6 @@ pub fn parse_python(source: &str) -> PythonParseResult {
     extract_syntax_errors(&tree, source, &mut findings);
 
     PythonParseResult {
-        tree: (),
         sql_fragments,
         dlt_signals,
         findings,

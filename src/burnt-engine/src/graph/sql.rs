@@ -10,9 +10,8 @@ use crate::types::{CostEdge, CostNode, OperationKind, ScalingBehavior};
 pub struct SqlGraphBuilder {
     nodes: Vec<CostNode>,
     edges: Vec<CostEdge>,
-    node_counter: u32,
-    table_definitions: HashMap<String, String>, // table name -> node id
-    table_references: HashMap<String, Vec<String>>, // table name -> list of node ids that reference it
+    table_definitions: HashMap<String, String>,
+    table_references: HashMap<String, Vec<String>>,
 }
 
 impl SqlGraphBuilder {
@@ -20,7 +19,6 @@ impl SqlGraphBuilder {
         Self {
             nodes: Vec::new(),
             edges: Vec::new(),
-            node_counter: 0,
             table_definitions: HashMap::new(),
             table_references: HashMap::new(),
         }
@@ -321,8 +319,7 @@ impl SqlGraphBuilder {
         line: u32,
         source_code: Option<String>,
     ) -> String {
-        self.node_counter += 1;
-        let node_id = format!("sql_node_{}", self.node_counter);
+        let node_id = format!("sql_node_{}", self.nodes.len() + 1);
 
         let node = CostNode {
             id: node_id.clone(),

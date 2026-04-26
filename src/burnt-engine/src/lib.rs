@@ -13,19 +13,21 @@ use detect::detect_mode_from_source;
 use graph::{CostGraph, CostGraphPy, PipelineGraph, PipelineGraphPy};
 use ingestion::files::ingest_file;
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, PyCostEdge, PyCostNode, PyGraph, PyPipeline,
-    PyPipelineTable, RuleEntry, RuleTable,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode, PyGraph,
+    PyPipeline, PyPipelineTable, RuleEntry,
 };
 
+/// Returns the crate version string from `Cargo.toml`.
 #[pyfunction]
 fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Builds a cost/pipeline graph for `source` using auto-detected language mode.
+///
+/// Returns a `CostGraphPy` for Python/SQL input and a `PipelineGraphPy` for DLT.
 #[pyfunction]
-#[pyo3(signature = (source, language=None))]
-fn check(source: &str, language: Option<&str>) -> PyResult<PyObject> {
-    let _ = language;
+fn check(source: &str) -> PyResult<PyObject> {
     let mode = detect_mode_from_source(source);
 
     Python::with_gil(|py| match mode {
@@ -47,49 +49,64 @@ fn check(source: &str, language: Option<&str>) -> PyResult<PyObject> {
     })
 }
 
+/// Runs all applicable lint rules against `source`.
+///
+/// `language` may be `"python"`, `"sql"`, `"dlt"`, or `"auto"` / `None` for
+/// auto-detection.  Returns a list of `Finding` objects.
 #[pyfunction]
 #[pyo3(signature = (source, language=None))]
 fn run_rules(source: &str, language: Option<&str>) -> PyResult<Vec<types::Finding>> {
-    let lang = language.unwrap_or("auto");
+    let lang = match language {
+        Some("auto") | None => detect_mode_from_source(source).as_lang_str(),
+        Some(l) => l,
+    };
     rules::run(source, lang).map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
+/// Returns metadata for every rule in the registry.
 #[pyfunction]
 fn list_rules() -> Vec<RuleEntry> {
     rules::list_all()
 }
 
+/// Returns the total number of rules currently registered.
 #[pyfunction]
 pub fn get_registry_count() -> usize {
     rules::get_registry_count()
 }
 
+/// Builds a graph/pipeline for the given mode and returns it alongside any
+/// semantic findings produced during graph construction.
 fn build_graph_and_pipeline(
     mode: &AnalysisMode,
     source: &str,
-) -> PyResult<(Option<PyGraph>, Option<PyPipeline>)> {
+) -> PyResult<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>)> {
     match mode {
         AnalysisMode::Dlt => {
             let pg = PipelineGraph::from_dlt(source);
-            Ok((None, Some(PyPipeline::from_pipeline(pg))))
+            Ok((None, Some(PyPipeline::from_pipeline(pg)), Vec::new()))
         }
         AnalysisMode::Sql => {
             let cg = CostGraph::from_sql(source)?;
-            Ok((Some(PyGraph::from_cost_graph(cg)), None))
+            Ok((Some(PyGraph::from_cost_graph(cg)), None, Vec::new()))
         }
         AnalysisMode::Python => {
             let cg = CostGraph::from_python(source)?;
-            Ok((Some(PyGraph::from_cost_graph(cg)), None))
+            let sem_findings = cg.findings.clone();
+            Ok((Some(PyGraph::from_cost_graph(cg)), None, sem_findings))
         }
     }
 }
 
+/// Analyses an in-memory source string and returns a full `AnalysisResultPy`.
+///
+/// `path` is optional and used only to populate `result.path`.
 #[pyfunction]
 #[pyo3(signature = (source, path=None))]
 fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<AnalysisResultPy> {
     py.allow_threads(|| {
         let mode = detect_mode_from_source(source);
-        let findings = rules::run(source, mode.as_lang_str()).unwrap_or_default();
+        let mut findings = rules::run(source, mode.as_lang_str()).unwrap_or_default();
 
         let cell = Cell {
             kind: match mode {
@@ -103,7 +120,8 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
             origin_path: path.map(std::path::PathBuf::from),
         };
 
-        let (graph, pipeline) = build_graph_and_pipeline(&mode, source)?;
+        let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, source)?;
+        findings.extend(sem_findings);
 
         Ok(AnalysisResultPy {
             mode: mode.to_string(),
@@ -116,25 +134,35 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
     })
 }
 
-#[pyfunction]
-fn analyze_file(py: Python<'_>, path: &str) -> PyResult<AnalysisResultPy> {
-    py.allow_threads(|| {
-        let source_file = ingest_file(path).map_err(pyo3::exceptions::PyIOError::new_err)?;
-        let mode = detect_mode_from_source(&source_file.content);
-        let findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
-        let (graph, pipeline) = build_graph_and_pipeline(&mode, &source_file.content)?;
-
-        Ok(AnalysisResultPy {
-            mode: mode.to_string(),
-            graph,
-            pipeline,
-            findings,
-            cells: source_file.cells,
-            path: Some(path.to_string()),
-        })
+fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, String> {
+    let source_file = ingest_file(path).map_err(|e| e.to_string())?;
+    let mode = detect_mode_from_source(&source_file.content);
+    let mut findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
+    let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, &source_file.content)
+        .map_err(|e| e.to_string())?;
+    findings.extend(sem_findings);
+    Ok(AnalysisResultPy {
+        mode: mode.to_string(),
+        graph,
+        pipeline,
+        findings,
+        cells: source_file.cells,
+        path: Some(path.to_string()),
     })
 }
 
+/// Analyses a file on disk and returns a full `AnalysisResultPy`.
+#[pyfunction]
+fn analyze_file(py: Python<'_>, path: &str) -> PyResult<AnalysisResultPy> {
+    py.allow_threads(|| {
+        analyze_path_internal(path).map_err(pyo3::exceptions::PyIOError::new_err)
+    })
+}
+
+/// Analyses all `.py`, `.sql`, and `.ipynb` files in a directory in parallel.
+///
+/// Returns one `AnalysisResultPy` per file.  Files that fail to parse are
+/// silently skipped.
 #[pyfunction]
 fn analyze_directory(py: Python<'_>, path: &str) -> PyResult<Vec<AnalysisResultPy>> {
     py.allow_threads(|| {
@@ -167,26 +195,10 @@ fn analyze_directory(py: Python<'_>, path: &str) -> PyResult<Vec<AnalysisResultP
 
         let results: Vec<AnalysisResultPy> = entries
             .par_iter()
-            .filter_map(|path| analyze_file_internal(&path.to_string_lossy()))
+            .filter_map(|path| analyze_path_internal(&path.to_string_lossy()).ok())
             .collect();
 
         Ok(results)
-    })
-}
-
-fn analyze_file_internal(path: &str) -> Option<AnalysisResultPy> {
-    let source_file = ingest_file(path).ok()?;
-    let mode = detect_mode_from_source(&source_file.content);
-    let findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
-    let (graph, pipeline) = build_graph_and_pipeline(&mode, &source_file.content).ok()?;
-
-    Some(AnalysisResultPy {
-        mode: mode.to_string(),
-        graph,
-        pipeline,
-        findings,
-        cells: source_file.cells,
-        path: Some(path.to_string()),
     })
 }
 
@@ -214,7 +226,6 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::Severity>()?;
     m.add_class::<types::Confidence>()?;
     m.add_class::<RuleEntry>()?;
-    m.add_class::<RuleTable>()?;
     m.add_class::<AnalysisResultPy>()?;
     m.add_class::<PyGraph>()?;
     m.add_class::<PyPipeline>()?;

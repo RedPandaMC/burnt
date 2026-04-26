@@ -1,6 +1,5 @@
-#![allow(dead_code, unused)]
 use crate::parse::notebooks::{parse_file_content, FileFormat};
-use crate::types::{Cell, CellKind};
+use crate::types::Cell;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -37,7 +36,7 @@ pub fn ingest_file(path: &str) -> Result<SourceFile, String> {
     let cells: Vec<Cell> = raw_cells
         .into_iter()
         .enumerate()
-        .map(|(i, (kind, source, line_offset))| Cell {
+        .map(|(_, (kind, source, line_offset))| Cell {
             kind,
             source,
             byte_offset: 0,
@@ -54,110 +53,70 @@ pub fn ingest_file(path: &str) -> Result<SourceFile, String> {
     })
 }
 
-pub fn ingest_directory(path: &str) -> Result<Vec<SourceFile>, String> {
-    let dir = Path::new(path);
-
-    if !dir.exists() {
-        return Err(format!("Directory not found: {}", path));
-    }
-
-    if !dir.is_dir() {
-        return Err(format!("Not a directory: {}", path));
-    }
-
-    let mut files = Vec::new();
-
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("Failed to read directory {}: {}", path, e))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
-        let entry_path = entry.path();
-
-        if !entry_path.is_file() {
-            continue;
-        }
-
-        let path_str = entry_path.to_string_lossy().to_string();
-
-        if let Some(_format) = FileFormat::from_path(&path_str) {
-            match ingest_file(&path_str) {
-                Ok(sf) => files.push(sf),
-                Err(_) => continue,
-            }
-        }
-    }
-
-    Ok(files)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IngestedNotebook {
-    pub path: String,
-    pub cells: Vec<Cell>,
-    pub language: String,
-}
-
-pub fn parse_ipynb(content: &str, path: &str) -> Result<IngestedNotebook, String> {
-    #[derive(Deserialize)]
-    struct NotebookCell {
-        cell_type: String,
-        source: serde_json::Value,
-    }
-
-    #[derive(Deserialize)]
-    struct Notebook {
-        cells: Vec<NotebookCell>,
-    }
-
-    let notebook: Notebook = serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse notebook JSON: {}", e))?;
-
-    let mut cells: Vec<Cell> = Vec::new();
-    let mut line_offset: u32 = 0;
-
-    for nb_cell in notebook.cells {
-        let source = match nb_cell.source {
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-                .join(""),
-            serde_json::Value::String(s) => s,
-            _ => String::new(),
-        };
-
-        let kind = match nb_cell.cell_type.as_str() {
-            "code" => CellKind::Python,
-            "markdown" => continue,
-            "raw" => continue,
-            _ => continue,
-        };
-
-        let cell = Cell {
-            kind,
-            source: source.clone(),
-            byte_offset: 0,
-            line_offset,
-            origin_path: Some(Path::new(path).to_path_buf()),
-        };
-
-        line_offset += source.lines().count() as u32 + 1;
-        cells.push(cell);
-    }
-
-    Ok(IngestedNotebook {
-        path: path.to_string(),
-        cells,
-        language: "python".to_string(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::CellKind;
     use std::fs;
+    use std::path::Path;
     use tempfile::TempDir;
+
+    fn parse_ipynb(content: &str, path: &str) -> Result<ParsedNotebook, String> {
+        #[derive(serde::Deserialize)]
+        struct NotebookCell {
+            cell_type: String,
+            source: serde_json::Value,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Notebook {
+            cells: Vec<NotebookCell>,
+        }
+
+        let notebook: Notebook = serde_json::from_str(content)
+            .map_err(|e| format!("Failed to parse notebook JSON: {}", e))?;
+
+        let mut cells: Vec<Cell> = Vec::new();
+        let mut line_offset: u32 = 0;
+
+        for nb_cell in notebook.cells {
+            let source = match nb_cell.source {
+                serde_json::Value::Array(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(""),
+                serde_json::Value::String(s) => s,
+                _ => String::new(),
+            };
+
+            let kind = match nb_cell.cell_type.as_str() {
+                "code" => CellKind::Python,
+                _ => continue,
+            };
+
+            let cell = Cell {
+                kind,
+                source: source.clone(),
+                byte_offset: 0,
+                line_offset,
+                origin_path: Some(Path::new(path).to_path_buf()),
+            };
+
+            line_offset += source.lines().count() as u32 + 1;
+            cells.push(cell);
+        }
+
+        Ok(ParsedNotebook {
+            path: path.to_string(),
+            cells,
+        })
+    }
+
+    struct ParsedNotebook {
+        path: String,
+        cells: Vec<Cell>,
+    }
 
     #[test]
     fn test_ingest_python_file() {
@@ -215,7 +174,7 @@ mod tests {
         assert!(result.is_ok());
 
         let nb = result.unwrap();
-        assert_eq!(nb.language, "python");
+        assert_eq!(nb.path, "test.ipynb");
         assert_eq!(nb.cells.len(), 1);
         assert_eq!(nb.cells[0].source, "print('hello')\nprint('world')");
     }

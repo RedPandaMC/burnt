@@ -1,4 +1,3 @@
-use std::sync::Mutex;
 use thiserror::Error;
 use tree_sitter::{Language as TreeSitterLanguage, Parser, Query, QueryCursor};
 
@@ -15,7 +14,6 @@ pub enum QueryError {
 pub struct QueryEngine {
     python_language: TreeSitterLanguage,
     sql_language: TreeSitterLanguage,
-    parser: Mutex<Parser>,
 }
 
 impl QueryEngine {
@@ -23,7 +21,6 @@ impl QueryEngine {
         Self {
             python_language: tree_sitter_python::LANGUAGE.into(),
             sql_language: tree_sitter_sequel::LANGUAGE.into(),
-            parser: Mutex::new(Parser::new()),
         }
     }
 
@@ -38,14 +35,14 @@ impl QueryEngine {
         }
     }
 
+    /// Creates a fresh parser per call — safe for parallel use under rayon.
     pub fn parse_source(
         &self,
         source: &str,
         language: &str,
     ) -> Result<tree_sitter::Tree, QueryError> {
         let lang = self.get_language(language)?;
-        let mut parser = self.parser.lock().unwrap();
-        parser.reset();
+        let mut parser = Parser::new();
         parser
             .set_language(&lang)
             .map_err(|e| QueryError::ExecutionError(format!("Failed to set language: {}", e)))?;

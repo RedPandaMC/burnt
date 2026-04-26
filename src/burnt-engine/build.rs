@@ -16,7 +16,7 @@ fn main() {
         collect_rules_recursive(rules_dir, &mut all_rules, &mut test_cases);
     }
 
-    let registry_code = generate_registry_code(&all_rules, &test_cases);
+    let registry_code = generate_registry_code(&all_rules);
     let tests_code = generate_tests_code(&test_cases);
 
     std::fs::write(&dest_path, registry_code).expect("Failed to write registry.rs");
@@ -195,10 +195,7 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
     Some((rule_code, test_case))
 }
 
-fn generate_registry_code(
-    rules: &[String],
-    _tests: &[(String, String, Vec<String>, Vec<String>)],
-) -> String {
+fn generate_registry_code(rules: &[String]) -> String {
     let rules_list = rules.join(",\n");
 
     format!(

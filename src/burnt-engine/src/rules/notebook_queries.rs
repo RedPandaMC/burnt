@@ -2,7 +2,6 @@ use crate::rules::query::QueryEngine;
 use crate::types::{CellKind, Confidence, Finding, Severity};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tree_sitter::{Node, Tree};
 
 pub struct NotebookQueryEngine {
     query_engine: QueryEngine,

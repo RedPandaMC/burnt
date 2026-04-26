@@ -1,77 +1,40 @@
-use crate::types::Finding;
-use std::collections::HashSet;
+use crate::types::{Confidence, Finding, Severity};
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
-pub struct ContextAnalyzer {
-    in_loop: bool,
-    loop_depth: u32,
-    in_sdp_context: bool,
-    generic_df_names: HashSet<String>,
-    star_imports: Vec<(String, u32)>,
+use super::finding::make_finding;
+
+type ContextFn = fn(&str) -> Vec<Finding>;
+
+static DISPATCH: OnceLock<HashMap<&'static str, ContextFn>> = OnceLock::new();
+
+fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
+    DISPATCH.get_or_init(|| {
+        let mut m: HashMap<&'static str, ContextFn> = HashMap::new();
+        m.insert("BP001", check_cell_no_comment);
+        m.insert("BP002", check_long_line);
+        m.insert("BP003", check_magic_in_plain);
+        m.insert("BP004", check_deprecated_magic);
+        m.insert("BP020", check_with_column_in_loop);
+        m.insert("BP021", check_jdbc_partition);
+        m.insert("BP022", check_sdp_prohibited_ops);
+        m.insert("BP023", check_window_without_partition);
+        m.insert("BNT-I01", check_star_import_pyspark);
+        m.insert("BNT-C01", check_df_bracket_reference);
+        m.insert("BNT-N01", check_generic_df_name_var);
+        m.insert("DLT004", check_materialized_view_incremental);
+        m.insert("BD001", check_vacuum_frequency);
+        m.insert("BQ003", check_count_distinct_at_scale);
+        m.insert("BQ004", check_correlated_subquery);
+        m
+    })
 }
 
-impl ContextAnalyzer {
-    pub fn new() -> Self {
-        Self {
-            in_loop: false,
-            loop_depth: 0,
-            in_sdp_context: false,
-            generic_df_names: HashSet::new(),
-            star_imports: Vec::new(),
-        }
-    }
-
-    pub fn check_with_column_in_loop(&self) -> bool {
-        self.in_loop && self.loop_depth > 0
-    }
-
-    pub fn check_generic_df_name(&self, name: &str) -> bool {
-        let name_lower = name.to_lowercase();
-        name_lower == "df"
-            || name_lower.starts_with("df")
-                && name_lower.chars().skip(2).all(|c| c.is_ascii_digit())
-    }
-
-    pub fn check_star_import(&self, module: &str) -> bool {
-        module == "pyspark.sql.functions"
-    }
-}
-
-impl Default for ContextAnalyzer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub fn analyze_context_for_rule(
-    rule_code: &str,
-    source: &str,
-    _context_config: &ContextConfig,
-) -> Vec<Finding> {
-    match rule_code {
-        "BP020" => check_with_column_in_loop(source),
-        "BP021" => check_jdbc_partition(source),
-        "BP022" => check_sdp_prohibited_ops(source),
-        "BP023" => check_window_without_partition(source),
-        "BNT-I01" => check_star_import_pyspark(source),
-        "BNT-C01" => check_df_bracket_reference(source),
-        "BNT-N01" => check_generic_df_name_var(source),
-        "DLT004" => check_materialized_view_incremental(source),
-        "BD001" => check_vacuum_frequency(source),
-        "BQ003" => check_count_distinct_at_scale(source),
-        "BQ004" => check_correlated_subquery(source),
-        "SQ001" | "SQ002" | "SQ003" => vec![],
-        "BP001" => check_cell_no_comment(source),
-        "BP002" => check_long_line(source),
-        "BP003" => check_magic_in_plain(source),
-        "BP004" => check_deprecated_magic(source),
-        _ => vec![],
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ContextConfig {
-    pub rule_code: String,
-    pub context_type: String,
+pub fn analyze_context_for_rule(rule_code: &str, source: &str) -> Vec<Finding> {
+    get_dispatch()
+        .get(rule_code)
+        .map(|f| f(source))
+        .unwrap_or_default()
 }
 
 fn check_with_column_in_loop(source: &str) -> Vec<Finding> {
@@ -88,19 +51,14 @@ fn check_with_column_in_loop(source: &str) -> Vec<Finding> {
         } else if in_for_loop
             && (trimmed.starts_with("withColumn") || trimmed.contains(".withColumn("))
         {
-            findings.push(Finding {
-                rule_id: "BP020".to_string(),
-                code: "BP020".to_string(),
-                severity: crate::types::Severity::Warning,
-                message: ".withColumn() inside a loop causes O(n²) Catalyst plan analysis"
-                    .to_string(),
-                suggestion: Some(
-                    "Use .withColumns() (Spark 3.3+) or a single .select() statement".to_string(),
-                ),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::High,
-            });
+            findings.push(make_finding(
+                "BP020",
+                Severity::Warning,
+                ".withColumn() inside a loop causes O(n²) Catalyst plan analysis",
+                "Use .withColumns() (Spark 3.3+) or a single .select() statement",
+                (i + 1) as u32,
+                Confidence::High,
+            ));
         } else if trimmed == ")" || trimmed.starts_with("for ") {
             in_for_loop = false;
         }
@@ -122,21 +80,14 @@ fn check_jdbc_partition(source: &str) -> Vec<Finding> {
         && !has_partition_options
         && (source.contains(".read(") || source.contains("spark.read"))
     {
-        findings.push(Finding {
-            rule_id: "BP021".to_string(),
-            code: "BP021".to_string(),
-            severity: crate::types::Severity::Error,
-            message:
-                "JDBC read missing required partition options — reads entire table on single thread"
-                    .to_string(),
-            suggestion: Some(
-                "Add partitionColumn, numPartitions, lowerBound, and upperBound options"
-                    .to_string(),
-            ),
-            line_number: Some(1),
-            column: None,
-            confidence: crate::types::Confidence::High,
-        });
+        findings.push(make_finding(
+            "BP021",
+            Severity::Error,
+            "JDBC read missing required partition options — reads entire table on single thread",
+            "Add partitionColumn, numPartitions, lowerBound, and upperBound options",
+            1,
+            Confidence::High,
+        ));
     }
 
     findings
@@ -153,16 +104,17 @@ fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
         if trimmed.contains("@dlt.") || trimmed.contains("dlt.") {
             for op in &prohibited {
                 if trimmed.contains(&format!(".{}(", op)) {
-                    findings.push(Finding {
-                        rule_id: "BP022".to_string(),
-                        code: "BP022".to_string(),
-                        severity: crate::types::Severity::Error,
-                        message: format!("Prohibited operation (.{}()) inside Spark Declarative Pipeline function", op),
-                        suggestion: Some("Remove this operation from SDP pipeline code".to_string()),
-                        line_number: Some((i + 1) as u32),
-                        column: None,
-                        confidence: crate::types::Confidence::High,
-                    });
+                    findings.push(make_finding(
+                        "BP022",
+                        Severity::Error,
+                        &format!(
+                            "Prohibited operation (.{}()) inside Spark Declarative Pipeline function",
+                            op
+                        ),
+                        "Remove this operation from SDP pipeline code",
+                        (i + 1) as u32,
+                        Confidence::High,
+                    ));
                 }
             }
         }
@@ -174,22 +126,20 @@ fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
 fn check_window_without_partition(source: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let has_window_order = source.contains("Window.orderBy") || source.contains("Window.order_by");
-    let has_partition_by = source.contains(".partitionBy(") || source.contains(".partition_by(");
+    let has_window_order =
+        source.contains("Window.orderBy") || source.contains("Window.order_by");
+    let has_partition_by =
+        source.contains(".partitionBy(") || source.contains(".partition_by(");
 
     if has_window_order && !has_partition_by {
-        findings.push(Finding {
-            rule_id: "BP023".to_string(),
-            code: "BP023".to_string(),
-            severity: crate::types::Severity::Warning,
-            message: "Window.orderBy() without .partitionBy() causes global sort".to_string(),
-            suggestion: Some(
-                "Add .partitionBy() before .orderBy() or use .orderBy().limit()".to_string(),
-            ),
-            line_number: Some(1),
-            column: None,
-            confidence: crate::types::Confidence::High,
-        });
+        findings.push(make_finding(
+            "BP023",
+            Severity::Warning,
+            "Window.orderBy() without .partitionBy() causes global sort",
+            "Add .partitionBy() before .orderBy() or use .orderBy().limit()",
+            1,
+            Confidence::High,
+        ));
     }
 
     findings
@@ -202,16 +152,14 @@ fn check_star_import_pyspark(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.contains("from pyspark.sql.functions import *") {
-            findings.push(Finding {
-                rule_id: "BNT-I01".to_string(),
-                code: "BNT-I01".to_string(),
-                severity: crate::types::Severity::Error,
-                message: "from pyspark.sql.functions import * shadows Python built-ins (max, min, sum, map, round)".to_string(),
-                suggestion: Some("Use: from pyspark.sql import functions as F".to_string()),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::High,
-            });
+            findings.push(make_finding(
+                "BNT-I01",
+                Severity::Error,
+                "from pyspark.sql.functions import * shadows Python built-ins (max, min, sum, map, round)",
+                "Use: from pyspark.sql import functions as F",
+                (i + 1) as u32,
+                Confidence::High,
+            ));
         }
     }
 
@@ -229,16 +177,14 @@ fn check_df_bracket_reference(source: &str) -> Vec<Finding> {
             && !trimmed.contains("F.col")
             && !trimmed.contains("col(")
         {
-            findings.push(Finding {
-                rule_id: "BNT-C01".to_string(),
-                code: "BNT-C01".to_string(),
-                severity: crate::types::Severity::Warning,
-                message: "df['col'] or df.col outside a join can cause stale reference bugs after withColumn".to_string(),
-                suggestion: Some("Use F.col('col') which resolves at evaluation time".to_string()),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::Medium,
-            });
+            findings.push(make_finding(
+                "BNT-C01",
+                Severity::Warning,
+                "df['col'] or df.col outside a join can cause stale reference bugs after withColumn",
+                "Use F.col('col') which resolves at evaluation time",
+                (i + 1) as u32,
+                Confidence::Medium,
+            ));
         }
     }
 
@@ -275,21 +221,17 @@ fn check_generic_df_name_var(source: &str) -> Vec<Finding> {
                     && var_name.chars().skip(2).all(|c| c.is_ascii_digit()));
 
             if is_generic_df {
-                findings.push(Finding {
-                    rule_id: "BNT-N01".to_string(),
-                    code: "BNT-N01".to_string(),
-                    severity: crate::types::Severity::Info,
-                    message: format!(
+                findings.push(make_finding(
+                    "BNT-N01",
+                    Severity::Info,
+                    &format!(
                         "Variable named '{}' is too generic — hinders readability",
                         var_name
                     ),
-                    suggestion: Some(
-                        "Use a descriptive name: orders_df, customers, filtered_events".to_string(),
-                    ),
-                    line_number: Some((i + 1) as u32),
-                    column: None,
-                    confidence: crate::types::Confidence::Low,
-                });
+                    "Use a descriptive name: orders_df, customers, filtered_events",
+                    (i + 1) as u32,
+                    Confidence::Low,
+                ));
             }
         }
     }
@@ -304,18 +246,14 @@ fn check_materialized_view_incremental(source: &str) -> Vec<Finding> {
     let has_incremental = source.contains("incremental") || source.contains("stream");
 
     if has_dlt_table && !has_incremental {
-        findings.push(Finding {
-            rule_id: "DLT004".to_string(),
-            code: "DLT004".to_string(),
-            severity: crate::types::Severity::Warning,
-            message: "Materialized view defined without incremental strategy".to_string(),
-            suggestion: Some(
-                "Consider incremental materialized view for large datasets".to_string(),
-            ),
-            line_number: Some(1),
-            column: None,
-            confidence: crate::types::Confidence::Medium,
-        });
+        findings.push(make_finding(
+            "DLT004",
+            Severity::Warning,
+            "Materialized view defined without incremental strategy",
+            "Consider incremental materialized view for large datasets",
+            1,
+            Confidence::Medium,
+        ));
     }
 
     findings
@@ -328,18 +266,14 @@ fn check_vacuum_frequency(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim().to_uppercase();
         if trimmed.contains("VACUUM") {
-            findings.push(Finding {
-                rule_id: "BD001".to_string(),
-                code: "BD001".to_string(),
-                severity: crate::types::Severity::Warning,
-                message: "VACUUM called more frequently than needed".to_string(),
-                suggestion: Some(
-                    "Adjust vacuum retention based on table size and update frequency".to_string(),
-                ),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::Low,
-            });
+            findings.push(make_finding(
+                "BD001",
+                Severity::Warning,
+                "VACUUM called more frequently than needed",
+                "Adjust vacuum retention based on table size and update frequency",
+                (i + 1) as u32,
+                Confidence::Low,
+            ));
         }
     }
 
@@ -353,16 +287,14 @@ fn check_count_distinct_at_scale(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim().to_uppercase();
         if trimmed.contains("COUNT(DISTINCT") {
-            findings.push(Finding {
-                rule_id: "BQ003".to_string(),
-                code: "BQ003".to_string(),
-                severity: crate::types::Severity::Info,
-                message: "COUNT(DISTINCT col) requires full shuffle and sort — expensive at scale".to_string(),
-                suggestion: Some("Consider approx_count_distinct() for large datasets where exact count is not required".to_string()),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::Medium,
-            });
+            findings.push(make_finding(
+                "BQ003",
+                Severity::Info,
+                "COUNT(DISTINCT col) requires full shuffle and sort — expensive at scale",
+                "Consider approx_count_distinct() for large datasets where exact count is not required",
+                (i + 1) as u32,
+                Confidence::Medium,
+            ));
         }
     }
 
@@ -376,18 +308,14 @@ fn check_correlated_subquery(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim().to_uppercase();
         if trimmed.contains("NOT IN") && trimmed.contains("SELECT") {
-            findings.push(Finding {
-                rule_id: "BQ004".to_string(),
-                code: "BQ004".to_string(),
-                severity: crate::types::Severity::Error,
-                message: "NOT IN (subquery) with NULLs silently returns empty result".to_string(),
-                suggestion: Some(
-                    "Use NOT EXISTS or add WHERE col IS NOT NULL to the subquery".to_string(),
-                ),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::High,
-            });
+            findings.push(make_finding(
+                "BQ004",
+                Severity::Error,
+                "NOT IN (subquery) with NULLs silently returns empty result",
+                "Use NOT EXISTS or add WHERE col IS NOT NULL to the subquery",
+                (i + 1) as u32,
+                Confidence::High,
+            ));
         }
     }
 
@@ -409,16 +337,14 @@ fn check_cell_no_comment(source: &str) -> Vec<Finding> {
         for marker in &cell_markers {
             if trimmed.starts_with(marker) {
                 if in_cell && !has_comment && cell_start_line < i {
-                    findings.push(Finding {
-                        rule_id: "BP001".to_string(),
-                        code: "BP001".to_string(),
-                        severity: crate::types::Severity::Info,
-                        message: "Cell has no comments".to_string(),
-                        suggestion: Some("Add comments for clarity".to_string()),
-                        line_number: Some((cell_start_line + 1) as u32),
-                        column: None,
-                        confidence: crate::types::Confidence::Low,
-                    });
+                    findings.push(make_finding(
+                        "BP001",
+                        Severity::Info,
+                        "Cell has no comments",
+                        "Add comments for clarity",
+                        (cell_start_line + 1) as u32,
+                        Confidence::Low,
+                    ));
                 }
                 in_cell = true;
                 cell_start_line = i;
@@ -445,12 +371,12 @@ fn check_long_line(source: &str) -> Vec<Finding> {
             findings.push(Finding {
                 rule_id: "BP002".to_string(),
                 code: "BP002".to_string(),
-                severity: crate::types::Severity::Info,
+                severity: Severity::Info,
                 message: format!("Line exceeds {} characters", max_line_length),
                 suggestion: Some("Break line for readability".to_string()),
                 line_number: Some((i + 1) as u32),
                 column: Some(max_line_length as u32),
-                confidence: crate::types::Confidence::High,
+                confidence: Confidence::High,
             });
         }
     }
@@ -465,16 +391,14 @@ fn check_magic_in_plain(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.starts_with("# MAGIC") {
-            findings.push(Finding {
-                rule_id: "BP003".to_string(),
-                code: "BP003".to_string(),
-                severity: crate::types::Severity::Warning,
-                message: "Databricks magic (# MAGIC) in plain Python file".to_string(),
-                suggestion: Some("Remove magic or use .py (Databricks) extension".to_string()),
-                line_number: Some((i + 1) as u32),
-                column: None,
-                confidence: crate::types::Confidence::High,
-            });
+            findings.push(make_finding(
+                "BP003",
+                Severity::Warning,
+                "Databricks magic (# MAGIC) in plain Python file",
+                "Remove magic or use .py (Databricks) extension",
+                (i + 1) as u32,
+                Confidence::High,
+            ));
         }
     }
 
@@ -489,24 +413,21 @@ fn check_deprecated_magic(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.starts_with("# MAGIC") {
-            let magic_len = "# MAGIC".len();
-            let after_magic = trimmed[magic_len..].trim();
+            let after_magic = trimmed["# MAGIC".len()..].trim();
             if !after_magic.is_empty() {
                 let first_cmd = after_magic.split_whitespace().next().unwrap_or("");
                 if deprecated_commands.contains(&first_cmd) {
-                    findings.push(Finding {
-                        rule_id: "BP004".to_string(),
-                        code: "BP004".to_string(),
-                        severity: crate::types::Severity::Warning,
-                        message: format!(
+                    findings.push(make_finding(
+                        "BP004",
+                        Severity::Warning,
+                        &format!(
                             "Deprecated Databricks magic syntax used: # MAGIC {}",
                             first_cmd
                         ),
-                        suggestion: Some("Use new-style magic format".to_string()),
-                        line_number: Some((i + 1) as u32),
-                        column: None,
-                        confidence: crate::types::Confidence::High,
-                    });
+                        "Use new-style magic format",
+                        (i + 1) as u32,
+                        Confidence::High,
+                    ));
                 }
             }
         }
@@ -575,11 +496,6 @@ df1 = df.filter(col("id") > 10)
     fn test_deprecated_magic() {
         let source = "# MAGIC run some_command\n";
         let findings = check_deprecated_magic(source);
-        eprintln!(
-            "DEBUG deprecated_magic: source={:?}, findings.len={}",
-            source,
-            findings.len()
-        );
         assert!(!findings.is_empty());
         assert_eq!(findings[0].code, "BP004");
     }
@@ -588,12 +504,44 @@ df1 = df.filter(col("id") > 10)
     fn test_deprecated_magic_sql() {
         let source = "# MAGIC sql SELECT * FROM table\n";
         let findings = check_deprecated_magic(source);
-        eprintln!(
-            "DEBUG deprecated_magic_sql: source={:?}, findings.len={}",
-            source,
-            findings.len()
-        );
         assert!(!findings.is_empty());
         assert_eq!(findings[0].code, "BP004");
+    }
+
+    #[test]
+    fn test_bp001_dispatched() {
+        let findings = analyze_context_for_rule("BP001", "# cell\nsome_code()\n");
+        // BP001 fires when a cell has no comment — "some_code()" is not a comment
+        // The check needs two cells to trigger (it reports on close of a comment-less cell)
+        // Just verify dispatch doesn't panic and returns a Vec
+        let _ = findings;
+    }
+
+    #[test]
+    fn test_bp002_dispatched() {
+        let long_line = "x".repeat(130);
+        let findings = analyze_context_for_rule("BP002", &long_line);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP002");
+    }
+
+    #[test]
+    fn test_bp003_dispatched() {
+        let findings = analyze_context_for_rule("BP003", "# MAGIC run cmd\n");
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP003");
+    }
+
+    #[test]
+    fn test_bp004_dispatched() {
+        let findings = analyze_context_for_rule("BP004", "# MAGIC sql SELECT 1\n");
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].code, "BP004");
+    }
+
+    #[test]
+    fn test_unknown_rule_returns_empty() {
+        let findings = analyze_context_for_rule("UNKNOWN999", "some source");
+        assert!(findings.is_empty());
     }
 }

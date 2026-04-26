@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::types::{CostEdge, CostNode, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
+use crate::types::{CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
 
 pub mod dlt;
 pub mod python;
@@ -14,6 +14,8 @@ use sql::SqlGraphBuilder;
 pub struct CostGraph {
     pub nodes: Vec<CostNode>,
     pub edges: Vec<CostEdge>,
+    /// Semantic findings (e.g. shadow-variable warnings) from graph construction.
+    pub findings: Vec<Finding>,
     pub mode: String,
     pub confidence: String,
 }
@@ -21,11 +23,12 @@ pub struct CostGraph {
 impl CostGraph {
     pub fn from_python(source: &str) -> Result<Self, PyErr> {
         let mut builder = PythonGraphBuilder::new();
-        let (nodes, edges) = builder.build_from_source(source);
+        let (nodes, edges, findings) = builder.build_from_source(source);
 
         Ok(CostGraph {
             nodes,
             edges,
+            findings,
             mode: "python".to_string(),
             confidence: "low".to_string(),
         })
@@ -38,6 +41,7 @@ impl CostGraph {
         Ok(CostGraph {
             nodes,
             edges,
+            findings: Vec::new(),
             mode: "sql".to_string(),
             confidence: "low".to_string(),
         })
