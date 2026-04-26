@@ -1,19 +1,13 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- DESCRIBE DETAIL → `estimated_input_bytes`.
-- Partition pruning.
-- DESCRIBE HISTORY → growth rate.
-- Cache TTL 5min.
-- Missing tables → skip.
+## Redesign Notes
+This task is being redesigned for the new architecture:
+- Delta enrichment is now a Databricks-specific feature
+- It should be implemented in `burnt/databricks/` namespace, not core
+- Generic Spark users can use runtime listener data instead
 
-### Implementation Notes
-- Fetch table statistics from Databricks to enrich the analysis graph with data sizes.
-- Handle partition pruning logic to refine input size estimates.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Move delta enrichment to `burnt/databricks/enrich.py`
+- Implement DESCRIBE DETAIL enrichment via DatabricksBackend

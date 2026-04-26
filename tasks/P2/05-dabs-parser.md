@@ -1,17 +1,6 @@
-status: todo
-agent:
-completed_by:
+status: cancelled
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- `databricks.yml` → ClusterConfig (jobs) and PipelineConfig (DLT).
-- Target overrides.
-- Notebook-to-job matching by path.
-
-### Implementation Notes
-- Support reading Databricks Asset Bundle configuration for better cost estimation of scheduled jobs.
-- Map bundle-defined clusters to analysis targets.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Cancellation Reason
+Databricks Asset Bundle (DAB) parsing is Databricks-specific and out of scope for the generic Spark-first architecture. If needed, this feature should be implemented in the `burnt[databricks]` optional module.

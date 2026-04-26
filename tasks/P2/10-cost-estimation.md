@@ -1,16 +1,17 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Python/SQL: topological walk, per-node cost, infrastructure, TCO.
-- DLT: per-table walk, batch/full models, 1.12× overhead, tier rates.
+## Redesign Notes
+This task is being redesigned for the new architecture:
+- Cost estimation now focuses on **compute seconds** (not dollars)
+- Topological graph walk is already implemented in Rust engine
+- Python layer should:
+  1. Merge runtime listener metrics with graph nodes
+  2. Apply scaling functions to produce compute-time estimates for unobserved nodes
+  3. Let backends (optional) map compute seconds to dollar amounts
 
-### Implementation Notes
-- Orchestrate the cost estimation by traversing the graph and applying scaling functions.
-- Combine operation-level costs with infrastructure (VM) costs.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Implement `graph/estimate.py` to merge runtime data with graph nodes
+- Map observed stage metrics to CostNode IDs
+- Fall back to scaling functions for nodes without runtime data

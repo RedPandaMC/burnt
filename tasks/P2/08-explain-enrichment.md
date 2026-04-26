@@ -1,17 +1,13 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Notebook only.
-- EXPLAIN → `estimated_output_bytes`.
-- Skip in REST mode.
+## Redesign Notes
+This task is being redesigned for the new architecture:
+- EXPLAIN parsing in `src/burnt/parsers/explain.py` already exists and is mostly generic Spark
+- It should be verified to work with standard Spark EXPLAIN output (not just Databricks EXPLAIN COST)
+- Runtime listener provides actual stage metrics, reducing dependence on EXPLAIN estimates
 
-### Implementation Notes
-- Use Spark's EXPLAIN command to get internal row/byte estimates when available.
-- Handle cases where EXPLAIN fails or provides limited information.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Verify explain.py works with standard Spark `EXPLAIN EXTENDED` output
+- Integrate explain.py into the hybrid check() flow when runtime data is unavailable

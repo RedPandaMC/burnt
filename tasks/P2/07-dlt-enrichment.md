@@ -1,18 +1,8 @@
-status: todo
-agent:
-completed_by:
+status: cancelled
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Pipelines API → PipelineConfig.
-- `pipeline_event_log` → per-table metrics.
-- Streaming batch sizes.
-- Graceful when unavailable.
+## Cancellation Reason
+DLT (Delta Live Tables) is a Databricks-only feature. PipelineGraph support in the Rust engine should remain for Databricks users, but DLT enrichment via Pipelines API is out of scope for the generic Spark-first architecture.
 
-### Implementation Notes
-- Use the Pipelines API to retrieve runtime metrics for DLT pipelines.
-- Integrate these metrics into the PipelineGraph.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+The Rust engine already builds PipelineGraph for DLT code; Databricks-specific enrichment should live in `burnt[databricks]`.
