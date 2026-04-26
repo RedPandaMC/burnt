@@ -12,14 +12,14 @@ dependencies = [
     "rich>=13.0,<14",
     "pyyaml>=6.0,<7",
     "requests>=2.32,<3",
-    "databricks-sdk>=0.50,<1",
     "tabulate>=0.9,<1",
 ]
 
 [project.optional-dependencies]
 sql = ["sqlglot>=26.0,<27"]
 alerts = ["slack-sdk>=3.0,<4"]
-all = ["burnt[sql,alerts]"]
+databricks = ["databricks-sdk>=0.50,<1"]
+all = ["burnt[sql,alerts,databricks]"]
 
 [project.scripts]
 burnt = "burnt.cli.main:app"

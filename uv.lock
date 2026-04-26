@@ -66,7 +66,6 @@ name = "burnt"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "databricks-sdk" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -81,8 +80,12 @@ alerts = [
     { name = "slack-sdk" },
 ]
 all = [
+    { name = "databricks-sdk" },
     { name = "slack-sdk" },
     { name = "sqlglot" },
+]
+databricks = [
+    { name = "databricks-sdk" },
 ]
 sql = [
     { name = "sqlglot" },
@@ -112,8 +115,8 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "burnt", extras = ["sql", "alerts"], marker = "extra == 'all'" },
-    { name = "databricks-sdk", specifier = ">=0.50,<1" },
+    { name = "burnt", extras = ["sql", "alerts", "databricks"], marker = "extra == 'all'" },
+    { name = "databricks-sdk", marker = "extra == 'databricks'", specifier = ">=0.50,<1" },
     { name = "pydantic", specifier = ">=2.0,<3" },
     { name = "pydantic-settings", specifier = ">=2.0,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
@@ -124,7 +127,7 @@ requires-dist = [
     { name = "tabulate", specifier = ">=0.9,<1" },
     { name = "typer", specifier = ">=0.15,<1" },
 ]
-provides-extras = ["sql", "alerts", "all"]
+provides-extras = ["sql", "alerts", "databricks", "all"]
 
 [package.metadata.requires-dev]
 dev = [
