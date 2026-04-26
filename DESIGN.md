@@ -190,7 +190,7 @@ Rules are organized by **category** (not tiers) for user-facing clarity:
 
 | Tier | Implementation | Description |
 |------|----------------|-------------|
-| **Tier 1** | TOML + CPL/tree-sitter | Simple pattern matching, no Rust required |
+| **Tier 1** | TOML + tree-sitter S-expressions | Simple pattern matching, no Rust required |
 | **Tier 2** | TOML + Rust context | Loop detection, naming patterns, chain context |
 | **Tier 3** | TOML + Rust dataflow | Cross-cell binding analysis, cache lifecycle |
 
@@ -210,24 +210,22 @@ category = "Performance"
 tier = 1
 
 [query]
-# CPL pattern (preferred) or raw tree-sitter
-cpl_detect = """
-$df.collect()
-$method == "collect"
+detect = """
+(call
+  function: (attribute
+    object: (_) @df
+    attribute: (identifier) @method)
+  (#eq? @method "collect"))
 """
 ```
 
-### CPL Syntax
+The `detect` field is a raw tree-sitter S-expression query.  An optional
+`exclude` field acts as a negative pattern — if it matches anywhere in the same
+source the rule is suppressed.
 
-Cinder Pattern Language (CPL) provides human-readable syntax for tree-sitter patterns:
-
-```
-$df.collect()                          # Capture method chain
-SELECT * FROM $tbl                    # SQL patterns
-$method == "collect"                  # Predicate: exact match
-$cmd =~ "^(run|sql)$"                # Predicate: regex match
-$var != "forbidden"                   # Predicate: negation
-```
+> **CPL (Cinder Pattern Language)** — a proposed human-readable rule DSL —
+> is a post-v2.0 item.  TOML rules currently use tree-sitter S-expressions
+> directly.
 
 ### Execution
 

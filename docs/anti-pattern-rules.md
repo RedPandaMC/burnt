@@ -4,537 +4,673 @@
 detecting patterns that cause excessive DBU consumption, driver OOM, or
 non-deterministic pipeline behaviour.
 
----
+The engine operates in three tiers:
 
-## How It Works
-
-- **SQL files** (`.sql`): parsed with [sqlglot](https://sqlglot.com/) for structural analysis
-- **PySpark files** (`.py`): parsed with Python's `ast` module; method chains and decorator patterns are walked via a custom `NodeVisitor`
-- **Language detection**: automatic from file extension (`.py` → `pyspark`, `.sql` → `sql`)
+- **Tier 1 — Pattern rules**: tree-sitter AST queries; fast, structural matches.
+- **Tier 2 — Context rules**: loop detection, naming patterns, flow analysis.
+- **Tier 3 — Dataflow rules**: cross-statement cache lifecycle and reuse tracking.
 
 ---
 
 ## Severity Levels
 
-| Level | Symbol | Meaning |
-|-------|--------|---------|
-| `error` | `✗` | High-impact pattern; fails CI when `fail-on = "error"` (default) |
-| `warning` | `⚠` | Important but not always blocking |
-| `info` | `ℹ` | Low-signal advisory |
+| Level | Meaning |
+|-------|---------|
+| `error` | High-impact; fails CI when `fail-on = "error"` (default) |
+| `warning` | Important but not always blocking |
+| `info` | Low-signal advisory |
 
 ---
 
-## Registered Rules
+## Rule Index
 
-The 12 rules below are active by default (`select = ["ALL"]`) and can be
-individually toggled via `burnt rules`, `--ignore-rule`, or the `ignore` config key.
+43 rules are active by default (`select = ["ALL"]`).
 
----
-
-### `cross_join`
-
-| | |
-|---|---|
-| **Severity** | `warning` |
-| **Language** | SQL |
-
-Detects an explicit `CROSS JOIN` in the query AST.
-
-A cross join produces O(n × m) output rows. On large tables this exhausts
-shuffle memory and causes spill or OOM.
-
-```sql
--- flagged
-SELECT a.id, b.value FROM orders a CROSS JOIN products b
-```
-
-```sql
--- fixed
-SELECT a.id, b.value FROM orders a INNER JOIN products b ON a.product_id = b.id
-```
-
-*Suggestion: Use INNER JOIN with explicit ON clause*
-
----
-
-### `select_star`
-
-| | |
-|---|---|
-| **Severity** | `error` |
-| **Language** | SQL |
-
-Detects `SELECT *` in a query that has no `LIMIT` clause.
-
-`SELECT *` without `LIMIT` prevents column pruning — the optimizer cannot skip
-reading unneeded columns — and returns all rows to the caller. On wide or large
-tables this dramatically increases scan bytes and driver memory.
-
-```sql
--- flagged
-SELECT * FROM large_events_table WHERE date = '2025-01-01'
-```
-
-```sql
--- fixed
-SELECT event_id, user_id, event_type FROM large_events_table WHERE date = '2025-01-01'
-```
-
-*Suggestion: Add LIMIT clause or select specific columns*
+| Code | Severity | Language | Tags | Description |
+|------|----------|----------|------|-------------|
+| [BB001](#bb001) | warning | notebook | notebook, cost, governance | Notebook without cost annotation |
+| [BD001](#bd001) | warning | sql | delta, maintenance, sql | VACUUM called too frequently |
+| [BD002](#bd002) | info | sql | delta, performance, sql | Missing ZORDER on large Delta table |
+| [BN001](#bn001) | info | notebook | notebook, structure | Missing notebook header cell |
+| [BN002](#bn002) | warning | notebook | notebook, security, sql | SQL credentials in notebook cell |
+| [BN003](#bn003) | error | notebook | notebook, structure, correctness | Unterminated cell reference |
+| [BNT-C01](#bnt-c01) | warning | python | python, style, correctness | df['col'] bracket reference (stale ref risk) |
+| [BNT-I01](#bnt-i01) | error | python | python, import, style | `from pyspark.sql.functions import *` |
+| [BNT-N01](#bnt-n01) | info | python | python, style, naming | Generic DataFrame variable name (`df`, `df1`) |
+| [BP001](#bp001) | info | python | python, style, readability | Cell without comments |
+| [BP002](#bp002) | info | python | python, style, readability | Line exceeds 120 characters |
+| [BP003](#bp003) | warning | python | python, databricks, magic | Databricks `# MAGIC` in plain Python file |
+| [BP004](#bp004) | warning | python | python, databricks, magic | Deprecated magic syntax |
+| [BP005](#bp005) | info | notebook | notebook, style, structure | Notebook cell missing title |
+| [BP006](#bp006) | info | notebook | notebook, structure, maintainability | Excessive cell nesting |
+| [BP007](#bp007) | info | notebook | notebook, style, documentation | Notebook missing markdown documentation |
+| [BP008](#bp008) | error | python | pyspark, memory, driver-bound | `.collect()` without `.limit()` |
+| [BP010](#bp010) | error | python | pyspark, udf, performance | Python UDF (`@udf`) — row-at-a-time |
+| [BP011](#bp011) | error | python | pyspark, memory, driver-bound | `.toPandas()` on full DataFrame |
+| [BP012](#bp012) | warning | python | pyspark, partitioning, shuffle | `.repartition(1)` collapses parallelism |
+| [BP013](#bp013) | warning | sql | sql, performance, sort | ORDER BY without LIMIT |
+| [BP014](#bp014) | warning | python | pyspark, join, shuffle | Broadcast join threshold exceeded |
+| [BP015](#bp015) | info | python | pyspark, udf, arrow | Pandas UDF — crosses JVM boundary |
+| [BP016](#bp016) | warning | python | pyspark, performance, full-scan | `.count()` without filter (full table scan) |
+| [BP020](#bp020) | warning | python | pyspark, catalyst, loop | `.withColumn()` inside a loop (O(n²) plan) |
+| [BP021](#bp021) | error | python | pyspark, jdbc, performance | JDBC read missing partition options |
+| [BP022](#bp022) | error | python | pyspark, sdp, dlt | Action call inside SDP/DLT function |
+| [BP023](#bp023) | warning | python | pyspark, window, shuffle | `Window.orderBy()` without `partitionBy()` |
+| [BP030](#bp030) | warning | python | pyspark, memory, caching | `.cache()` on a DataFrame never reused |
+| [BP031](#bp031) | info | python | pyspark, memory, caching | `.cache()` without explicit `.unpersist()` |
+| [BP032](#bp032) | warning | python | pyspark, performance, caching | Re-computing an already cached DataFrame |
+| [BQ001](#bq001) | warning | sql | sql, correctness, null-safety | `NOT IN` with NULLs silently returns empty |
+| [BQ002](#bq002) | warning | sql | sql, performance, dedup | `DISTINCT` forcing full shuffle |
+| [BQ003](#bq003) | info | sql | sql, performance, aggregation | `COUNT(DISTINCT col)` at scale |
+| [BQ004](#bq004) | error | sql | sql, performance, subquery | Correlated `NOT IN (SELECT ...)` subquery |
+| [SDP001](#sdp001) | warning | python | sdp, data-quality, declarative | DLT table without expectation |
+| [SDP002](#sdp002) | warning | python | sdp, dlt, incremental | DLT table without incremental strategy |
+| [SDP003](#sdp003) | warning | python | sdp, streaming, schema | Streaming DLT source without schema |
+| [SDP004](#sdp004) | warning | python | sdp, dlt, performance | DLT apply_changes without checkpoint |
+| [SDP005](#sdp005) | info | python | sdp, dlt, documentation | DLT table missing comment |
+| [SQ001](#sq001) | warning | sql | sql, performance, select-star | `SELECT *` without LIMIT |
+| [SQ002](#sq002) | warning | sql | sql, join, cartesian | Implicit cross join (comma syntax) |
+| [SQ003](#sq003) | error | sql | sql, join, cartesian | Explicit `CROSS JOIN` |
 
 ---
 
-### `order_by_no_limit`
+## PySpark Rules
 
-| | |
-|---|---|
-| **Severity** | `warning` |
-| **Language** | SQL |
-
-Detects an `ORDER BY` clause in a query that has no `LIMIT` clause.
-
-A global sort requires all data to be shuffled to a single reducer and sorted
-in memory. Without `LIMIT` the full sorted dataset must materialise — the most
-common cause of long-running SQL Warehouse queries.
-
-```sql
--- flagged
-SELECT user_id, total_spend FROM user_summary ORDER BY total_spend DESC
-```
-
-```sql
--- fixed
-SELECT user_id, total_spend FROM user_summary ORDER BY total_spend DESC LIMIT 100
-```
-
-*Suggestion: Add LIMIT or remove ORDER BY if not needed*
-
----
-
-### `drop_table_deprecated`
-
-| | |
-|---|---|
-| **Severity** | `warning` |
-| **Language** | SQL, PySpark |
-
-Detects a `DROP TABLE` statement (SQL AST node or string match in PySpark).
-
-A `DROP TABLE` + `CREATE TABLE` pair has a window where the table does not
-exist, causing downstream readers to fail. On Delta tables it also discards
-the transaction log and all history.
-
-```sql
--- flagged
-DROP TABLE IF EXISTS staging.orders;
-CREATE TABLE staging.orders AS SELECT ...;
-```
-
-```sql
--- fixed
-CREATE OR REPLACE TABLE staging.orders AS SELECT ...;
-```
-
-*Suggestion: Use CREATE OR REPLACE TABLE or TRUNCATE TABLE*
-
----
-
-### `sdp_pivot_prohibited`
+### BP008
 
 | | |
 |---|---|
 | **Severity** | `error` |
-| **Language** | SQL, PySpark |
+| **Tags** | `pyspark`, `memory`, `driver-bound` |
 
-Detects a `PIVOT` clause in SQL, or the string `PIVOT` in PySpark source.
-
-The `PIVOT` clause is not supported in Spark Declarative Pipelines (DLT).
-Including it causes pipeline materialisation to fail at parse time.
-
-```sql
--- flagged
-SELECT * FROM sales
-PIVOT (SUM(amount) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'))
-```
-
-```sql
--- fixed: use conditional aggregation
-SELECT product_id,
-  SUM(CASE WHEN quarter = 'Q1' THEN amount END) AS Q1,
-  SUM(CASE WHEN quarter = 'Q2' THEN amount END) AS Q2
-FROM sales GROUP BY product_id
-```
-
-*Suggestion: Use alternative transformation pattern*
-
----
-
-### `collect_without_limit`
-
-| | |
-|---|---|
-| **Severity** | `error` |
-| **Language** | PySpark |
-
-Detects a call to `.collect()` not preceded by `.limit()` or `.take()` in the
-same method chain.
-
-`.collect()` pulls the entire DataFrame to the driver. On production-scale
-data this causes driver OOM and kills the cluster.
+`.collect()` without a preceding `.limit()` or `.take()` pulls the entire
+DataFrame into driver memory, causing OOM on production-scale data.
 
 ```python
 # flagged
 results = df.filter(F.col("date") == "2025-01-01").collect()
-```
 
-```python
 # fixed
 results = df.filter(F.col("date") == "2025-01-01").limit(1000).collect()
-# or
-results = df.filter(F.col("date") == "2025-01-01").take(1000)
 ```
-
-*Suggestion: Add .limit(n).collect() or use .take()*
 
 ---
 
-### `python_udf`
+### BP010
 
 | | |
 |---|---|
 | **Severity** | `error` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `udf`, `performance` |
 
-Detects a function decorated with `@udf` (but not `@pandas_udf`).
-
-Python UDFs serialize each row from the JVM to the Python interpreter and back.
-This row-at-a-time overhead is 10–100× slower than native Spark column
-expressions and prevents Photon acceleration entirely.
+Python UDFs (`@udf`) serialize each row between the JVM and the Python
+interpreter — 10–100× slower than native column expressions; prevents Photon.
 
 ```python
 # flagged
 @udf("string")
-def clean_name(name):
-    return name.strip().title()
-```
+def clean_name(name): return name.strip().title()
 
-```python
-# fixed: vectorized Pandas UDF
-@pandas_udf("string")
-def clean_name(names: pd.Series) -> pd.Series:
-    return names.str.strip().str.title()
-
-# better: native Spark function
+# fixed: native Spark expression
 df = df.withColumn("clean_name", F.initcap(F.trim(F.col("name"))))
 ```
 
-*Suggestion: Use @pandas_udf for vectorized operations*
-
 ---
 
-### `toPandas`
+### BP011
 
 | | |
 |---|---|
 | **Severity** | `error` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `memory`, `driver-bound` |
 
-Detects any call to `.toPandas()`.
-
-Like `.collect()`, `.toPandas()` materialises the full DataFrame in driver
-memory. It also disables all Photon and Spark optimisations from that point
-forward.
+`.toPandas()` materialises the entire DataFrame on the driver and disables
+all Spark optimisations from that point forward.
 
 ```python
 # flagged
 df_pd = spark.table("orders").toPandas()
-summary = df_pd.groupby("region")["amount"].sum()
-```
 
-```python
-# fixed: push the aggregation into Spark, then convert the small result
-summary = (
-    spark.table("orders")
-    .groupBy("region")
-    .agg(F.sum("amount").alias("total"))
-    .toPandas()   # safe: result is already small
-)
+# fixed: push aggregation into Spark, convert only the small result
+summary = spark.table("orders").groupBy("region").agg(F.sum("amount")).toPandas()
 ```
-
-*Suggestion: Use Koalas/Pandas API on Spark or filter first*
 
 ---
 
-### `repartition_one`
+### BP012
 
 | | |
 |---|---|
 | **Severity** | `warning` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `partitioning`, `shuffle` |
 
-Detects `.repartition(1)` (literal integer argument `1`).
-
-This collapses all data into a single partition, eliminating cluster
-parallelism and creating a single-task bottleneck that negates the benefit of
-a multi-node cluster.
+`.repartition(1)` collapses all data into a single partition, creating a
+single-task bottleneck that negates cluster parallelism.
 
 ```python
 # flagged
 df.repartition(1).write.parquet("s3://bucket/output/")
-```
 
-```python
-# fixed: use coalesce — reduces partitions without a full shuffle
+# fixed
 df.coalesce(8).write.parquet("s3://bucket/output/")
 ```
 
-*Suggestion: Use larger partition count or remove*
+---
+
+### BP015
+
+| | |
+|---|---|
+| **Severity** | `info` |
+| **Tags** | `pyspark`, `udf`, `arrow` |
+
+Pandas UDFs cross the JVM–Python boundary even though they use Arrow
+serialization. Prefer native Spark column expressions where possible.
 
 ---
 
-### `pandas_udf`
+### BP016
 
 | | |
 |---|---|
 | **Severity** | `warning` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `performance`, `full-scan` |
 
-Detects a function decorated with `@pandas_udf`.
-
-Pandas UDFs use Apache Arrow for serialization (far more efficient than
-row-at-a-time Python UDFs) but still cross the JVM–Python boundary and
-prevent Photon acceleration. Native Spark column expressions require no
-serialization at all.
-
-```python
-# flagged
-@pandas_udf("double")
-def normalize(values: pd.Series) -> pd.Series:
-    return (values - values.mean()) / values.std()
-```
-
-```python
-# consider: window function avoids the UDF entirely
-w = Window.partitionBy("group")
-df = df.withColumn("normalized",
-    (F.col("value") - F.mean("value").over(w)) / F.stddev("value").over(w)
-)
-```
-
-*Suggestion: Check if F.transform(), F.aggregate(), or column expressions can replace this UDF*
-
----
-
-### `count_without_filter`
-
-| | |
-|---|---|
-| **Severity** | `warning` |
-| **Language** | PySpark |
-
-Detects `.count()` not preceded by `.filter()`, `.where()`, `.groupBy()`, or
-`.groupby()` in the same chain.
-
-An unfiltered `.count()` on a large Delta table triggers a full table scan.
-Delta statistics do not short-circuit `.count()` unless the fast path is
-active and chosen by the query planner.
+`.count()` without a preceding `.filter()`, `.where()`, or `.groupBy()`
+triggers a full table scan. Delta statistics do not short-circuit `.count()`.
 
 ```python
 # flagged
 total = spark.table("events").count()
-```
 
-```python
-# fixed: filter first
+# fixed
 recent = spark.table("events").filter(F.col("date") >= "2025-01-01").count()
-
-# alternative: approximate count avoids a full scan
-approx = spark.table("events").select(F.approx_count_distinct("user_id")).first()[0]
 ```
-
-*Suggestion: Add .filter()/.where() before .count() to reduce scanned rows, or use approx_count_distinct() for estimates*
 
 ---
 
-### `withColumn_in_loop`
+### BP014
 
 | | |
 |---|---|
 | **Severity** | `warning` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `join`, `shuffle` |
 
-Detects `.withColumn()` or `.withColumnRenamed()` called inside a `for` or
-`while` loop.
+Joining two large DataFrames without a broadcast hint causes a full shuffle
+sort-merge join, often the dominant cost in a job.
 
-Each `.withColumn()` call appends a new `Project` node to the logical plan.
-Calling it in a loop with N columns creates N nested `Project` nodes. For
-large N (50+ columns) plan compilation takes minutes and can exhaust driver
-heap.
+---
+
+### BP020
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `pyspark`, `catalyst`, `loop` |
+
+Each `.withColumn()` call appends a `Project` node to the Catalyst logical
+plan. Calling it in a loop with N columns creates N nested nodes — plan
+compilation can take minutes for 50+ columns.
 
 ```python
 # flagged
 for col_name, expr in transformations.items():
     df = df.withColumn(col_name, expr)
-```
 
-```python
-# fixed: build all columns in a single select
-df = df.select(
-    "*",
-    *[expr.alias(col_name) for col_name, expr in transformations.items()]
-)
+# fixed
+df = df.select("*", *[expr.alias(name) for name, expr in transformations.items()])
 ```
-
-*Suggestion: Combine transformations before the loop or use foldLeft*
 
 ---
 
-### `jdbc_incomplete_partition`
+### BP021
 
 | | |
 |---|---|
 | **Severity** | `error` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `jdbc`, `performance` |
 
-Detects a JDBC read (`.format("jdbc")` or `.jdbc()`) that does not provide
-all four required partitioning options: `partitionColumn`, `numPartitions`,
-`lowerBound`, `upperBound`.
-
-A JDBC read without partitioning options uses a single thread for all data,
-ignoring cluster parallelism and causing driver memory pressure.
+A JDBC read without `partitionColumn`, `numPartitions`, `lowerBound`, and
+`upperBound` uses a single thread, ignoring cluster parallelism.
 
 ```python
 # flagged
-df = spark.read.format("jdbc").option("url", jdbc_url).option("dbtable", "orders").load()
-```
+df = spark.read.format("jdbc").option("url", url).option("dbtable", "orders").load()
 
-```python
 # fixed
-df = (
-    spark.read.format("jdbc")
-    .option("url", jdbc_url)
-    .option("dbtable", "orders")
+df = (spark.read.format("jdbc")
+    .option("url", url).option("dbtable", "orders")
     .option("partitionColumn", "order_id")
-    .option("lowerBound", "1")
-    .option("upperBound", "10000000")
-    .option("numPartitions", "50")
-    .load()
-)
+    .option("lowerBound", "1").option("upperBound", "10000000")
+    .option("numPartitions", "50").load())
 ```
-
-*Suggestion: Add partitionColumn, numPartitions, lowerBound, and upperBound options*
 
 ---
 
-### `sdp_prohibited_ops`
+### BP022
 
 | | |
 |---|---|
 | **Severity** | `error` |
-| **Language** | PySpark |
+| **Tags** | `pyspark`, `sdp`, `dlt` |
 
-Detects action calls (`collect`, `count`, `toPandas`, `save`, `saveAsTable`,
-`start`, `toTable`) inside functions decorated with `@dlt.table`,
-`@dlt.materialized_view`, or `@dlt.temporary_view`.
-
-DLT executes dataset functions lazily. Triggering actions inside an SDP
-function causes non-deterministic execution and can deadlock the pipeline.
+Action calls (`.write`, `.collect`, `.show`, `.display`) inside functions
+decorated with `@dlt.table` cause non-deterministic execution and can
+deadlock the pipeline.
 
 ```python
 # flagged
 @dlt.table
 def processed_orders():
-    df = spark.table("raw.orders")
-    n = df.count()   # action inside SDP function
-    return df.filter(F.col("status") == "valid")
-```
+    n = spark.table("raw.orders").count()   # action inside SDP
+    return spark.table("raw.orders").filter(F.col("status") == "valid")
 
-```python
-# fixed: no actions inside the decorated function
+# fixed
 @dlt.table
 def processed_orders():
     return spark.table("raw.orders").filter(F.col("status") == "valid")
 ```
 
-*Suggestion: Remove this operation from SDP pipeline code*
+---
+
+### BP023
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `pyspark`, `window`, `shuffle` |
+
+`Window.orderBy()` without `partitionBy()` performs a global sort across all
+data, requiring a full shuffle to a single partition.
+
+```python
+# flagged
+w = Window.orderBy("ts")
+
+# fixed
+w = Window.partitionBy("user_id").orderBy("ts")
+```
 
 ---
 
-## Additional Detected Rules
+### BP030–BP032 (Caching)
 
-The following rules are generated by the detection engine but are not yet
-registered in the CLI rule registry. They appear when detected but cannot be
-individually disabled via `ignore` or `burnt rules` until they are registered
-in a future sprint.
+| Code | Severity | Issue |
+|------|----------|-------|
+| BP030 | warning | `.cache()` on a DataFrame that is never reused — wastes memory |
+| BP031 | info | `.cache()` without a matching `.unpersist()` — memory leak risk |
+| BP032 | warning | Re-computing a DataFrame that was already cached |
 
-### `sdp_side_effects`
+---
 
-**Severity:** `warning` | **Language:** PySpark
+### BNT-I01
 
-Detects `print(`, `global `, or `nonlocal ` statements in PySpark source.
-Inside SDP pipeline functions these cause non-deterministic behaviour; outside
-SDP they are a style advisory.
+| | |
+|---|---|
+| **Severity** | `error` |
+| **Tags** | `python`, `import`, `style` |
 
-*Suggestion: Remove print statements and avoid global variables*
+`from pyspark.sql.functions import *` shadows Python built-ins (`max`, `min`,
+`sum`, `map`, `round`), causing silent bugs that are hard to trace.
+
+```python
+# flagged
+from pyspark.sql.functions import *
+
+# fixed
+from pyspark.sql import functions as F
+```
+
+---
+
+### BNT-C01
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `python`, `style`, `correctness` |
+
+`df['col']` column references can become stale after a `.withColumn()` call
+because they resolve at plan creation time. `F.col('col')` resolves at
+evaluation time.
+
+---
+
+### BNT-N01
+
+| | |
+|---|---|
+| **Severity** | `info` |
+| **Tags** | `python`, `style`, `naming` |
+
+Generic DataFrame variable names (`df`, `df1`, `df2`) hinder readability in
+code reviews and debugging.
+
+---
+
+## SQL Rules
+
+### SQ001
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sql`, `performance`, `select-star` |
+
+`SELECT *` prevents column pruning — the optimizer cannot skip reading
+unneeded columns — and returns all columns to the caller.
+
+```sql
+-- flagged
+SELECT * FROM large_events WHERE date = '2025-01-01'
+
+-- fixed
+SELECT event_id, user_id, event_type FROM large_events WHERE date = '2025-01-01'
+```
+
+---
+
+### SQ002 / SQ003
+
+| Code | Severity | Issue |
+|------|----------|-------|
+| SQ002 | warning | Implicit cross join (comma syntax `FROM a, b`) |
+| SQ003 | error | Explicit `CROSS JOIN` |
+
+Both produce O(n × m) output rows. On large tables this exhausts shuffle
+memory and causes spill or OOM.
+
+```sql
+-- flagged (SQ003)
+SELECT a.id, b.value FROM orders a CROSS JOIN products b
+
+-- fixed
+SELECT a.id, b.value FROM orders a INNER JOIN products b ON a.product_id = b.id
+```
+
+---
+
+### BP013
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sql`, `performance`, `sort` |
+
+`ORDER BY` without `LIMIT` forces a full global sort — all data shuffled to
+one reducer and sorted in memory.
+
+```sql
+-- flagged
+SELECT user_id, total FROM summary ORDER BY total DESC
+
+-- fixed
+SELECT user_id, total FROM summary ORDER BY total DESC LIMIT 100
+```
+
+---
+
+### BQ001
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sql`, `correctness`, `null-safety` |
+
+`NOT IN (subquery)` returns an empty result when the subquery contains any
+`NULL` value. This is a silent correctness bug, not a performance issue.
+
+```sql
+-- flagged
+SELECT * FROM orders WHERE customer_id NOT IN (SELECT id FROM blocked_customers)
+
+-- fixed: NULL-safe
+SELECT * FROM orders WHERE NOT EXISTS (
+    SELECT 1 FROM blocked_customers WHERE id = orders.customer_id
+)
+-- or: filter NULLs in the subquery
+SELECT * FROM orders WHERE customer_id NOT IN (
+    SELECT id FROM blocked_customers WHERE id IS NOT NULL
+)
+```
+
+---
+
+### BQ002
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sql`, `performance`, `dedup` |
+
+`SELECT DISTINCT` requires a full shuffle sort. Prefer `GROUP BY` when
+aggregations are involved, or `ROW_NUMBER()` when deduplication logic is complex.
+
+---
+
+### BQ003
+
+| | |
+|---|---|
+| **Severity** | `info` |
+| **Tags** | `sql`, `performance`, `aggregation` |
+
+`COUNT(DISTINCT col)` requires a full shuffle and sort. At large scale,
+`approx_count_distinct()` is orders of magnitude faster with ~2% error.
+
+```sql
+-- flagged (at scale)
+SELECT COUNT(DISTINCT user_id) FROM events
+
+-- consider
+SELECT approx_count_distinct(user_id) FROM events
+```
+
+---
+
+### BQ004
+
+| | |
+|---|---|
+| **Severity** | `error` |
+| **Tags** | `sql`, `performance`, `subquery` |
+
+`NOT IN (SELECT ...)` with a correlated subquery re-executes the subquery
+for every outer row. Rewrite as `NOT EXISTS` or a left anti-join.
+
+---
+
+## Delta Rules
+
+### BD001
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `delta`, `maintenance`, `sql` |
+
+`VACUUM` called more frequently than the recommended retention window
+increases maintenance overhead without benefit for typical workloads.
+
+---
+
+### BD002
+
+| | |
+|---|---|
+| **Severity** | `info` |
+| **Tags** | `delta`, `performance`, `sql` |
+
+Large Delta tables without a `ZORDER BY` clause on high-cardinality filter
+columns miss data-skipping optimisation.
+
+---
+
+## SDP / DLT Rules
+
+### SDP001
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sdp`, `data-quality`, `declarative` |
+
+DLT table without a data quality expectation (`@dlt.expect`, `@dlt.expect_or_drop`).
+Unchecked pipelines silently propagate bad data.
+
+---
+
+### SDP002
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sdp`, `dlt`, `incremental` |
+
+DLT materialized view defined without an incremental strategy. Large static
+tables reprocess all data on every pipeline run.
+
+---
+
+### SDP003
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sdp`, `streaming`, `schema` |
+
+Streaming DLT source without an explicit schema definition. Schema inference
+on streaming sources can fail or change between runs.
+
+---
+
+### SDP004
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `sdp`, `dlt`, `performance` |
+
+`dlt.apply_changes()` without a checkpoint configuration will reprocess all
+change data on restart.
+
+---
+
+### SDP005
+
+| | |
+|---|---|
+| **Severity** | `info` |
+| **Tags** | `sdp`, `dlt`, `documentation` |
+
+DLT table missing a `comment` — reduces discoverability in the Unity Catalog.
+
+---
+
+## Notebook Rules
+
+### BB001
+
+| | |
+|---|---|
+| **Severity** | `warning` |
+| **Tags** | `notebook`, `cost`, `governance` |
+
+Notebook without a cost annotation comment. Required for cost attribution in
+multi-team environments.
+
+---
+
+### BN001–BN003
+
+| Code | Severity | Issue |
+|------|----------|-------|
+| BN001 | info | Missing notebook header cell |
+| BN002 | warning | SQL credentials hard-coded in a notebook cell |
+| BN003 | error | Unterminated cell reference (`%run`) |
+
+---
+
+### BP005–BP007
+
+| Code | Severity | Issue |
+|------|----------|-------|
+| BP005 | info | Notebook cell missing a title comment |
+| BP006 | info | Excessive cell nesting depth |
+| BP007 | info | Notebook missing markdown documentation cells |
+
+---
+
+### BP001–BP004 (Python style)
+
+| Code | Severity | Issue |
+|------|----------|-------|
+| BP001 | info | Cell without any comments |
+| BP002 | info | Line exceeds 120 characters |
+| BP003 | warning | Databricks `# MAGIC` marker in a plain `.py` file |
+| BP004 | warning | Deprecated magic syntax (`# MAGIC run`, `# MAGIC sql`) |
 
 ---
 
 ## Disabling Rules
 
-### Via config file (permanent, all runs)
+### Via config file
 
 ```toml
 # .burnt.toml
 [lint]
-ignore = ["cross_join", "pandas_udf"]
+ignore = ["BP008"]           # exact ID
+ignore = ["BP"]              # prefix — all BP rules
+ignore = ["performance"]     # tag — all performance-tagged rules
+ignore = ["ALL"]             # disable everything
 ```
 
-### Per-file suppression
+### Via CLI flag
+
+```bash
+# exact ID
+burnt check ./src/ --ignore BP008
+
+# prefix
+burnt check ./src/ --ignore BP
+
+# tag
+burnt check ./src/ --ignore performance
+
+# multiple patterns
+burnt check ./src/ --ignore BP008 --ignore driver-bound
+```
+
+### Via inline comment (single line)
+
+```python
+df.collect()  # burnt: ignore[BP008]
+df.collect()  # burnt: ignore[BP008, driver-bound]
+df.collect()  # burnt: ignore
+```
+
+### Via standalone comment (suppresses the next line)
+
+```python
+# burnt: ignore[BP008]
+df.collect()
+```
+
+### Via file-level comment
+
+```python
+# burnt: ignore-file[pyspark]       # suppress tag
+# burnt: ignore-file[BP008, BP011]  # suppress specific rules
+# burnt: ignore-file                 # suppress everything
+```
+
+### Per-file via config
 
 ```toml
 [lint.per-file-ignores]
-"migrations/*.sql"       = ["select_star"]
-"notebooks/explore*.py"  = ["toPandas", "collect_without_limit"]
+"notebooks/explore*.py" = ["performance", "BP008"]
+"migrations/*.sql"      = ["BQ*"]
 ```
-
-### Via CLI flag (single run)
-
-```bash
-burnt check ./src/ --ignore-rule cross_join --ignore-rule pandas_udf
-```
-
-`--ignore-rule` can be repeated and is merged with any `ignore` list from the
-config file.
-
-### Via `burnt rules` (interactive TUI)
-
-```bash
-burnt rules
-```
-
-Opens an interactive terminal UI showing all 12 registered rules with their
-current enabled/disabled status. Toggle rules by entering their number. Changes
-are written directly to the active config file.
-
----
-
-## Fail Threshold
-
-By default `burnt check` exits with code 1 only when an `error`-severity rule
-triggers. To also fail on warnings:
-
-```bash
-burnt check ./src/ --fail-on warning
-```
-
-Or in config:
-
-```toml
-[lint]
-fail-on = "warning"   # info | warning | error
-```
-
-Setting `fail-on = "info"` causes the command to fail on any finding at all.
 
 ---
 
@@ -551,9 +687,26 @@ JSON output schema per finding:
 ```json
 {
   "file": "src/jobs/daily_agg.py",
-  "rule": "collect_without_limit",
+  "rule": "BP008",
   "severity": "error",
   "description": "collect() without limit() can OOM the driver",
-  "suggestion": "Add .limit(n).collect() or use .take()"
+  "suggestion": "Add .limit(n).collect() or use .take(n)"
 }
+```
+
+---
+
+## Fail Threshold
+
+```bash
+burnt check ./src/ --fail-on error    # default: fail on error only
+burnt check ./src/ --fail-on warning  # also fail on warnings
+burnt check ./src/ --fail-on info     # fail on any finding
+```
+
+Or in config:
+
+```toml
+[lint]
+fail-on = "warning"
 ```
