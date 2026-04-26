@@ -1,17 +1,14 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Invalid `burnt.toml` / `pyproject.toml` → clear error.
-- Conflicting env var and file → priority applied.
-- `burnt check --init` round-trips.
+## Redesign Notes
+Config validation remains important but schema has changed:
+- New sections: `[check]`, `[session]`, `[display]`
+- Removed/cleaned: old `[watch]`, `[alert]` still exist for Databricks extra
+- Priority: CLI args > `burnt.config()` > burnt.toml > env vars
 
-### Implementation Notes
-- Ensure all possible configuration scenarios are handled correctly and provide helpful error messages.
-- Verify that configuration from different sources follows the defined priority rules.
-
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Ensure config loader handles new `[session]` and `[display]` sections
+- Validate that unknown sections/keys are handled gracefully
+- Test `burnt.toml` round-trip (init → edit → load)

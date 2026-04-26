@@ -1,17 +1,15 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- String variable resolution: `table = "c.s.t"` + `spark.sql(f"SELECT FROM {table}")` → resolve.
-- Widget defaults: `dbutils.widgets.text("t", "default")` → use.
-- Unresolvable: BN002 + partial graph.
+## Redesign Notes
+Dynamic SQL resolution remains valid for generic Spark:
+- `spark.sql(f"SELECT FROM {table}")` should be flagged
+- Variable resolution: simple cases where the value is defined earlier in the notebook
+- Unresolvable: finding with clear message
 
-### Implementation Notes
-- Support dynamic table names and SQL statements where variables can be resolved statically.
-- Provide clear findings for unresolvable dynamic SQL fragments.
+This is primarily a Rust engine task, but the Python layer should surface the findings correctly.
 
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Verify Rust engine flags dynamic SQL patterns
+- Ensure `_check.py` surfaces BN002 (or equivalent) for unresolvable dynamic SQL

@@ -1,16 +1,20 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- Audit every external call (DESCRIBE, system tables, etc.).
-- Ensure no tracebacks for common failure modes.
+## Redesign Notes
+Error handling audit is still critical:
+- Audit every external call (DESCRIBE, system tables, REST APIs)
+- Ensure no tracebacks for common failure modes
+- Provide clear, actionable error messages
 
-### Implementation Notes
-- Conduct a thorough review of error handling throughout the application.
-- Ensure all possible API failures result in graceful degradation.
+Additional checks needed for new architecture:
+- `_session.py` listener registration failures
+- `_check.py` engine unavailability
+- `display/` IPython import failures
+- `watch()` when databricks-sdk is not installed
 
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+## Remaining Work
+- Systematic review of all `except` blocks
+- Ensure `NotAvailableError` is raised with helpful messages
+- Verify graceful degradation in all code paths

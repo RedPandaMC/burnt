@@ -1,18 +1,16 @@
 status: todo
-agent:
-completed_by:
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-### Changes Made
-- README.
-- DESIGN.md final.
-- AGENTS.md.
-- CHANGELOG.md v2.0.0.
+## Redesign Notes
+Documentation needs to reflect the new architecture:
+- README.md: Spark-first positioning, `pip install burnt` vs `burnt[databricks]`
+- DESIGN.md: Already updated (done)
+- AGENTS.md: Update dev workflow notes
+- CHANGELOG.md: Document v0.2.0 changes
 
-### Implementation Notes
-- Complete all project documentation for the v2.0 release.
-- Ensure documentation is clear, accurate, and reflects all changes.
-
-### Verification Results
-- Tests: N/A
-- Lint: `ruff check` pass
+## Remaining Work
+- Rewrite README.md for new product vision (performance coach, not crystal ball)
+- Document `burnt.start_session()` → `burnt.check()` workflow
+- Document optional Databricks module
+- Update installation instructions
