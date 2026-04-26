@@ -1,91 +1,195 @@
 # burnt — Technical Specification
 
-> Cost compiler for Databricks. Parses Python, SQL, and DLT notebooks. Builds a cost graph. Shows where the money goes.
+> Performance coach for Spark data engineers. Watches your practice runs, learns from Spark metrics, and tells you how to ship cheaper code.
 
 ---
 
 ## 1. Product
 
-burnt parses Databricks notebooks, builds a structural model of every data operation, and produces:
+burnt sits between **development** and **production**. You run your notebook, execute your Spark code, then ask burnt for a review. It combines:
 
-- **Cost Graph** (Python/SQL) or **Pipeline Graph** (DLT) — per-operation or per-table dollar estimates
-- **84 lint rules** — expensive patterns linked to graph nodes with cost impact
-- **Recommendations** — right-sized cluster configs with Databricks API JSON
-- **Session cost** — execution cost vs idle cluster cost
-- **Monitoring** — tag attribution, idle detection, cost drift alerts
-- **Alerts** — Slack, Teams, webhook, Delta table
-- **Feedback loop** — predicted vs actual billing, auto-calibrating coefficients
+- **Static analysis** (Rust engine) — parses Python/SQL code, builds a cost graph, finds expensive patterns
+- **Runtime analysis** — listens to your Spark session, captures actual stage metrics, shuffle, spill, and query history
+- **Actionable advice** — specific, data-backed recommendations: "60% of your cost is in this crossJoin on line 42. Add a salt column."
 
-Requires a Databricks connection. No offline mode.
+### Output
+
+```
+┌─ burnt check report ───────────────────────────────┐
+│ 3 expensive operations found in 12 cells          │
+│ Estimated compute: 14.2 executor-hours            │
+│                                                    │
+│ ⚠ Line 42: crossJoin without salt                 │
+│   → Cost: 8.3 hr (58% of total)                   │
+│   → Fix: Add salted join key to avoid skew        │
+│                                                    │
+│ ⚠ Line 67: collect() without limit()              │
+│   → Cost: 2.1 hr (driver-bound, high risk)        │
+│   → Fix: Use .limit(1000).collect()               │
+│                                                    │
+│ ℹ Line 89: repartition(1) before write            │
+│   → Cost: 0.8 hr (single-task bottleneck)         │
+│   → Fix: Remove or increase to repartition(200)   │
+└────────────────────────────────────────────────────┘
+```
 
 ### Metrics
 
 | Metric | Target |
 |--------|--------|
-| Accuracy (notebook, full enrichment) | 2× of actual |
-| Accuracy (REST-only) | 3× of actual |
-| Latency (50-cell notebook) | < 3 seconds |
+| Static analysis latency (50-cell notebook) | < 3 seconds |
 | Driver memory overhead | < 50 MB |
-| Rules | 84 |
+| Lint rules | ~30 (cost-focused only) |
+| Runtime capture overhead | < 5% CPU, negligible memory |
 
 ---
 
-## 2. Environments
+## 2. Philosophy
 
-**Databricks Notebook.** SparkSession. Full: DESCRIBE DETAIL, EXPLAIN COST, Spark UI metrics, system tables, cluster config.
+**Spark-first, not Databricks-first.** burnt works on any Spark cluster — local `pyspark`, EMR, Dataproc, Databricks, etc. Databricks-specific features (DBU pricing, system tables, workspace monitoring) live in an optional module.
 
-**Connected Laptop / CI.** REST API via `databricks-sdk`: Statement Execution API, Jobs/Clusters/Pipelines API, DABs YAML. No EXPLAIN COST.
+**Practice-run coaching, not crystal-ball estimation.** We don't predict what your code *will* cost. We observe what it *did* cost during development and tell you how to improve it.
 
-**Scheduled Job.** Single-node. System tables for monitoring. Sends alerts.
-
-### Access Levels
-
-| Level | Available | Output |
-|-------|-----------|--------|
-| Full | System tables + SparkSession | Graph + estimates + monitoring + alerts |
-| Session | SparkSession, no system tables | Graph + DESCRIBE enrichment + structural findings |
-| REST | REST API, no SparkSession | Graph + Delta enrichment + medium confidence |
-| Auth-only | Authenticated, no permissions | 84 lint rules |
-
-Never crashes on missing permissions. Explains what to enable for more.
+**Actionable over precise.** "8.3 executor-hours" is more useful than "$12.47" because the dollar amount depends on your cloud pricing. The engineer can act on "reduce shuffle" regardless of SKU.
 
 ---
 
-## 3. Analysis Modes
+## 3. Environments
 
-Auto-detected. User never chooses.
+### In-Notebook (Primary)
 
-| Mode | Detection | Output |
-|------|-----------|--------|
-| Python | Default cells, no DLT/SDP signal | CostGraph (operations) |
-| SQL | All cells SQL, no Python | CostGraph (SQL statements) |
-| DLT/SDP | `import dlt` / `import dp` / `CREATE STREAMING TABLE` / `LIVE.ref` | PipelineGraph (tables) |
+```python
+import burnt
 
-Priority: DLT signals → DLT. All cells SQL → SQL. Otherwise → Python.
+# Start listening to your Spark session
+burnt.start_session()
+
+# ... write and run your Spark code ...
+
+# Get the review
+report = burnt.check()
+report.display()
+```
+
+Captures: SparkListener metrics, Query History (if available), cell execution times, stage-level shuffle/spill.
+
+### Post-Session CLI
+
+```bash
+# Analyze a saved notebook + Spark event log
+burnt check ./notebook.ipynb --event-log ./eventlog
+
+# Or just static analysis (no runtime data)
+burnt check ./pipeline.py
+```
+
+### Connected Mode (Optional)
+
+With `pip install burnt[databricks]`:
+
+```python
+import burnt
+report = burnt.check()  # Also queries Databricks query history, DESCRIBE DETAIL
+```
 
 ---
 
 ## 4. Architecture
 
 ```
-CLI: burnt check          Python API: burnt.check() / burnt.watch()
-      │                          │                  │
-      │     ┌────────────────────┘                  │
-      ▼     ▼                                       ▼
-  Code Analysis                              Cost Monitoring
-  (Rust engine → graph → enrich              (system table SQL
-   → estimate → recommend)                    → alerts)
+┌─ User Code ────────────────────────────────────────┐
+│  burnt.start_session()  →  SparkListener registered │
+│  ... your Spark code runs ...                      │
+│  burnt.check()  →  Report                          │
+└────────────────────────────────────────────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+   ┌─────────┐     ┌─────────────┐   ┌──────────┐
+   │  Rust   │     │   Runtime   │   │  Backend │
+   │ Engine  │     │   Listener  │   │  (opt)   │
+   │(static) │     │  (runtime)  │   │          │
+   └────┬────┘     └──────┬──────┘   └────┬─────┘
+        │                 │               │
+        └─────────────────┼───────────────┘
+                          ▼
+                   ┌─────────────┐
+                   │   Merger    │
+                   │ (hybrid     │
+                   │  analysis)  │
+                   └──────┬──────┘
+                          ▼
+                   ┌─────────────┐
+                   │   Report    │
+                   │  + Display  │
+                   └─────────────┘
 ```
 
-**Rust engine** (`burnt-engine` via PyO3): tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph / PipelineGraph construction, 84 rules.
+### Components
 
-**Python layer** (`burnt`): enrichment (Delta, EXPLAIN, DLT pipeline), estimation, session cost, recommendations, feedback calibration, monitoring, alerts.
+**Rust engine** (`burnt-engine` via PyO3): tree-sitter Python/SQL parsing, CostGraph construction, ~30 cost-focused lint rules. Always installed (compiled wheel).
+
+**Runtime listener** (`burnt.spark.listener`): `burnt.start_session()` registers a `SparkListener` that captures stage metrics, task durations, shuffle read/write bytes, spill to disk. Lightweight, no external dependencies.
+
+**Backend** (`burnt.runtime`): Optional protocol for enriching with cloud-specific data.
+- `SparkBackend`: Generic SparkSession introspection
+- `DatabricksBackend`: `pip install burnt[databricks]` — adds query history, DESCRIBE DETAIL, DBU pricing
 
 ---
 
-## 5. Cost Graph
+## 5. Session Lifecycle
 
-Python and SQL modes.
+### 1. Start
+
+```python
+burnt.start_session(
+    capture_sql=True,        # Capture SQL query text + duration
+    capture_stages=True,     # Capture stage metrics
+    capture_cells=True,      # Capture cell execution times
+)
+```
+
+- Registers `SparkListener` if `SparkSession` exists
+- Starts a background thread to poll `SparkContext.statusTracker()`
+- Records notebook cell boundaries (if in Jupyter/Databricks)
+
+### 2. Run
+
+User executes Spark code normally. burnt silently records:
+
+| Signal | Source | Use |
+|--------|--------|-----|
+| Stage metrics | SparkListener | Shuffle, spill, input/output bytes |
+| SQL query text | `SparkListener.onOtherEvent` (SQLExecution) | Correlate with static analysis |
+| Cell timing | Jupyter kernel hooks / Databricks context | Idle vs execution time |
+| Spark conf | `SparkSession.getActiveSession().conf` | Cluster topology |
+
+### 3. Check
+
+```python
+report = burnt.check(path="./notebook.ipynb")  # optional path for static analysis
+```
+
+1. **Static pass**: Rust engine parses code → `CostGraph` + `Findings`
+2. **Runtime pass**: Correlate graph nodes with captured stage metrics
+   - CrossJoin node → stage with high shuffle bytes? High confidence match.
+   - Read node → stage with large input bytes? Enrich estimated_input_bytes.
+3. **Merge**: Tag each graph node with runtime data. Re-sort findings by actual cost impact.
+4. **Recommend**: Generic Spark advice (add salt, enable AQE, reduce partitions, etc.)
+
+### 4. Report
+
+```python
+report.display()       # Rich table (terminal) or HTML (notebook)
+report.to_json()       # Machine-readable for CI
+report.to_markdown()   # For PR descriptions
+```
+
+---
+
+## 6. Cost Graph
+
+Generic Spark model. No Databricks concepts in core.
 
 ### CostNode
 
@@ -93,12 +197,13 @@ Python and SQL modes.
 |-------|-------------|
 | kind | read, transform, shuffle, action, write, udf_call, maintenance |
 | scaling_type | linear, linear_with_cliff, quadratic, step_failure, maintenance |
-| photon_eligible | Can Photon accelerate this? |
 | shuffle_required | Triggers shuffle? |
 | driver_bound | Materializes on driver? |
 | tables_referenced | Tables this node touches |
-| estimated_input_bytes | Filled by enrichment |
-| estimated_cost_usd | Filled by estimation |
+| estimated_input_bytes | Filled by runtime or backend enrichment |
+| actual_compute_seconds | Filled by runtime listener |
+| actual_shuffle_bytes | Filled by runtime listener |
+| line_number | Source location |
 
 ### SQL Statement → Nodes
 
@@ -122,312 +227,163 @@ Cross-cell: Write in cell 1 → Read in cell 2 creates an edge.
 | StepFailure | Works until threshold, then OOM |
 | Maintenance | ∝ table size + file count |
 
-Rust assigns type. Python fills thresholds from cluster config.
+Rust assigns type. Runtime listener fills actual bytes/times.
 
 ---
 
-## 6. Pipeline Graph
+## 7. Rules
 
-DLT/SDP mode.
+**~30 rules, all cost-focused.** No style rules, no generic notebook hygiene.
 
-### PipelineTable
+| Category | Count | Examples |
+|----------|-------|----------|
+| Performance | 12 | collect() without limit, crossJoin without salt, repartition(1), explode() in select |
+| SQL | 8 | SELECT *, missing predicate pushdown, cartesian product, nested subqueries |
+| Spark Config | 5 | AQE disabled, shuffle partitions too high/low, broadcast threshold missed |
+| Delta / Lake | 5 | Missing ZORDER, VACUUM, too many small files, no partition pruning |
 
-| Field | Description |
-|-------|-------------|
-| kind | streaming, materialized_view, temporary_view |
-| source_type | cloud_files, kafka, dlt_read, live_ref |
-| inner_nodes | CostNodes inside the table definition |
-| expectations | Data quality constraints |
-| is_incremental | Streaming = true, MV = false |
-
-### DLT Detection
-
-AST-based: `import dlt`, `from dlt import`, `@dlt.table`, `@dp.table`, `@dp.materialized_view`, `CREATE STREAMING TABLE`, `CREATE MATERIALIZED VIEW`, `LIVE.ref`.
-
-### DLT Cost
-
-| Kind | Formula |
-|------|---------|
-| Streaming | `batch_bytes × coefficient` per batch |
-| Materialized view | `full_source_bytes × coefficient` per run |
-| Pipeline overhead | `sum × 1.12` |
-
-DLT tiers: CORE ~1×, PRO ~1.5×, ADVANCED ~2.5×.
+Rules are ranked by **actual cost impact** when runtime data is available. A crossJoin that shuffled 50GB is shown before a missing ZORDER on a 1MB table.
 
 ---
 
-## 7. Parsers
+## 8. Estimation
 
-**tree-sitter** for Python and SQL. Stable API, semver grammars, unified types, S-expression queries, error recovery.
+### Core Unit: Compute Seconds
 
-**sqlparser-rs** with `DatabricksDialect` for typed SQL AST: MERGE INTO, CREATE TABLE AS SELECT, correlated subqueries.
+burnt reports in **compute seconds** (or executor-hours). This is generic and actionable:
 
-```toml
-tree-sitter = "0.24"
-tree-sitter-python = "0.23"
-tree-sitter-sql = "0.3"
-sqlparser = { version = "0.60", features = ["visitor"] }
+```
+Operation          Compute   %Total   Action
+─────────────────────────────────────────────
+crossJoin (L42)    8.3 hr    58%      Add salt
+collect() (L67)    2.1 hr    15%      Add limit
+repartition(L89)   0.8 hr    6%       Remove or increase
+```
+
+### Backend Mapping (Optional)
+
+With a backend installed, compute seconds can be mapped to dollar estimates:
+
+```python
+report.cost_estimate  # CostEstimate with USD if backend available
+```
+
+| Backend | Input | Output |
+|---------|-------|--------|
+| None | compute seconds | compute seconds only |
+| Databricks | DBU rate + SKU | USD estimate |
+| AWS EMR | EC2 pricing API | USD estimate |
+| Custom | User-provided price sheet | USD estimate |
+
+---
+
+## 9. Display
+
+### Terminal (`burnt check` CLI)
+
+```
+┌─ burnt check: pipeline.py ─────────────────────────┐
+│ 3 issues found (1 error, 2 warnings)              │
+│ Compute: 14.2 executor-hours                        │
+│                                                     │
+│ error  BP008  collect() without limit()            │
+│        pipeline.py:67                                │
+│        → Add .limit(n) or use .take(n)             │
+│        → Estimated: 2.1 hr driver-bound             │
+│                                                     │
+│ warning BP003  crossJoin without salt               │
+│        pipeline.py:42                                │
+│        → Add salted join key to avoid skew         │
+│        → Estimated: 8.3 hr (58% of total)           │
+│        → Actual: 12.4 hr (observed 50GB shuffle)    │
+└─────────────────────────────────────────────────────┘
+```
+
+### Notebook (HTML)
+
+Collapsible sections per finding. Bar chart of compute by operation. Click to jump to source cell.
+
+### Export
+
+- `report.to_json()` — structured data for programmatic use
+- `report.to_markdown()` — for PR descriptions or documentation
+
+---
+
+## 10. Databricks Optional Module
+
+`pip install burnt[databricks]`
+
+Adds:
+- `DatabricksBackend` — query history, DESCRIBE DETAIL, system tables
+- `burnt.watch()` — workspace cost monitoring (tags, idle clusters, drift)
+- DBU pricing and dollar estimates
+- DLT pipeline analysis
+
+```python
+import burnt  # core works immediately
+# With databricks extra, check() is automatically enriched
+report = burnt.check()
+report.cost_estimate.estimated_cost_usd  # available if backend connected
 ```
 
 ---
 
-## 8. Rules
-
-### Rule Categories
-
-Rules are organized by **category** (not tiers) for user-facing clarity:
-
-| Category | Prefix | Description |
-|----------|--------|-------------|
-| **Performance** | BP | PySpark/SQL performance issues (collect without limit, cross joins, etc.) |
-| **SQL** | BQ, SQ | SQL anti-patterns (NOT IN with NULLs, correlated subqueries, etc.) |
-| **SDP** | SDP | Spark Declarative Pipelines (DLT) - missing expectations, no schema, etc. |
-| **Style** | BNT | Code style & naming conventions |
-| **Notebook** | BN, BB | Notebook structure and metadata |
-| **Delta** | BD | Delta Lake optimizations (ZORDER, vacuum, etc.) |
-
-### Implementation Tiers (Internal)
-
-| Tier | Implementation | Description |
-|------|----------------|-------------|
-| **Tier 1** | TOML + tree-sitter S-expressions | Simple pattern matching, no Rust required |
-| **Tier 2** | TOML + Rust context | Loop detection, naming patterns, chain context |
-| **Tier 3** | TOML + Rust dataflow | Cross-cell binding analysis, cache lifecycle |
-
-### Rule File Format
-
-Rules are defined in TOML files organized by category:
-
-```toml
-[rule]
-id = "collect_without_limit"
-code = "BP008"
-severity = "error"
-language = "python"
-description = "collect() without limit() can OOM the driver"
-suggestion = "Add .limit(n).collect() or use .take(n)"
-category = "Performance"
-tier = 1
-
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_) @df
-    attribute: (identifier) @method)
-  (#eq? @method "collect"))
-"""
-```
-
-The `detect` field is a raw tree-sitter S-expression query.  An optional
-`exclude` field acts as a negative pattern — if it matches anywhere in the same
-source the rule is suppressed.
-
-> **CPL (Cinder Pattern Language)** — a proposed human-readable rule DSL —
-> is a post-v2.0 item.  TOML rules currently use tree-sitter S-expressions
-> directly.
-
-### Execution
-
-Phase 0: source text → 1: tree-sitter parse (parallel) → 2: Tier 1 queries → 3: Tier 2 context → 4: Tier 3 semantic → 5: sqlparser-rs deep → 6: post-process (escalation, suppression, sort).
-
-Suppression: `# burnt: ignore[BP001]` (line), `# burnt: ignore-file[BP001]` (file).
-
----
-
-## 9. Estimation
-
-### Python/SQL
-
-Topological graph walk. `estimated_input_bytes × coefficient → dbu → cost_usd`. Un-enriched → heuristic, `confidence: low`. Infrastructure: `vm_cost × (workers + 1) × hours`. TCO = dbu + infra.
-
-### DLT
-
-Per-table walk. Streaming: `batch × coeff × batches`. MV: `source × coeff`. Overhead ×1.12. DLT tier rates.
-
-### Session Cost (Notebook)
-
-```
-execution_cost + idle_cost = total_session_cost
-utilization = execution_time / total_time
-```
-
-### Recommendations
-
-Python/SQL: ALL_PURPOSE → JOBS_COMPUTE, instance right-sizing, Photon (>60% eligible), spot, API JSON.
-DLT: MV → streaming conversion, tier optimization.
-Session: serverless when utilization < 30%, auto-termination.
-
----
-
-## 10. Monitoring
-
-Python API only. Not in CLI.
-
-| Function | Source |
-|----------|--------|
-| Tag attribution | system.billing.usage |
-| Idle clusters | system.compute.node_timeline |
-| Cost drift | system.billing + lakeflow |
-| Job report | system.lakeflow.job_run_timeline |
-| Pipeline report | system.lakeflow.pipeline_event_log |
-
-All accessible through `burnt.watch()`. Output: `.display()`, `.json()`, `.alert()`.
-
----
-
-## 11. Feedback
-
-`result.calibrate(job_id, run_id)` — actual from billing, per-node comparison.
-`result.calibrate(pipeline_id, update_id)` — actual from pipeline_event_log, per-table.
-EMA: `0.3 × observed + 0.7 × old`. Stored per config file or Delta table.
-
----
-
-## 12. Configuration
+## 11. Configuration
 
 ### Discovery
 
-burnt searches for config in this order, using the first file found:
+Same as ruff/black: walk up from target path looking for:
 
-1. `burnt.toml` (project root, walking up from target path)
-2. `.burnt.toml` (same search)
-3. `pyproject.toml` → `[tool.burnt]` section (same search)
-4. `~/.config/burnt/burnt.toml` (user home)
+1. `burnt.toml`
+2. `.burnt.toml`
+3. `pyproject.toml` → `[tool.burnt]`
+4. `~/.config/burnt/burnt.toml`
 
-This matches how ruff, black, and pytest discover configuration. A single project has one config location. burnt walks upward from the file being checked until it finds one of these files or hits the filesystem root.
-
-### `burnt.toml` / `.burnt.toml`
-
-Standalone config. All sections at top level.
+### `burnt.toml`
 
 ```toml
-[connection]
-warehouse_id = "abc123def456"
-
-[tables]
-billing_usage = "governance.cost_management.v_billing_usage"
-query_history = "governance.cost_management.v_query_history"
-list_prices = "governance.cost_management.v_list_prices"
-
 [check]
-skip = ["BNT-A01", "BNT-A02"]
-max_cost = 50.0
-severity = "warning"
+skip = ["BP008"]          # Skip specific rules
+severity = "warning"       # Minimum severity to report
+
+[session]
+capture_sql = true
+capture_stages = true
+capture_cells = true
+
+[display]
+format = "auto"            # "auto" | "terminal" | "notebook"
+show_runtime = true        # Include actual metrics when available
+
+# Only used when burnt[databricks] is installed:
+[connection]
+warehouse_id = "abc123"
 
 [watch]
 tag_key = "team"
 drift_threshold = 0.25
-idle_threshold = 0.10
 budget = 5000.0
-days = 30
-
-[alert]
-slack = "https://hooks.slack.com/services/T00/B00/xxx"
-
-[calibration]
-store = "local"
 ```
 
-### `pyproject.toml`
+---
 
-Same schema, nested under `[tool.burnt]`. Coexists with ruff, pytest, hatch, etc.
-
-```toml
-[project]
-name = "my-databricks-project"
-
-[tool.ruff]
-line-length = 88
-
-[tool.burnt]
-# Flat keys go under [tool.burnt]
-
-[tool.burnt.connection]
-warehouse_id = "abc123def456"
-
-[tool.burnt.tables]
-billing_usage = "governance.cost_management.v_billing_usage"
-
-[tool.burnt.check]
-skip = ["BNT-A01", "BNT-A02"]
-max_cost = 50.0
-severity = "warning"
-
-[tool.burnt.watch]
-tag_key = "team"
-drift_threshold = 0.25
-idle_threshold = 0.10
-budget = 5000.0
-
-[tool.burnt.alert]
-slack = "https://hooks.slack.com/services/T00/B00/xxx"
-
-[tool.burnt.calibration]
-store = "local"
-```
-
-When burnt finds `pyproject.toml`, it reads the `[tool.burnt]` section and strips the prefix. The resulting config is identical to `burnt.toml` — the schema is the same, just the nesting differs.
-
-If `pyproject.toml` exists but has no `[tool.burnt]` section, burnt ignores it and continues searching (user home).
-
-### Environment Variables
-
-Every config key maps to `BURNT_` prefix with `__` for nesting:
+## 12. CLI
 
 ```bash
-BURNT_CONNECTION__WAREHOUSE_ID=abc123def456
-BURNT_TABLES__BILLING_USAGE=governance.v_billing_usage
-BURNT_CHECK__MAX_COST=50.0
-BURNT_ALERT__SLACK=https://hooks.slack.com/...
+# In-notebook style (capture session, then check)
+burnt check                          # Current directory / notebook
+burnt check ./pipeline.py            # Specific file
+burnt check ./notebooks/ --json      # Directory, JSON output
+
+# Post-hoc analysis (static + event log)
+burnt check ./notebook.ipynb --event-log ./app-20260101-eventlog
+
+# Configuration
+burnt init                           # Generate burnt.toml
+burnt rules                          # List all rules
+burnt doctor                         # Check setup (Databricks-aware if extra installed)
 ```
-
-### Programmatic Override
-
-```python
-burnt.config(
-    warehouse_id="abc123",
-    billing_table="governance.v_billing_usage",
-)
-```
-
-### Priority
-
-Highest wins:
-
-```
-Function arguments / CLI flags
-  > burnt.config()
-    > burnt.toml / .burnt.toml / pyproject.toml [tool.burnt]  (first found)
-      > ~/.config/burnt/burnt.toml
-        > BURNT_* env vars
-          > defaults
-```
-
-### Config Sections
-
-| Section | Used By | Keys |
-|---------|---------|------|
-| `[connection]` | All | `warehouse_id` |
-| `[tables]` | Enrichment, monitoring | `billing_usage`, `query_history`, `list_prices` |
-| `[check]` | `burnt.check()`, `burnt check` | `skip`, `only`, `max_cost`, `severity` |
-| `[watch]` | `burnt.watch()` | `tag_key`, `drift_threshold`, `idle_threshold`, `budget`, `days` |
-| `[alert]` | `.alert()` | `slack`, `teams`, `webhook`, `delta` |
-| `[calibration]` | `.calibrate()` | `store` (`"local"` or `"delta:catalog.schema.table"`) |
-
-### CLI
-
-CLI reads the discovered config file. Flags override:
-
-```bash
-# Uses max_cost from config
-burnt check ./notebooks/
-
-# Overrides
-burnt check ./notebooks/ --max-cost 100
-```
-
-`burnt check --init` generates a starter `burnt.toml` in the current directory. If `pyproject.toml` exists, asks whether to add `[tool.burnt]` there instead.
 
 ---
 
@@ -441,27 +397,25 @@ tree-sitter = "0.24"
 tree-sitter-python = "0.23"
 tree-sitter-sql = "0.3"
 sqlparser = { version = "0.60", features = ["visitor"] }
-toml = "0.8"
 rayon = "1.10"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 ```
 
 ### Python: `burnt`
 
+Core dependencies (always installed):
 ```toml
 dependencies = [
-    "burnt-engine>=0.1.0",
     "pydantic>=2.0,<3",
     "pydantic-settings>=2.0",
-    "databricks-sdk>=0.50.0",
     "rich>=13.0",
     "typer>=0.15",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+databricks = ["databricks-sdk>=0.50.0"]
 alerts = ["slack-sdk>=3.0"]
+all = ["burnt[databricks,alerts]"]
 ```
 
 ---
@@ -469,64 +423,48 @@ alerts = ["slack-sdk>=3.0"]
 ## 14. Package Structure
 
 ```
-src/burnt-engine/
-├── Cargo.toml
-├── build.rs
-├── rules/
-│   ├── registry.toml
-│   ├── tier1/{pyspark,sql,dlt}/
-│   ├── tier2/
-│   └── tier3/
-└── src/
-    ├── lib.rs
-    ├── ingestion/
-    ├── detect.rs
-    ├── parse/
-    ├── semantic/
-    ├── graph/{cost_graph,pipeline_graph,model,serialize}.rs
-    ├── rules/
-    └── types.rs
-
 src/burnt/
-├── __init__.py            # check(), watch(), config()
-├── _connection.py         # Access level detection
+├── __init__.py            # start_session(), check(), config(), version()
+├── _check.py              # Hybrid check() implementation
 ├── _config.py             # Config loading: burnt.toml + env + args
+├── _session.py            # Session listener + metric storage
+├── _display.py            # Auto-detect terminal vs notebook
+├── core/
+│   ├── __init__.py
+│   ├── cache.py           # Generic TTL cache
+│   ├── config.py          # Settings model (generic)
+│   ├── exceptions.py      # BurntError, ConfigError, etc.
+│   ├── models.py          # CostEstimate, ClusterConfig (generic)
+│   └── protocols.py       # Backend protocol
 ├── graph/
-│   ├── model.py           # Pydantic: CostGraph, PipelineGraph
-│   ├── enrich.py          # Delta + EXPLAIN
-│   ├── enrich_dlt.py      # Pipeline config + event log
-│   ├── estimate.py        # Graph walk → CostEstimate
-│   └── scaling.py         # 7 scaling functions
-├── intelligence/
-│   ├── recommend.py
-│   ├── feedback.py
-│   └── session.py
-├── watch/
-│   ├── tags.py
-│   ├── idle.py
-│   ├── drift.py
-│   ├── job.py
-│   ├── pipeline.py
-│   └── core.py            # burnt.watch() orchestration
-├── alerts/
-│   └── dispatch.py        # .alert(slack=, teams=, webhook=, delta=)
+│   ├── __init__.py
+│   ├── model.py           # CostGraph, CostNode (generic)
+│   ├── scaling.py         # Scaling functions
+│   └── estimate.py        # Graph walk → compute seconds
 ├── runtime/
-│   ├── detect.py
-│   ├── spark.py
-│   ├── rest.py
-│   └── dabs.py
-├── catalog/
-│   ├── instances.py
-│   └── pricing.py
+│   ├── __init__.py        # auto_backend()
+│   ├── backend.py         # Backend protocol
+│   └── spark_backend.py   # Generic SparkSession backend
+├── spark/
+│   └── listener.py        # SparkListener implementation
+├── parsers/
+│   ├── __init__.py
+│   ├── explain.py         # Spark EXPLAIN parsing
+│   ├── notebooks.py       # Jupyter notebook parsing
+│   └── antipatterns.py    # AntiPattern dataclass + rust bridge
 ├── display/
-│   ├── notebook.py
-│   ├── terminal.py
-│   └── export.py
-├── result.py              # CheckResult class
-├── cli.py                 # burnt check (< 200 lines)
-└── config.py              # Config model + loading
-
-templates/burnt_monitor.py
+│   ├── __init__.py
+│   ├── terminal.py        # Rich table output
+│   ├── notebook.py        # HTML output
+│   └── export.py          # JSON, Markdown export
+├── cli/
+│   └── main.py            # CLI commands
+└── databricks/            # Optional namespace
+    ├── __init__.py
+    ├── backend.py         # DatabricksBackend
+    ├── watch/             # Workspace monitoring
+    ├── pricing/           # DBU rates, instance catalog
+    └── cli.py             # Databricks-specific CLI commands
 ```
 
 ---
@@ -536,141 +474,52 @@ templates/burnt_monitor.py
 ```python
 import burnt
 
-# ── Code analysis ─────────────────────────────────
-result = burnt.check()                      # Current notebook
-result = burnt.check("./pipeline.py")       # File or directory
+# ── Session ─────────────────────────────────────────
+burnt.start_session(capture_stages=True, capture_sql=True)
 
-result.display()          # Notebook HTML or terminal table
-result.cost               # CostEstimate
-result.findings           # list[Finding]
-result.graph              # CostGraph or PipelineGraph
-result.mode               # "python" | "sql" | "dlt"
-result.session            # SessionCost (notebook only)
-result.api_json()         # Recommended cluster JSON
-result.json()             # Full result as dict
-result.markdown()         # Markdown string
-result.calibrate(job_id=12345, run_id=67890)
+# ... run your Spark code ...
 
-# ── Monitoring (notebook or scheduled job) ────────
-audit = burnt.watch(
-    tag_key="team",
-    drift_threshold=0.25,
-    idle_threshold=0.10,
-    budget=5000.0,
-    days=30,
-)
-audit = burnt.watch(job_id=12345)           # Single job
-audit = burnt.watch(pipeline_id=67890)      # Single pipeline
+# ── Check ───────────────────────────────────────────
+report = burnt.check()                      # Current notebook
+report = burnt.check("./pipeline.py")       # File or directory
 
-audit.display()
-audit.json()
-audit.alert(slack="https://hooks.slack.com/...")
-# or: alert(teams=, webhook=, delta=)
-# or: no args → uses [alert] from burnt.toml
+report.display()          # Auto-detects terminal vs notebook
+report.findings           # list[Finding] (sorted by cost impact)
+report.graph              # CostGraph
+report.compute_seconds    # Total compute time from runtime
+report.to_json()          # dict
+report.to_markdown()      # str
 
-# ── Config ────────────────────────────────────────
+# ── Config ──────────────────────────────────────────
 burnt.config(
-    warehouse_id="abc123",
-    billing_table="governance.v_billing_usage",
+    warehouse_id="abc123",  # only used if databricks extra installed
 )
 ```
 
 ---
 
-## 16. CLI
+## 16. Design Principles
 
-One command. Code analysis only. Monitoring is Python API.
-
-```bash
-burnt check <path>                          # File, directory, or glob
-burnt check <path> --cluster yaml:target    # DABs cluster config
-burnt check <path> --json                   # JSON output
-burnt check <path> --markdown               # Markdown output
-burnt check <path> --strict                 # Exit 1 on any error
-burnt check <path> --max-cost 25            # Exit 1 if cost > $25/run
-burnt check <path> --only BP001,DLT001      # Only these rules
-burnt check <path> --skip BNT-A01           # Skip these rules
-
-burnt check --explain                       # List all 84 rules
-burnt check --explain BP007                 # Explain one rule with examples
-burnt check --init                          # Generate burnt.toml
-
-burnt version
-```
-
-Exit codes: 0 clean, 1 threshold exceeded, 2 internal error.
-
-CLI reads `burnt.toml` for defaults. Flags override config.
+1. **Spark-first.** Generic Spark is the default. Databricks is an enhancement.
+2. **Post-development coaching.** We observe practice runs, not predict the future.
+3. **Compute seconds over dollars.** Dollars vary by cloud; compute time is actionable everywhere.
+4. **Hybrid analysis.** Static + runtime together is stronger than either alone.
+5. **Actionable findings.** Every warning includes a specific fix.
+6. **Honest confidence.** "Observed 50GB shuffle" > "Estimated $12.47".
+7. **Graceful always.** Works without Spark, works without Databricks, degrades transparently.
+8. **Optional extras.** Core is lightweight. Cloud-specific features are install-time opt-in.
 
 ---
 
-## 17. Graceful Degradation
-
-| Failure | Behavior |
-|---------|----------|
-| DESCRIBE DETAIL fails | Un-enriched, heuristic, low confidence |
-| System tables inaccessible | Monitoring disabled, analysis works |
-| Pipelines API unavailable | Default DLT tier rates |
-| EXPLAIN COST fails | Skip, use DESCRIBE + heuristic |
-| Dynamic SQL (`f"SELECT FROM {var}"`) | BN002 + partial graph |
-| Widget table name | Try default value, else unknown |
-| `%run` target missing | BN001, continue |
-| Parse error | Finding, partial tree |
-| No credentials | `ConnectionRequired` with instructions |
-
----
-
-## 18. System Tables
-
-| Table | Used By |
-|---|---|
-| `system.billing.usage` | watch (tags, drift), feedback |
-| `system.billing.list_prices` | DBU → USD (all SKUs) |
-| `system.query.history` | Feedback per-node |
-| `system.compute.node_types` | Instance catalog |
-| `system.compute.node_timeline` | watch (idle) |
-| `system.lakeflow.jobs` | watch (job_report) |
-| `system.lakeflow.job_run_timeline` | Per-run cost |
-| `system.lakeflow.pipeline_event_log` | DLT metrics, feedback |
-| `INFORMATION_SCHEMA.TABLES` | Delta enrichment |
-
-Override via `[tables]` in `burnt.toml` or `burnt.config()`.
-
----
-
-## 19. Design Principles
-
-1. Databricks-native. Requires connection.
-2. One graph, every view.
-3. Three modes, auto-detected.
-4. CLI checks code. Python API monitors costs. Right tool for the job.
-5. Honest confidence.
-6. Code-aware. Per-operation cost.
-7. Existence-aware. Idle cost alongside execution cost.
-8. Pipeline-aware. DLT table-level cost.
-9. Graceful always.
-10. Config file for defaults, flags for overrides, env vars for CI.
-
----
-
-## 20. Phases
+## 17. Phases
 
 | Phase | Duration | Deliverable |
 |-------|----------|-------------|
-| P1 Rust Engine | 6 wks | Parsing, 3 graphs, 84 rules, PyO3 |
-| P2 Python Intelligence | 4 wks | Enrichment, estimation, recs, feedback, session cost |
-| P3 Display & CLI | 3 wks | `check()`, `burnt check`, 3 layouts, degradation |
-| P4 Monitoring & Alerts | 3 wks | `watch()`, `.alert()`, monitoring template |
-| P5 Integration | 2 wks | Edge cases, config system, docs, wheels |
-| P6 Validation | 1 wk | Dogfood, security, performance |
+| P1 Rust Engine | Done | Parsing, CostGraph, ~30 rules, PyO3 |
+| P2 Session Listener | 2 wks | SparkListener, metric storage, cell tracking |
+| P3 Hybrid Check | 2 wks | Merge static + runtime, ranking by actual cost |
+| P4 Display & CLI | 2 wks | Terminal, notebook, JSON, markdown export |
+| P5 Databricks Module | 2 wks | `burnt[databricks]`: backend, watch, pricing |
+| P6 Integration | 1 wk | Edge cases, config, docs, wheels |
 
-**Total: 19 weeks.**
-
----
-
-## 21. Post v2.0
-
-- Graph-aware simulation (`result.simulate().enable_photon().compare()`)
-- Structural forecasting (threshold alerts)
-- Custom TOML rules from user directories
-- Multi-workspace monitoring
+**Total: 9 weeks from current state.**
