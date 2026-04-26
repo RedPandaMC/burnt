@@ -1,12 +1,15 @@
 status: todo
-agent: 
-completed_by: 
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-- Prepare the project for distribution as a Python wheel with a Rust backend.
-- Ensure compatibility with standard Python package managers.
-- Built a working github cicd
+## Redesign Notes
+Packaging changes already made:
+- `pyproject.toml`: `databricks-sdk` moved to optional dependencies
+- Rust engine compiles successfully via Maturin
+- `pip install burnt` installs the lightweight core
+- `pip install burnt[databricks]` adds Databricks support
 
-## Verification Results
-
-Run tests
+## Remaining Work
+- Verify wheel builds correctly for both Linux and macOS
+- Test `pip install burnt` in a clean environment
+- Ensure GitHub Actions CI/CD pipeline works with the new package structure

@@ -1,11 +1,15 @@
 status: todo
-agent: 
-completed_by: 
+agent: executor
+completed_by: moonshotai/kimi-k2.6
 
-## Implementation
-- Provide example CI/CD pipelines for various platforms. Do not execute them place them in a docs folder
-- Document how to securely use `burnt` in a CI environment.
+## Redesign Notes
+CI integration is under consideration. The tool is primarily designed for interactive notebook/CLI use, but `burnt check` could run in CI for static analysis.
 
-### Verification Results
-- Tests: `pytest` pass
-- Lint: `ruff check` pass
+Changes needed:
+- CI examples should use `burnt check --json` for machine-readable output
+- Databricks credentials are NOT required for static analysis (core package works without them)
+- Focus on GitHub Actions for pure static analysis
+
+## Remaining Work
+- Create `docs/ci-examples/github-actions.yml` for `burnt check` with JSON output
+- Document that CI usage requires `pip install burnt` only (no databricks extra needed)
