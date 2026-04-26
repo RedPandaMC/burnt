@@ -15,17 +15,6 @@ suggestion = "Remove .cache() if the DataFrame is only used in one action"
 category = "BestPractice"
 tags = ["pyspark", "memory", "caching"]
 
-[query]
-detect = """
-; Detect DataFrame.cache()
-(call
-  function: (attribute
-    object: (_) @df
-    attribute: (identifier) @method)
-  (#eq? @method "cache"))
-"""
-
-
 [tests]
 pass = [
     "df.take(5)",
