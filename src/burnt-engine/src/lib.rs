@@ -31,8 +31,8 @@ fn check(source: &str) -> PyResult<PyObject> {
     let mode = detect_mode_from_source(source);
 
     Python::with_gil(|py| match mode {
-        AnalysisMode::Dlt => {
-            let pg = PipelineGraph::from_dlt(source);
+        AnalysisMode::Sdp => {
+            let pg = PipelineGraph::from_sdp(source);
             let pg_py: PipelineGraphPy = pg.into();
             Ok(pg_py.into_py(py))
         }
@@ -51,7 +51,7 @@ fn check(source: &str) -> PyResult<PyObject> {
 
 /// Runs all applicable lint rules against `source`.
 ///
-/// `language` may be `"python"`, `"sql"`, `"dlt"`, or `"auto"` / `None` for
+/// `language` may be `"python"`, `"sql"`, `"sdp"`, or `"auto"` / `None` for
 /// auto-detection.  Returns a list of `Finding` objects.
 #[pyfunction]
 #[pyo3(signature = (source, language=None))]
@@ -82,8 +82,8 @@ fn build_graph_and_pipeline(
     source: &str,
 ) -> PyResult<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>)> {
     match mode {
-        AnalysisMode::Dlt => {
-            let pg = PipelineGraph::from_dlt(source);
+        AnalysisMode::Sdp => {
+            let pg = PipelineGraph::from_sdp(source);
             Ok((None, Some(PyPipeline::from_pipeline(pg)), Vec::new()))
         }
         AnalysisMode::Sql => {
@@ -110,7 +110,7 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
 
         let cell = Cell {
             kind: match mode {
-                AnalysisMode::Dlt => CellKind::Python,
+                AnalysisMode::Sdp => CellKind::Python,
                 AnalysisMode::Sql => CellKind::Sql,
                 AnalysisMode::Python => CellKind::Python,
             },

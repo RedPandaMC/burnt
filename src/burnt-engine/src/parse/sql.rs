@@ -20,12 +20,12 @@ pub struct SqlFragmentWithAst {
 #[derive(Debug, Clone)]
 pub struct DltTableDef {
     pub name: String,
-    pub kind: DltTableKind,
+    pub kind: SdpTableKind,
     pub query: String,
 }
 
 #[derive(Debug, Clone)]
-pub enum DltTableKind {
+pub enum SdpTableKind {
     StreamingTable,
     MaterializedView,
 }
@@ -88,7 +88,7 @@ fn detect_dlt_table(stmt: &Statement) -> Option<DltTableDef> {
             if query.contains("LIVE.") {
                 return Some(DltTableDef {
                     name: create_view.name.to_string(),
-                    kind: DltTableKind::MaterializedView,
+                    kind: SdpTableKind::MaterializedView,
                     query,
                 });
             }
@@ -103,7 +103,7 @@ fn detect_dlt_table(stmt: &Statement) -> Option<DltTableDef> {
             {
                 return Some(DltTableDef {
                     name,
-                    kind: DltTableKind::StreamingTable,
+                    kind: SdpTableKind::StreamingTable,
                     query,
                 });
             }

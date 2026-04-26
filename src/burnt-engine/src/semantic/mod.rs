@@ -29,7 +29,7 @@ pub enum BindingKind {
 
 #[derive(Debug, Clone)]
 pub enum SourceKind {
-    DltRead,
+    SdpRead,
     DpRead,
     SparkRead,
     SparkReadStream,
@@ -140,8 +140,8 @@ impl SemanticModel {
     pub fn classify_rhs(&self, source: &str) -> SourceKind {
         let source = source.trim();
 
-        if source.starts_with("dlt.read") || source.starts_with("dlt.read_") {
-            return SourceKind::DltRead;
+        if source.starts_with("sdp.read") || source.starts_with("dlt.read_") {
+            return SourceKind::SdpRead;
         }
         if source.starts_with("dp.read") || source.starts_with("dp.read_") {
             return SourceKind::DpRead;
@@ -215,7 +215,7 @@ mod tests {
         let model = SemanticModel::new();
         assert!(matches!(
             model.classify_rhs("dlt.read('table')"),
-            SourceKind::DltRead
+            SourceKind::SdpRead
         ));
         assert!(matches!(
             model.classify_rhs("dp.read_csv('file')"),

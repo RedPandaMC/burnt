@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::graph::python::PythonGraphBuilder;
-use crate::types::{CostEdge, DltSourceType, DltTableKind, PipelineTable};
+use crate::types::{CostEdge, SdpSourceType, SdpTableKind, PipelineTable};
 use tree_sitter::{Node, Parser};
 
-pub struct DltGraphBuilder {
+pub struct SdpGraphBuilder {
     tables: Vec<PipelineTable>,
     edges: Vec<CostEdge>,
     table_counter: u32,
@@ -15,7 +15,7 @@ pub struct DltGraphBuilder {
     parser: Mutex<Parser>,
 }
 
-impl DltGraphBuilder {
+impl SdpGraphBuilder {
     pub fn new() -> Self {
         Self {
             tables: Vec::new(),
@@ -44,7 +44,7 @@ impl DltGraphBuilder {
         self.visit_node(&root, source);
 
         // Also check for SQL DLT definitions
-        self.check_sql_dlt_definitions(source);
+        self.check_sql_sdp_definitions(source);
 
         (self.tables.clone(), self.edges.clone())
     }
@@ -53,7 +53,7 @@ impl DltGraphBuilder {
         match node.kind() {
             "decorator" => self.handle_decorator(node, source),
             "function_definition" => self.handle_function_definition(node, source),
-            "call" => self.handle_dlt_call(node, source),
+            "call" => self.handle_sdp_call(node, source),
             _ => {}
         }
 
@@ -69,10 +69,10 @@ impl DltGraphBuilder {
             .unwrap_or("")
             .to_lowercase();
 
-        if decorator_text.contains("@dlt.table") || decorator_text.contains("@dp.table") {
-            self.start_table(DltTableKind::StreamingTable, None);
+        if decorator_text.contains("@sdp.table") || decorator_text.contains("@dp.table") {
+            self.start_table(SdpTableKind::StreamingTable, None);
         } else if decorator_text.contains("@dp.materialized_view") {
-            self.start_table(DltTableKind::MaterializedView, None);
+            self.start_table(SdpTableKind::MaterializedView, None);
         }
 
         // Extract expectations from decorator
@@ -102,7 +102,7 @@ impl DltGraphBuilder {
 
                     if let Some(table) = &mut self.current_table {
                         table.name = table_name.clone();
-                        table.id = format!("dlt_table_{}", self.table_counter);
+                        table.id = format!("sdp_table_{}", self.table_counter);
 
                         // Record table reference
                         self.table_references.insert(table_name, table.id.clone());
@@ -129,11 +129,11 @@ impl DltGraphBuilder {
         }
     }
 
-    fn handle_dlt_call(&mut self, node: &Node, source: &str) {
+    fn handle_sdp_call(&mut self, node: &Node, source: &str) {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
-        if call_text.starts_with("dlt.read") {
-            self.handle_dlt_read(node, source);
+        if call_text.starts_with("sdp.read") {
+            self.handle_sdp_read(node, source);
         } else if call_text.starts_with("dp.read") {
             self.handle_dp_read(node, source);
         } else if call_text.contains("LIVE.") {
@@ -141,9 +141,9 @@ impl DltGraphBuilder {
         }
     }
 
-    fn handle_dlt_read(&mut self, node: &Node, source: &str) {
+    fn handle_sdp_read(&mut self, node: &Node, source: &str) {
         if let Some(table) = &mut self.current_table {
-            table.source_type = DltSourceType::DltRead;
+            table.source_type = SdpSourceType::SdpRead;
 
             // Extract table name from arguments
             let mut cursor = node.walk();
@@ -163,7 +163,7 @@ impl DltGraphBuilder {
                             let edge = CostEdge {
                                 source: source_table_id.clone(),
                                 target: table.id.clone(),
-                                edge_type: "dlt_read".to_string(),
+                                edge_type: "sdp_read".to_string(),
                             };
                             self.edges.push(edge);
                         }
@@ -175,7 +175,7 @@ impl DltGraphBuilder {
 
     fn handle_dp_read(&mut self, _node: &Node, _source: &str) {
         if let Some(table) = &mut self.current_table {
-            table.source_type = DltSourceType::DpRead;
+            table.source_type = SdpSourceType::DpRead;
         }
     }
 
@@ -187,7 +187,7 @@ impl DltGraphBuilder {
                 let table_name = &ref_text[..end];
                 if let Some(source_table_id) = self.table_references.get(table_name) {
                     if let Some(table) = &mut self.current_table {
-                        table.source_type = DltSourceType::LiveRef;
+                        table.source_type = SdpSourceType::LiveRef;
 
                         // Create edge from source table to current table
                         let edge = CostEdge {
@@ -202,23 +202,23 @@ impl DltGraphBuilder {
         }
     }
 
-    fn start_table(&mut self, kind: DltTableKind, source_type: Option<DltSourceType>) {
+    fn start_table(&mut self, kind: SdpTableKind, source_type: Option<SdpSourceType>) {
         self.table_counter += 1;
 
         let table = PipelineTable {
-            id: format!("dlt_table_{}", self.table_counter),
+            id: format!("sdp_table_{}", self.table_counter),
             name: format!("table_{}", self.table_counter),
             kind,
-            source_type: source_type.unwrap_or(DltSourceType::Unknown),
+            source_type: source_type.unwrap_or(SdpSourceType::Unknown),
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
-            is_incremental: matches!(kind, DltTableKind::StreamingTable),
+            is_incremental: matches!(kind, SdpTableKind::StreamingTable),
         };
 
         self.current_table = Some(table);
     }
 
-    fn check_sql_dlt_definitions(&mut self, source: &str) {
+    fn check_sql_sdp_definitions(&mut self, source: &str) {
         // Check for SQL-based DLT definitions
         let lines: Vec<&str> = source.lines().collect();
 
@@ -249,10 +249,10 @@ impl DltGraphBuilder {
         self.table_counter += 1;
 
         let table = PipelineTable {
-            id: format!("sql_dlt_table_{}", self.table_counter),
+            id: format!("sql_sdp_table_{}", self.table_counter),
             name: table_name.clone(),
-            kind: DltTableKind::StreamingTable,
-            source_type: DltSourceType::Unknown,
+            kind: SdpTableKind::StreamingTable,
+            source_type: SdpSourceType::Unknown,
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
             is_incremental: true,
@@ -278,10 +278,10 @@ impl DltGraphBuilder {
         self.table_counter += 1;
 
         let table = PipelineTable {
-            id: format!("sql_dlt_table_{}", self.table_counter),
+            id: format!("sql_sdp_table_{}", self.table_counter),
             name: view_name.clone(),
-            kind: DltTableKind::MaterializedView,
-            source_type: DltSourceType::Unknown,
+            kind: SdpTableKind::MaterializedView,
+            source_type: SdpSourceType::Unknown,
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
             is_incremental: false,
@@ -306,12 +306,12 @@ def users():
     return spark.read.parquet("s3://bucket/users")
 "#;
 
-        let mut builder = DltGraphBuilder::new();
+        let mut builder = SdpGraphBuilder::new();
         let (tables, _edges) = builder.build_from_source(source);
 
         assert!(!tables.is_empty());
-        assert_eq!(tables[0].kind, DltTableKind::StreamingTable);
-        assert_eq!(tables[0].source_type, DltSourceType::Unknown);
+        assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
+        assert_eq!(tables[0].source_type, SdpSourceType::Unknown);
         assert!(tables[0].is_incremental);
     }
 
@@ -325,11 +325,11 @@ def user_summary():
     return spark.sql("SELECT user_id, COUNT(*) FROM LIVE.users GROUP BY user_id")
 "#;
 
-        let mut builder = DltGraphBuilder::new();
+        let mut builder = SdpGraphBuilder::new();
         let (tables, _edges) = builder.build_from_source(source);
 
         assert!(!tables.is_empty());
-        assert_eq!(tables[0].kind, DltTableKind::MaterializedView);
+        assert_eq!(tables[0].kind, SdpTableKind::MaterializedView);
         assert!(!tables[0].is_incremental);
     }
 
@@ -343,13 +343,13 @@ def processed_users():
     return dlt.read("raw_users").select("id", "name")
 "#;
 
-        let mut builder = DltGraphBuilder::new();
+        let mut builder = SdpGraphBuilder::new();
         let (tables, _edges) = builder.build_from_source(source);
 
         assert!(!tables.is_empty());
         // Note: source_type detection needs improvement
-        // assert_eq!(tables[0].source_type, DltSourceType::DltRead);
+        // assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
         // For now, just check that we have a table
-        assert_eq!(tables[0].kind, DltTableKind::StreamingTable);
+        assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
     }
 }

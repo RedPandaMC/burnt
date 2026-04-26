@@ -17,7 +17,7 @@ pub struct Provenance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DltSignal {
+pub enum SdpSignal {
     Import,
     Decorator(String),
 }
@@ -25,7 +25,7 @@ pub enum DltSignal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PythonParseResult {
     pub sql_fragments: Vec<SqlFragment>,
-    pub dlt_signals: Vec<DltSignal>,
+    pub sdp_signals: Vec<SdpSignal>,
     pub findings: Vec<Finding>,
 }
 
@@ -76,7 +76,7 @@ pub struct CostEdge {
 
 #[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
-pub enum DltTableKind {
+pub enum SdpTableKind {
     StreamingTable,
     MaterializedView,
     TemporaryView,
@@ -84,10 +84,10 @@ pub enum DltTableKind {
 
 #[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
-pub enum DltSourceType {
+pub enum SdpSourceType {
     CloudFiles,
     Kafka,
-    DltRead,
+    SdpRead,
     DpRead,
     LiveRef,
     Unknown,
@@ -97,8 +97,8 @@ pub enum DltSourceType {
 pub struct PipelineTable {
     pub id: String,
     pub name: String,
-    pub kind: DltTableKind,
-    pub source_type: DltSourceType,
+    pub kind: SdpTableKind,
+    pub source_type: SdpSourceType,
     pub inner_nodes: Vec<CostNode>,
     pub expectations: Vec<String>,
     pub is_incremental: bool,
@@ -134,7 +134,7 @@ pub struct Cell {
 pub enum AnalysisMode {
     Python,
     Sql,
-    Dlt,
+    Sdp,
 }
 
 #[pyclass(eq, eq_int)]
@@ -234,7 +234,7 @@ pub struct CompiledRule {
 impl AnalysisMode {
     pub fn as_lang_str(&self) -> &'static str {
         match self {
-            AnalysisMode::Dlt => "dlt",
+            AnalysisMode::Sdp => "sdp",
             AnalysisMode::Sql => "sql",
             AnalysisMode::Python => "python",
         }

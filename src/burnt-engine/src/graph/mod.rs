@@ -2,11 +2,11 @@ use pyo3::prelude::*;
 
 use crate::types::{CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
 
-pub mod dlt;
+pub mod sdp;
 pub mod python;
 pub mod sql;
 
-use dlt::DltGraphBuilder;
+use sdp::SdpGraphBuilder;
 use python::PythonGraphBuilder;
 use sql::SqlGraphBuilder;
 
@@ -56,13 +56,13 @@ pub struct PipelineGraph {
 }
 
 impl PipelineGraph {
-    pub fn from_dlt(source: &str) -> Self {
-        let mut builder = DltGraphBuilder::new();
+    pub fn from_sdp(source: &str) -> Self {
+        let mut builder = SdpGraphBuilder::new();
         let (tables, _edges) = builder.build_from_source(source);
 
         PipelineGraph {
             tables,
-            mode: "dlt".to_string(),
+            mode: "sdp".to_string(),
             confidence: "low".to_string(),
         }
     }

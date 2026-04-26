@@ -3,16 +3,16 @@ use crate::types::AnalysisMode;
 pub fn detect_mode_from_source(source: &str) -> AnalysisMode {
     let source_lower = source.to_lowercase();
 
-    if source_lower.contains("import dlt")
-        || source_lower.contains("from dlt import")
-        || source_lower.contains("@dlt.table")
+    if source_lower.contains("import sdp")
+        || source_lower.contains("from sdp import")
+        || source_lower.contains("@sdp.table")
         || source_lower.contains("@dp.table")
         || source_lower.contains("@dp.materialized_view")
         || source_lower.contains("create streaming table")
         || source_lower.contains("create materialized view")
         || source_lower.contains("live.ref")
     {
-        return AnalysisMode::Dlt;
+        return AnalysisMode::Sdp;
     }
 
     let trimmed = source.trim();
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn test_detect_dlt_from_import() {
         let source = "import dlt\n@dlt.table\ndef my_table(): pass";
-        assert_eq!(detect_mode_from_source(source), AnalysisMode::Dlt);
+        assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
     }
 
     #[test]
@@ -55,12 +55,12 @@ mod tests {
     #[test]
     fn test_detect_dlt_create_streaming() {
         let source = "CREATE STREAMING TABLE my_table AS SELECT * FROM source";
-        assert_eq!(detect_mode_from_source(source), AnalysisMode::Dlt);
+        assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
     }
 
     #[test]
     fn test_detect_dlt_create_materialized() {
         let source = "CREATE MATERIALIZED VIEW my_view AS SELECT * FROM source";
-        assert_eq!(detect_mode_from_source(source), AnalysisMode::Dlt);
+        assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
     }
 }

@@ -190,19 +190,19 @@ impl<'a> DltSignalVisitor<'a> {
         match node.kind() {
             "import_statement" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("import dlt") || text.contains("import dp") {
+                if text.contains("import sdp") || text.contains("import dp") {
                     self.signals.push(DltSignal::Import);
                 }
             }
             "import_from_statement" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("from dlt import") || text.contains("from dp import") {
+                if text.contains("from sdp import") || text.contains("from dp import") {
                     self.signals.push(DltSignal::Import);
                 }
             }
             "decorator" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("@dlt.table")
+                if text.contains("@sdp.table")
                     || text.contains("@dp.table")
                     || text.contains("@dp.materialized_view")
                 {

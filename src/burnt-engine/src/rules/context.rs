@@ -22,7 +22,7 @@ fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
         m.insert("BNT-I01", check_star_import_pyspark);
         m.insert("BNT-C01", check_df_bracket_reference);
         m.insert("BNT-N01", check_generic_df_name_var);
-        m.insert("DLT004", check_materialized_view_incremental);
+        m.insert("SDP006", check_materialized_view_incremental);
         m.insert("BD001", check_vacuum_frequency);
         m.insert("BQ003", check_count_distinct_at_scale);
         m.insert("BQ004", check_correlated_subquery);
@@ -101,7 +101,7 @@ fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        if trimmed.contains("@dlt.") || trimmed.contains("dlt.") {
+        if trimmed.contains("@sdp.") || trimmed.contains("sdp.") {
             for op in &prohibited {
                 if trimmed.contains(&format!(".{}(", op)) {
                     findings.push(make_finding(
@@ -242,12 +242,12 @@ fn check_generic_df_name_var(source: &str) -> Vec<Finding> {
 fn check_materialized_view_incremental(source: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let has_dlt_table = source.contains("@dlt.table") || source.contains("dlt.table");
+    let has_dlt_table = source.contains("@sdp.table") || source.contains("sdp.table");
     let has_incremental = source.contains("incremental") || source.contains("stream");
 
     if has_dlt_table && !has_incremental {
         findings.push(make_finding(
-            "DLT004",
+            "SDP006",
             Severity::Warning,
             "Materialized view defined without incremental strategy",
             "Consider incremental materialized view for large datasets",
