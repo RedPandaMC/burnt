@@ -86,7 +86,7 @@ Databricks:
 %pip install burnt
 ```
 
-Requires Databricks connection. Degrades gracefully — even auth-only gives you 84 lint rules.
+Works without credentials — 84 lint rules run immediately. Add `pip install burnt[databricks]` for cost estimation and dollar figures.
 
 ---
 
@@ -95,12 +95,16 @@ Requires Databricks connection. Degrades gracefully — even auth-only gives you
 ```python
 import burnt
 
+burnt.start_session()   # attach sparkMeasure; requires pip install burnt[spark]
+
+# ... run your Spark code ...
+
 result = burnt.check()
 result.display()
-result.cost                     # CostEstimate
-result.findings                 # list[Finding]
-result.api_json()               # Recommended cluster JSON
-result.calibrate(job_id=12345, run_id=67890)
+result.findings         # list[Finding]
+result.to_json()        # dict
+result.to_markdown()    # str
+result.to_sarif()       # SARIF 2.1.0 dict
 ```
 
 ## CLI
@@ -108,28 +112,14 @@ result.calibrate(job_id=12345, run_id=67890)
 ```bash
 burnt check notebook.py
 burnt check ./notebooks/
-burnt check ./notebooks/ --cluster databricks.yml:prod
-burnt check ./notebooks/ --json
-burnt check ./notebooks/ --strict
+burnt check ./notebooks/ --output json
+burnt check ./notebooks/ --output sarif > burnt.sarif
 burnt check ./notebooks/ --max-cost 25
+burnt check ./notebooks/ --select BP* --ignore BNT_*
 
-burnt check --explain           # List all 84 rules
-burnt check --explain BP007     # Explain one rule
-burnt check --init              # Generate burnt.toml
-```
-
-## Monitoring
-
-Python API only. Runs in notebooks or scheduled jobs.
-
-```python
-audit = burnt.watch(
-    tag_key="team",
-    drift_threshold=0.25,
-    idle_threshold=0.10,
-)
-audit.display()
-audit.alert(slack="https://hooks.slack.com/...")
+burnt rules                     # Browse all 84 rules (interactive TUI)
+burnt init                      # Generate burnt.toml
+burnt doctor                    # Check config and connectivity
 ```
 
 ---
@@ -141,28 +131,16 @@ Standalone `burnt.toml`, or `[tool.burnt]` in `pyproject.toml` — same as ruff.
 **`burnt.toml`:**
 ```toml
 [check]
-skip = ["BNT-A01"]
+ignore = ["BNT_001"]
 max_cost = 50.0
-
-[watch]
-tag_key = "team"
-drift_threshold = 0.25
-
-[alert]
-slack = "https://hooks.slack.com/..."
+severity = "warning"
 ```
 
 **`pyproject.toml`:**
 ```toml
 [tool.burnt.check]
-skip = ["BNT-A01"]
+ignore = ["BNT_001"]
 max_cost = 50.0
-
-[tool.burnt.watch]
-tag_key = "team"
-
-[tool.burnt.alert]
-slack = "https://hooks.slack.com/..."
 ```
 
 Discovery: walks up from target path looking for `burnt.toml`, `.burnt.toml`, or `pyproject.toml` with `[tool.burnt]`. Falls back to `~/.config/burnt/burnt.toml`.
@@ -202,15 +180,15 @@ Three tiers: Tier 1 (TOML, no Rust needed), Tier 2 (Rust context), Tier 3 (Rust 
 ## Architecture
 
 ```
-CLI: burnt check           Python: burnt.check() / burnt.watch()
-      │                          │                  │
-  Code Analysis               Code Analysis    Cost Monitoring
-  (Rust → graph →             (same pipeline)  (system table SQL
-   enrich → estimate)                           → alerts)
+CLI: burnt check                 Python: burnt.check()
+      │                                │
+  Rust engine (PyO3)          Rust engine (same)
+  84 rules, CostGraph         + sparkMeasure enrichment
+  tree-sitter Py/SQL/DLT      + DatabricksBackend (optional)
 ```
 
-Rust engine: tree-sitter Py + SQL, %run, mode detect, semantic model, graphs, 84 rules.
-Python: enrichment, estimation, session cost, recs, feedback, monitoring, alerts.
+Rust engine: tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph, 84 rules across 6 categories.
+Python: sparkMeasure session wrapper, graph enrichment, cost estimation, display, CLI.
 
 ---
 
