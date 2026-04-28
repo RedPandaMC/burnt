@@ -1,12 +1,12 @@
 # burnt — Technical Specification
 
-> Notebook quality and cost analysis for Databricks. Like ruff, but for your notebooks.
+> Cost Compiler for Spark. Per-operation, per-table, per-dollar.
 
 ---
 
 ## 1. Product
 
-burnt is a static analysis and runtime enrichment tool for Databricks notebooks. Its three modes in priority order:
+burnt is a static analysis and runtime enrichment tool for Spark pipelines. Works on Databricks today; EMR, Glue, Dataproc, and on-prem Spark next. Its three modes in priority order:
 
 1. **CLI static lint** — `burnt check ./notebook.py` finds expensive patterns without running any code
 2. **Interactive coaching** — attach to a Spark session, run your code, call `burnt.check()` for runtime-enriched findings
@@ -15,8 +15,9 @@ burnt is a static analysis and runtime enrichment tool for Databricks notebooks.
 It combines:
 
 - **Static analysis** (Rust engine) — parses Python/SQL code, builds a cost graph, 84 lint rules across 6 categories
-- **Runtime enrichment** — sparkMeasure captures actual stage metrics (shuffle, spill, CPU) and correlates them to graph nodes
-- **Actionable findings** — every warning includes a specific fix
+- **Runtime enrichment** — sparkMeasure (core dep) captures actual stage metrics (shuffle, spill, CPU) and correlates them to graph nodes
+- **Pricing backends** (optional extras) — map compute-seconds to dollars via cloud-specific rates: `[azure-databricks]`, `[aws-databricks]`, `[gcp-databricks]`, `[onprem-spark]`
+- **Actionable findings** — every warning includes a specific fix; autofixable rules support `--fix` / `--unsafe-fixes`
 
 ### Output
 
@@ -52,13 +53,13 @@ $ burnt check ./notebooks/pipeline.py
 
 ## 2. Philosophy
 
-1. **Databricks-first.** The lint rules work without credentials. Cost intelligence requires Databricks. Be honest about it.
+1. **Spark-generic.** Lint rules and compute-seconds work on any Spark code. Dollar estimates require a cloud pricing extra. Be honest about which is which.
 2. **CLI-first.** `burnt check` is the product. The Python API is a second mode.
-3. **Full notebook hygiene.** Cost rules + style rules + structure rules. "ruff for Databricks notebooks."
-4. **Static + runtime.** Static rules always run. sparkMeasure enriches them when a Spark session is active.
-5. **Compute seconds over dollars.** "8.3 executor-hours" is actionable everywhere. Backends optionally map to USD.
+3. **Full notebook hygiene.** Cost rules + style rules + structure rules. "ruff for Databricks notebooks, and beyond."
+4. **Static + runtime.** Static rules always run. sparkMeasure (core dep) enriches them when a Spark session is active.
+5. **Compute seconds over dollars.** "8.3 executor-hours" is actionable everywhere. Pricing backends map to USD.
 6. **Honest confidence.** "Observed 50GB shuffle" is shown differently from "Estimated 50GB shuffle."
-7. **Graceful degradation.** No credentials → 84 lint rules. Spark session → runtime enrichment. `pip install burnt[databricks]` → dollar estimates.
+7. **Graceful degradation.** No credentials → 84 lint rules + compute-seconds. Spark session → runtime enrichment. Pricing extra → dollar estimates. Never a hard failure.
 
 ---
 
@@ -144,9 +145,14 @@ Adds dollar estimates, system table queries, and DESCRIBE DETAIL enrichment. Lin
 
 **Runtime capture** (`runtime/sparkmeasure.py`): `burnt.start_session()` initialises `StageMetrics(spark)`. At `check()` time, calls `metrics.end()` then `metrics.create_df().collect()` to get per-stage data. Falls back to Spark REST API (`localhost:4040`) if sparkMeasure is not installed.
 
-**Backend** (`burnt.runtime`): Optional protocol for enriching with cloud-specific data.
-- `SparkBackend`: generic SparkSession introspection (REST API, event log)
-- `DatabricksBackend`: `pip install burnt[databricks]` — adds DESCRIBE DETAIL, system tables, DBU pricing
+**Pricing backends** (`burnt.core.pricing.PricingBackend` protocol): Optional extras that map compute-seconds to dollars.
+- `[databricks]` — workspace API client + system-table reader (no pricing data; auto-pulled by every `[*-databricks]` extra)
+- `[azure-databricks]` — Azure DBU rates × Azure VM SKU prices × cluster profile lookup
+- `[aws-databricks]` — AWS DBU rates × EC2 instance prices
+- `[gcp-databricks]` — GCP DBU rates × GCE machine type prices
+- `[onprem-spark]` — user-supplied `$/vCPU-hour`, `$/GB-hour`, `$/GB-shuffle` from `burnt.toml`; no cloud SDK
+
+Without any pricing extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported.
 
 ---
 
@@ -161,7 +167,7 @@ burnt.start_session()
 Internally:
 
 ```python
-from sparkmeasure import StageMetrics   # pip install burnt[spark]
+from sparkmeasure import StageMetrics   # core dep — always installed
 
 spark = SparkSession.getActiveSession()
 _SESSION = StageMetrics(spark)
@@ -171,8 +177,8 @@ _SESSION.begin()
 If sparkMeasure is not installed, falls back to polling the Spark REST API at `spark.sparkContext.uiWebUrl + "/api/v1/..."`. If no Spark session is active, `start_session()` returns silently — static analysis still works.
 
 **Fallback hierarchy:**
-1. sparkMeasure (`pip install burnt[spark]`) — native Scala listener, full per-stage data *(primary)*
-2. Spark REST API (`localhost:4040`) — post-execution, no install needed *(fallback)*
+1. sparkMeasure (core dep, always installed) — native Scala listener, full per-stage data *(primary)*
+2. Spark REST API (`localhost:4040`) — post-execution, no additional install needed *(fallback)*
 3. Event log (`--event-log <path>`) — fully offline, batch use *(CLI flag)*
 
 ### 2. Run
@@ -291,18 +297,21 @@ collect() (L67)    2.1 hr    15%      Add limit
 repartition(L89)   0.8 hr    6%       Remove or increase
 ```
 
-### Backend Mapping (Optional)
+### Pricing Backend Mapping (Optional Extras)
 
-With `pip install burnt[databricks]`, compute seconds are mapped to dollar estimates via DBU rates.
+A `PricingBackend` extra maps compute-seconds to dollar estimates. Without one, `result.cost_estimate.usd` is `None`.
 
 ```python
-result.cost_estimate  # CostEstimate with USD if DatabricksBackend is active
+result.cost_estimate  # CostEstimate with USD if a pricing backend extra is active
 ```
 
 | Setup | Output |
 |-------|--------|
-| Core only | compute seconds |
-| `burnt[databricks]` | compute seconds + USD estimate |
+| Core only | compute-seconds |
+| `burnt[onprem-spark]` | compute-seconds + USD from user-supplied rates |
+| `burnt[azure-databricks]` | compute-seconds + USD via Azure DBU + VM pricing |
+| `burnt[aws-databricks]` | compute-seconds + USD via AWS DBU + EC2 pricing |
+| `burnt[gcp-databricks]` | compute-seconds + USD via GCP DBU + GCE pricing |
 
 ---
 
@@ -340,23 +349,67 @@ Collapsible sections per finding. Bar chart of compute by operation. Click to ju
 
 ---
 
-## 10. Databricks Optional Module
+## 10. Pricing Backends
+
+Dollar estimates are provided by optional pricing-backend extras. Core ships nothing pricing-shaped — without an extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported.
+
+### `[databricks]` — workspace API client + system-table reader
 
 `pip install burnt[databricks]`
 
-Adds:
-- `DatabricksBackend` — DESCRIBE DETAIL enrichment, system table queries
-- DBU pricing and dollar estimates
-- DLT pipeline graph analysis
+Provides:
+- Workspace API client for DESCRIBE DETAIL enrichment
+- System-table reader (four bounded uses: DBU rate lookup, table-size enrichment, cluster profile resolution, opt-in last-run cost)
+- Auto-installed as a transitive dep of every `[*-databricks]` pricing extra
+
+Does **not** implement `PricingBackend`. Dollar estimates are in the cloud-specific extras below.
+
+### `[azure-databricks]`, `[aws-databricks]`, `[gcp-databricks]`
+
+`pip install burnt[azure-databricks]`  *(auto-pulls `[databricks]`)*
+
+Each implements `PricingBackend` with cloud-specific DBU rates and VM/instance pricing:
+- Azure: Azure DBU rates × Azure VM SKU prices (Azure Retail Prices API)
+- AWS: AWS DBU rates × EC2 instance prices (AWS Pricing API or shipped tables)
+- GCP: GCP DBU rates × GCE machine type prices (Cloud Billing Catalog API)
 
 ```python
-import burnt  # core 84 rules work immediately
-# With databricks extra, check() is enriched with dollar estimates
+import burnt  # core 84 rules + compute-seconds always work
 result = burnt.check()
-result.cost_estimate.estimated_cost_usd  # available if DatabricksBackend is active
+result.cost_estimate.usd  # available when a [*-databricks] extra is installed and credentials are present
 ```
 
-Works without credentials — lint rules run regardless. Credentials unlock cost estimates.
+### `[onprem-spark]` — self-hosted Spark pricing
+
+`pip install burnt[onprem-spark]`  *(no cloud SDK dependency)*
+
+Implements `PricingBackend` from `burnt.toml` user-supplied rates:
+
+```toml
+[burnt.onprem_spark]
+cost_per_vcpu_hour   = 0.048
+cost_per_gb_hour     = 0.006
+cost_per_gb_shuffle  = 0.001
+```
+
+Zero external dependencies. Highest reach for non-Databricks Spark users.
+
+### `PricingBackend` protocol
+
+```python
+# src/burnt/core/pricing.py
+class PricingBackend(Protocol):
+    name: str                                        # "azure-databricks", "onprem-spark", ...
+    def map(self, graph: CostGraph) -> CostEstimate: # compute-seconds → $$
+        ...
+```
+
+When multiple pricing extras are installed, select one via `burnt.toml`:
+
+```toml
+[burnt.pricing]
+backend = "azure-databricks"
+```
 
 ---
 
@@ -374,19 +427,42 @@ Same as ruff/black: walk up from target path looking for:
 ### `burnt.toml`
 
 ```toml
-[check]
+[lint]
 select = ["BP*", "BD*"]   # only run these rule prefixes/IDs (default: all)
 ignore = ["BNT_001"]      # skip specific rules
-severity = "warning"       # minimum severity to report (error|warning|note)
+fail-on = "warning"        # minimum severity to exit non-zero (error|warning|info)
 max_cost = 50.0            # fail if total compute exceeds N executor-hours
 
 [display]
 format = "auto"            # "auto" | "terminal" | "notebook"
 
-# Only used when burnt[databricks] is installed:
-[connection]
-warehouse_id = "abc123"
+# Pricing backend selection (when multiple extras are installed):
+[burnt.pricing]
+backend = "azure-databricks"   # options: azure-databricks | aws-databricks | gcp-databricks | onprem-spark
+                               # default: auto (single installed backend wins; error if ambiguous)
+
+# On-prem / self-hosted Spark pricing (requires pip install burnt[onprem-spark]):
+[burnt.onprem_spark]
+cost_per_vcpu_hour   = 0.048   # $/vCPU-hour
+cost_per_gb_hour     = 0.006   # $/GB-hour memory
+cost_per_gb_shuffle  = 0.001   # $/GB shuffled
+
+# Databricks system-table path overrides (requires pip install burnt[databricks]):
+[burnt.databricks.system_tables]
+enabled                   = true   # master switch; false = never query system tables
+# Defaults shown; override for orgs that mirror system tables into private schemas:
+# query_history             = "system.query.history"
+# billing_usage             = "system.billing.usage"
+# list_prices               = "system.billing.list_prices"
+# information_schema_tables = "system.information_schema.tables"
+# compute_clusters          = "system.compute.clusters"
+# node_timeline             = "system.compute.node_timeline"
 ```
+
+System-table behaviour rules:
+1. If a configured table is unreadable (permissions, doesn't exist), burnt logs once at `INFO` and falls back silently. It never errors — system tables are an enrichment, not a requirement.
+2. Paths are resolved once per `burnt.check()` call and cached on the result.
+3. `burnt doctor` reports which system tables are reachable for the current config.
 
 ---
 
@@ -525,12 +601,19 @@ dependencies = [
     "rich>=13.0",
     "typer>=0.15",
     "pyyaml>=6.0",
+    "tabulate>=0.9,<1",
+    "sparkmeasure>=2.0",      # runtime metric capture (core — fundamental to honest confidence)
+    "libcst>=1.0,<2",         # --fix / --unsafe-fixes Python rewrites (core CLI flag)
 ]
 
 [project.optional-dependencies]
-databricks = ["databricks-sdk>=0.50.0"]
-alerts = ["slack-sdk>=3.0"]
-all = ["burnt[databricks,alerts]"]
+notebook        = ["jinja2>=3,<4"]                                      # HTML rendering + .dbc parsing
+databricks      = ["databricks-sdk>=0.50,<1", "requests>=2.32,<3"]     # workspace API + system tables
+azure-databricks = ["burnt[databricks]"]                                # Azure DBU + VM pricing
+aws-databricks   = ["burnt[databricks]"]                                # AWS DBU + EC2 pricing
+gcp-databricks   = ["burnt[databricks]"]                                # GCP DBU + GCE pricing
+onprem-spark     = []                                                   # user-supplied $/vCPU-hour rates
+all = ["burnt[notebook,databricks,azure-databricks,aws-databricks,gcp-databricks,onprem-spark]"]
 ```
 
 ---
@@ -542,13 +625,14 @@ src/burnt/
 ├── __init__.py            # start_session(), check(), version()
 ├── _check/
 │   └── __init__.py        # check() orchestration: static → runtime → merge
-├── _config.py             # Config loading: burnt.toml + env + args
-├── _session.py            # sparkMeasure wrapper + REST fallback
+├── _config/               # Config loading: burnt.toml + env + args
+├── _session.py            # sparkMeasure wrapper + REST fallback (core)
 ├── core/
 │   ├── cache.py           # TTL cache
 │   ├── config.py          # BurntConfig (Pydantic settings)
-│   ├── exceptions.py      # BurntError, ConfigError
+│   ├── exceptions.py      # BurntError, ConfigError, NotAvailableError
 │   ├── models.py          # Finding, CheckResult, CostEstimate
+│   ├── pricing.py         # PricingBackend protocol
 │   └── protocols.py       # Backend protocol
 ├── graph/
 │   ├── model.py           # CostGraph, CostNode
@@ -557,22 +641,27 @@ src/burnt/
 ├── runtime/
 │   ├── backend.py         # Backend protocol
 │   ├── spark_backend.py   # Generic SparkSession + REST API backend
-│   ├── sparkmeasure.py    # StageMetrics wrapper (pip install burnt[spark])
+│   ├── sparkmeasure.py    # StageMetrics wrapper (core dep)
 │   └── event_log.py       # Event log parser (--event-log flag)
 ├── parsers/
 │   ├── explain.py         # EXPLAIN EXTENDED output parsing
-│   ├── notebooks.py       # Jupyter / Databricks notebook parsing
+│   ├── notebooks.py       # Jupyter / Databricks notebook parsing (.py, .sql, .ipynb)
+│   ├── dbc.py             # .dbc archive parser [notebook] extra
 │   └── antipatterns.py    # AntiPattern dataclass + Rust bridge
 ├── display/
-│   ├── terminal.py        # Rich table output
-│   ├── notebook.py        # HTML output
-│   └── export.py          # JSON, Markdown, SARIF 2.1.0 export
+│   ├── terminal.py        # Rich table output (core)
+│   ├── notebook.py        # HTML output [notebook] extra — raises NotAvailableError if absent
+│   └── export.py          # JSON, Markdown, SARIF 2.1.0 export (core)
 ├── cli/
-│   └── main.py            # check, rules, init, doctor, cache
-└── databricks/            # pip install burnt[databricks]
-    ├── backend.py         # DatabricksBackend (system tables, DESCRIBE DETAIL)
-    ├── pricing/           # DBU rates, dollar estimates
-    └── cli.py             # Databricks-specific CLI commands
+│   └── main.py            # check (+ --fix/--unsafe-fixes/--diff), rules, init, doctor, cache
+├── databricks/            # pip install burnt[databricks] — workspace API + system tables (no pricing)
+│   ├── backend.py         # DatabricksBackend (system tables, DESCRIBE DETAIL)
+│   └── cli.py             # Databricks-specific CLI commands
+└── cloud/                 # pricing-backend extras (one sub-package per backend)
+    ├── azure_databricks/  # [azure-databricks] — Azure DBU + VM pricing
+    ├── aws_databricks/    # [aws-databricks] — AWS DBU + EC2 pricing
+    ├── gcp_databricks/    # [gcp-databricks] — GCP DBU + GCE pricing
+    └── onprem_spark/      # [onprem-spark] — user-supplied $/vCPU-hour rates
 ```
 
 ---
@@ -583,7 +672,7 @@ src/burnt/
 import burnt
 
 # ── Session (optional — enables runtime enrichment) ──
-burnt.start_session()    # requires active SparkSession + pip install burnt[spark]
+burnt.start_session()    # requires active SparkSession (sparkMeasure is a core dep)
 
 # ... run your Spark code ...
 
@@ -604,13 +693,13 @@ result.to_sarif()         # SARIF 2.1.0 dict
 
 ## 17. Design Principles
 
-1. **Databricks-first.** Lint rules work without credentials. Cost intelligence requires Databricks. No pretending otherwise.
+1. **Spark-generic.** Lint rules and compute-seconds work on any Spark code. Cost-in-dollars requires a pricing-backend extra. No pretending otherwise.
 2. **CLI-first.** `burnt check` is the product. The Python API is a second mode.
 3. **Full notebook hygiene.** Cost + style + structure rules. No artificial scope limit.
-4. **Static + runtime.** Static rules always run. sparkMeasure enriches when a session is active.
-5. **Compute seconds over dollars.** Actionable everywhere. Backends map to USD.
+4. **Static + runtime.** Static rules always run. sparkMeasure (core) enriches when a session is active.
+5. **Compute seconds over dollars.** Actionable everywhere. Pricing backends map to USD.
 6. **Honest confidence.** Mark observed data differently from estimates.
-7. **Graceful degradation.** No creds → 84 rules. Spark session → enrichment. Databricks → dollar estimates. Never a hard failure.
+7. **Graceful degradation.** No creds → 84 rules + compute-seconds. Spark session → enrichment. Pricing extra → dollar estimates. Never a hard failure.
 
 ---
 
@@ -621,8 +710,9 @@ result.to_sarif()         # SARIF 2.1.0 dict
 | P0 Base Rework | done | Cleanup, new package structure |
 | P1 Rust Engine | done | tree-sitter, CostGraph, 84 rules, PyO3 bridge |
 | PX Design Alignment | **in progress** | Dead code removal, sparkMeasure session, docs |
-| P2 CLI Completion | todo | Rewire `check` to `_check.run()`, SARIF, event log |
-| P3 Databricks Module | todo | `burnt[databricks]`: dollar estimates, system tables |
-| P4 CI Integration | todo | Pre-commit, GitHub Actions, DABs examples |
-| P5 Hardening | todo | E2E tests, error audit, packaging |
+| PN Modular Architecture | todo | Pricing backends, `[notebook]` extra, `--fix`/`--diff`, config schema |
+| P2 Session & Intelligence | todo | Cost estimation, EXPLAIN enrichment (unblocked after PX) |
+| P3 CLI Completion | todo | Rewire `check` to `_check.run()`, SARIF, event log |
+| P4 Databricks Backend | todo | `burnt[databricks]` + `[*-databricks]` extras: system tables, dollar estimates |
+| P5 Integration & Hardening | todo | E2E tests, CI examples, error audit, packaging |
 | P6 Validation | todo | Dogfood, security audit, ship v0.2.0 |

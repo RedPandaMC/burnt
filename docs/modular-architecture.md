@@ -2,6 +2,12 @@
 
 > Architecture document. Realigns the package's identity and module/extras boundaries so subsequent task work (PX, P2–P6) executes against a coherent shape. Companion to `DESIGN.md` (technical spec) and `README.md` (user-facing pitch).
 
+> **Decision status:**
+> - ✅ All decisions in this document are recorded and agreed
+> - ✅ Docs updated: `README.md`, `DESIGN.md`, `docs/configuration.md`, `tasks/README.md`
+> - ⏳ Tasks created for code implementation: `tasks/PN/01` through `tasks/PN/05`
+> - ❌ Code not yet implemented — see `tasks/PN/` for the implementation work queue
+
 ---
 
 ## Context

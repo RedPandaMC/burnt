@@ -10,6 +10,7 @@ This directory is the **handoff protocol** between the Planner agent and the Exe
 Phase 0: Base Rework ──────────────── Cleanup, new architecture setup [done]
 Phase 1: Rust Engine ──────────────── tree-sitter, CostGraph, 84 rules [done]
 Phase X: Design Alignment ─────────── Dead code removal, docs, sparkMeasure session [in-progress]
+Phase N: Modular Architecture ─────── Pricing backends, [notebook] extra, pyproject restructure [todo]
 Phase 2: Session & Intelligence ───── Cost estimation, EXPLAIN enrichment [todo, unblocked after PX]
 Phase 3: CLI Completion ───────────── Rewire check, SARIF output, event log [todo]
 Phase 4: Databricks Module ────────── DatabricksBackend, dollar estimates, Delta enrichment [todo]
@@ -18,10 +19,10 @@ Phase 6: Validation ───────────────── Dogfood,
 ```
 
 > **Strategic Position (April 2026):**
-> - **Databricks-first** — lint rules work without credentials; cost intelligence requires Databricks
+> - **Spark-generic** — 84 lint rules + CostGraph work on any Spark code (EMR, Glue, Dataproc, on-prem, Databricks); cost-in-dollars requires a pricing-backend extra
 > - **CLI-first** — `burnt check` is the product; notebook API is a second mode
-> - **Full notebook hygiene** — cost + style + structure rules ("ruff for Databricks notebooks")
-> - **sparkMeasure** replaces the broken SparkListener/statusTracker session implementation
+> - **Full notebook hygiene** — cost + style + structure rules ("ruff for Databricks notebooks, and beyond")
+> - **sparkMeasure is core** — runtime metric capture ships with `pip install burnt`; no extra needed
 
 ---
 
@@ -35,6 +36,18 @@ Phase 6: Validation ───────────────── Dogfood,
 | `PX/04-sarif-output` | todo | Add SARIF 2.1.0 output format for GitHub Code Scanning |
 | `PX/05-design-doc-update` | done | Update DESIGN.md, AGENTS.md, README.md, pyproject.toml |
 | `PX/06-tasks-cleanup` | done | Archive old P4 tasks, rewrite thin tasks, update this README |
+
+---
+
+## Phase N: Modular Architecture *(acts on the April 2026 re-statement in `docs/modular-architecture.md`)*
+
+| Task | Status | What |
+|------|--------|------|
+| `PN/01-pyproject-extras-restructure` | todo | Remove `[sql]`,`[spark]`,`[alerts]`; add `sparkmeasure`+`libcst` to core; add `[notebook]`,`[azure-databricks]`,`[aws-databricks]`,`[gcp-databricks]`,`[onprem-spark]` |
+| `PN/02-pricing-backend-protocol` | todo | Create `PricingBackend` protocol in `src/burnt/core/pricing.py`; stub `src/burnt/cloud/` dirs; migrate `DatabricksPricingBackend` out of core |
+| `PN/03-notebook-extra-split` | todo | Gate `display/notebook.py` behind `[notebook]`; add `parsers/dbc.py`; core stub raises `NotAvailableError` |
+| `PN/04-cli-fix-diff-flags` | todo | Add `--fix`, `--unsafe-fixes`, `--diff <ref>` to `burnt check` (core, no extra needed) |
+| `PN/05-config-schema-additions` | todo | Add `[burnt.databricks.system_tables]` paths + `[burnt.pricing] backend` selection to config schema |
 
 ---
 
@@ -103,11 +116,11 @@ Phase 6: Validation ───────────────── Dogfood,
 | `P3/07-graceful-degradation` | done | Static-only when Spark/Databricks unavailable |
 | `P3/08-performance-tuning` | todo | Benchmark script, latency and memory targets |
 
-## Phase 4: Databricks Module
+## Phase 4: Databricks Backend *(scope: Databricks-specific extras, after Phase N)*
 
 | Task | Status | What |
 |------|--------|-------|
-| `P4/01-databricks-namespace` | todo | Consolidate Databricks code under `burnt/databricks/` |
+| `P4/01-databricks-namespace` | todo | Consolidate Databricks code under `burnt/databricks/` (workspace API + system-table reader, no pricing data) |
 | `P4/02-rest-backend-move` | todo | Move RestBackend to `burnt/databricks/runtime/` |
 | `P4/03-databricks-cli` | todo | Databricks-specific CLI commands |
 | `P4/06-delta-enrichment` | todo | DESCRIBE DETAIL via DatabricksBackend |
