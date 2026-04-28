@@ -208,10 +208,10 @@ All pattern types (exact code, prefix, tag) work inside `[...]`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `workspace-url` | `str \| None` | `None` | Databricks workspace URL. Overridden by `BURNT_WORKSPACE_URL`. |
-| `token` | `str \| None` | `None` | PAT token. Overridden by `BURNT_TOKEN`. |
+| `workspace-url` | `str \| None` | `None` | Databricks workspace URL. Overridden by `BURNT_WORKSPACE_URL`. Requires `pip install burnt[databricks]`. |
+| `token` | `str \| None` | `None` | PAT token. Overridden by `BURNT_TOKEN`. Requires `pip install burnt[databricks]`. |
 | `target-currency` | `str` | `"USD"` | Default currency for cost estimates. `USD` or `EUR`. |
-| `pricing-source` | `str` | `"api"` | How to fetch exchange rates. `api` uses frankfurter.app; `static` uses hardcoded rates. |
+| `pricing-source` | `str` | `"static"` | How to fetch pricing data. `static` uses shipped rate tables; `api` queries live cloud pricing APIs (requires the relevant `[*-databricks]` extra). |
 
 ---
 
@@ -288,10 +288,101 @@ From highest to lowest priority:
 
 ---
 
+## Pricing Backend Selection
+
+When multiple pricing-backend extras are installed, tell burnt which to use:
+
+```toml
+[burnt.pricing]
+backend = "azure-databricks"   # azure-databricks | aws-databricks | gcp-databricks | onprem-spark
+                               # default: auto (single installed backend wins; error if ambiguous)
+```
+
+**Env-var override:** `BURNT_PRICING_BACKEND=azure-databricks`
+
+If only one pricing extra is installed, `backend` is optional — burnt uses it automatically. If
+multiple are installed and `backend` is not configured, `burnt check` exits with a config error
+listing the installed backends and asking you to pick one.
+
+---
+
+## On-Prem / Self-Hosted Spark Rates
+
+For self-hosted Spark on Kubernetes, YARN, or standalone. Requires `pip install burnt[onprem-spark]`.
+No cloud SDK dependency — dollar estimates come entirely from the rates you configure here.
+
+```toml
+[burnt.onprem_spark]
+cost_per_vcpu_hour   = 0.048   # $/vCPU-hour  (required)
+cost_per_gb_hour     = 0.006   # $/GB-hour memory  (required)
+cost_per_gb_shuffle  = 0.001   # $/GB shuffled  (required)
+```
+
+**Env-var overrides:**
+
+| Variable | Maps to |
+|----------|---------|
+| `BURNT_ONPREM_SPARK_COST_PER_VCPU_HOUR` | `onprem_spark.cost_per_vcpu_hour` |
+| `BURNT_ONPREM_SPARK_COST_PER_GB_HOUR` | `onprem_spark.cost_per_gb_hour` |
+| `BURNT_ONPREM_SPARK_COST_PER_GB_SHUFFLE` | `onprem_spark.cost_per_gb_shuffle` |
+
+All three rates are required when `[onprem-spark]` is the active backend. `burnt check` exits
+with a config error if any rate is missing.
+
+---
+
+## Databricks System Tables
+
+*Requires `pip install burnt[databricks]`. System tables are an enrichment — burnt never errors if
+they are unavailable; it logs once at INFO and falls back to other data sources.*
+
+System-table paths can be overridden when your org mirrors them into private schemas, or when future
+Unity Catalog versions relocate them.
+
+```toml
+[burnt.databricks.system_tables]
+# Master switch — set false to skip system-table queries entirely even when [databricks] is installed.
+enabled = true
+
+# Defaults shown; override only what you need.
+# query_history             = "system.query.history"
+# billing_usage             = "system.billing.usage"
+# list_prices               = "system.billing.list_prices"
+# information_schema_tables = "system.information_schema.tables"
+# compute_clusters          = "system.compute.clusters"
+# node_timeline             = "system.compute.node_timeline"
+```
+
+**Env-var overrides** (follow existing `BURNT_*` prefix convention):
+
+| Variable | Table |
+|----------|-------|
+| `BURNT_DATABRICKS_SYSTEM_TABLES_QUERY_HISTORY` | `query_history` |
+| `BURNT_DATABRICKS_SYSTEM_TABLES_BILLING_USAGE` | `billing_usage` |
+| `BURNT_DATABRICKS_SYSTEM_TABLES_LIST_PRICES` | `list_prices` |
+| `BURNT_DATABRICKS_SYSTEM_TABLES_INFORMATION_SCHEMA_TABLES` | `information_schema_tables` |
+| `BURNT_DATABRICKS_SYSTEM_TABLES_COMPUTE_CLUSTERS` | `compute_clusters` |
+| `BURNT_DATABRICKS_SYSTEM_TABLES_NODE_TIMELINE` | `node_timeline` |
+
+**What system tables are used for** (four narrow, bounded uses — no fleet-wide mining):
+
+| Use | Table | Purpose |
+|-----|-------|---------|
+| DBU rate lookup | `list_prices` | Replaces shipped JSON of DBU rates for orgs that prefer live data |
+| Table-size enrichment | `information_schema_tables` | Fills `estimated_input_bytes` from ground truth without per-table `DESCRIBE DETAIL` |
+| Cluster profile resolution | `compute_clusters` | Resolves `cluster_id` in `burnt.toml` to node type + size |
+| Last-run observed cost | `query_history` | Opt-in: show "your last actual run cost $X" in-notebook |
+
+**Behaviour rules:**
+1. If a configured table is unreadable (permissions error, doesn't exist), burnt logs once at `INFO` and falls back to its non-system-table path (shipped JSON / `DESCRIBE DETAIL` / SDK call). It never errors.
+2. Paths are resolved once per `burnt.check()` call and cached on the result.
+3. `burnt doctor` reports which system tables are reachable for the current config, so you can verify access before relying on enrichment.
+
+---
+
 ## TableRegistry (Programmatic)
 
-Enterprise environments often expose system tables through governance views
-with custom names. Use `TableRegistry` to remap the tables burnt queries:
+For programmatic use when you need to override table paths in code rather than config:
 
 ```python
 from burnt.core.table_registry import TableRegistry
@@ -302,7 +393,7 @@ registry = TableRegistry(
     query_history="governance.cost_management.v_query_history",
 )
 
-estimate = burnt.estimate("SELECT ...", registry=registry)
+result = burnt.check(registry=registry)
 ```
 
 | Key | Default table |
@@ -315,3 +406,6 @@ estimate = burnt.estimate("SELECT ...", registry=registry)
 | `compute_node_timeline` | `system.compute.node_timeline` |
 | `lakeflow_jobs` | `system.lakeflow.jobs` |
 | `lakeflow_job_run_timeline` | `system.lakeflow.job_run_timeline` |
+
+The `[burnt.databricks.system_tables]` config section (above) is the preferred approach for
+static configuration; `TableRegistry` is for dynamic overrides in application code.

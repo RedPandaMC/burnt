@@ -5,7 +5,7 @@
   <img src="public/logo_text.svg" alt="burnt" width="400">
 </picture>
 
-**Cost Compiler for Databricks**
+**Cost Compiler for Spark**
 
 Per-operation, per-table, per-dollar.
 
@@ -17,9 +17,9 @@ Per-operation, per-table, per-dollar.
 
 ---
 
-## What is this?
+burnt parses Spark pipelines — Python, SQL, or DLT/SDP — and shows you what each operation costs: statically before the job runs, with live metrics while it runs, and as a CI gate before it ships.
 
-`burnt` parses Databricks notebooks — Python, SQL, or DLT — builds a cost graph, and shows you what each operation costs.
+Works on **Databricks today**. EMR, Glue, Dataproc, and on-prem Spark next.
 
 ```python
 import burnt
@@ -55,11 +55,11 @@ daily_pipeline.py  │  Python  │  6 cells  │  2 via %run
 
 Auto-detected. One command.
 
-**Python** — per-operation cost. DataFrames traced across `%run` chains.
+**Static lint** — run offline, no credentials, no Spark. 84 rules fire immediately.
 
-**SQL** — per-statement cost. CREATE TABLE AS, MERGE INTO, OPTIMIZE decomposed. Cross-cell table deps.
+**In-notebook coaching** — attach to a live Spark session; `burnt.check()` correlates actual stage metrics to your source lines.
 
-**DLT / SDP** — per-table cost. Streaming vs materialized views. DLT tier pricing.
+**CI gate** — block PRs on cost regressions or lint errors using `--output sarif` or `--max-cost`.
 
 ```
 orders_pipeline.py  │  DLT PRO  │  3 tables
@@ -81,21 +81,39 @@ orders_pipeline.py  │  DLT PRO  │  3 tables
 pip install burnt
 ```
 
-Databricks:
+Inside Databricks:
+
 ```
 %pip install burnt
 ```
 
-Works without credentials — 84 lint rules run immediately. Add `pip install burnt[databricks]` for cost estimation and dollar figures.
+> **Current status (v0.2.0-dev):** Static lint (84 rules) and CostGraph (compute-seconds)
+> are fully operational. Live sparkMeasure runtime capture is wired but in active
+> development (PX/02). Dollar estimates require a pricing-backend extra (Phase N).
+
+### Install matrix
+
+| Install | Lint (84 rules) | Compute-seconds | Live runtime | Dollars | System-table enrichment | HTML / .dbc |
+|---------|:--------------:|:---------------:|:------------:|:-------:|:----------------------:|:-----------:|
+| `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ✅ core | ❌ | ❌ | ❌ |
+| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ user-supplied rates | ❌ | ❌ |
+| `+ [databricks]` alone | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `+ [azure-databricks]` | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ | ❌ |
+| `+ [aws-databricks]` | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ | ❌ |
+| `+ [gcp-databricks]` | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ | ❌ |
+| `+ [notebook]` | ✅ | ✅ | ✅ | per other extras | per other extras | ✅ |
+| `[all]` | ✅ | ✅ | ✅ | ✅ selected backend | ✅ | ✅ |
+
+Every `[*-databricks]` extra auto-pulls `[databricks]` (workspace API + system tables). `[onprem-spark]` is self-contained — configure your own `$/vCPU-hour` in `burnt.toml`.
 
 ---
 
-## Notebook
+## Notebook API
 
 ```python
 import burnt
 
-burnt.start_session()   # attach sparkMeasure; requires pip install burnt[spark]
+burnt.start_session()   # attach sparkMeasure to the active SparkSession
 
 # ... run your Spark code ...
 
@@ -105,6 +123,7 @@ result.findings         # list[Finding]
 result.to_json()        # dict
 result.to_markdown()    # str
 result.to_sarif()       # SARIF 2.1.0 dict
+result.to_html()        # requires pip install burnt[notebook]
 ```
 
 ## CLI
@@ -117,39 +136,44 @@ burnt check ./notebooks/ --output sarif > burnt.sarif
 burnt check ./notebooks/ --max-cost 25
 burnt check ./notebooks/ --select BP* --ignore BNT_*
 
+# Autofix (ruff-style)
+burnt check ./notebooks/ --fix
+burnt check ./notebooks/ --unsafe-fixes
+
+# Diff-aware lint — only files changed since main
+burnt check ./notebooks/ --diff main
+
 burnt rules                     # Browse all 84 rules (interactive TUI)
 burnt init                      # Generate burnt.toml
-burnt doctor                    # Check config and connectivity
+burnt doctor                    # Check config, Spark availability, system-table access
 ```
 
 ---
 
 ## Config
 
-Standalone `burnt.toml`, or `[tool.burnt]` in `pyproject.toml` — same as ruff.
+Standalone `burnt.toml`, or `[tool.burnt]` in `pyproject.toml` — same discovery as ruff.
 
 **`burnt.toml`:**
 ```toml
-[check]
+[lint]
 ignore = ["BNT_001"]
-max_cost = 50.0
-severity = "warning"
-```
+fail-on = "warning"
 
-**`pyproject.toml`:**
-```toml
-[tool.burnt.check]
-ignore = ["BNT_001"]
-max_cost = 50.0
+[burnt.pricing]
+backend = "azure-databricks"   # auto if only one pricing extra installed
+
+[burnt.onprem_spark]
+cost_per_vcpu_hour  = 0.048
+cost_per_gb_hour    = 0.006
+cost_per_gb_shuffle = 0.001
+
+[burnt.databricks.system_tables]
+enabled = true   # set false to skip system-table queries entirely
+# query_history = "prod_observability.query_history"  # override if mirrored
 ```
 
 Discovery: walks up from target path looking for `burnt.toml`, `.burnt.toml`, or `pyproject.toml` with `[tool.burnt]`. Falls back to `~/.config/burnt/burnt.toml`.
-
-Priority: CLI flags > `burnt.config()` > config file > `BURNT_*` env vars > defaults.
-
-```bash
-burnt check --init    # Generate burnt.toml (or add [tool.burnt] to existing pyproject.toml)
-```
 
 ---
 
@@ -162,44 +186,43 @@ WARN   DLT001  MV could be streaming
 WARN   BSQ002  SELECT * in final SQL cell
 ```
 
-Three tiers: Tier 1 (TOML, no Rust needed), Tier 2 (Rust context), Tier 3 (Rust semantic).
-
----
-
-## Access Levels
-
-| Level | Output |
-|-------|--------|
-| Full | Graph + estimates + monitoring + alerts |
-| SparkSession only | Graph + DESCRIBE + structural findings |
-| REST only | Graph + Delta enrichment + medium confidence |
-| Auth-only | 84 lint rules |
+Three tiers: Tier 1 (TOML + tree-sitter query, no Rust needed), Tier 2 (Rust context-aware), Tier 3 (Rust semantic/dataflow). Six categories: Performance (`BP*`), SQL quality (`BQ*`, `SQ*`), Delta (`BD*`), DLT/SDP (`SDP*`), Notebook style (`BNT_*`), Notebook structure (`BB*`, `BN*`).
 
 ---
 
 ## Architecture
 
 ```
-CLI: burnt check                 Python: burnt.check()
+CLI: burnt check                 Notebook: burnt.check()
       │                                │
   Rust engine (PyO3)          Rust engine (same)
   84 rules, CostGraph         + sparkMeasure enrichment
-  tree-sitter Py/SQL/DLT      + DatabricksBackend (optional)
+  tree-sitter Py/SQL/DLT      + PricingBackend (optional)
+                                    │
+                          ┌─────────┴──────────┐
+                          │                    │
+                   [databricks]         [onprem-spark]
+                 [azure-databricks]    user $/vCPU-hour
+                 [aws-databricks]
+                 [gcp-databricks]
 ```
 
-Rust engine: tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph, 84 rules across 6 categories.
-Python: sparkMeasure session wrapper, graph enrichment, cost estimation, display, CLI.
+Rust engine: tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph, 84 rules.
+Python: sparkMeasure session wrapper, graph enrichment, cost estimation via `PricingBackend`, display, CLI.
+Core install: zero cloud SDK, zero credentials required.
 
 ---
 
 ## Contributing
 
-Tier 1 rules = TOML + tree-sitter query. No Rust.
+Tier 1 rules = TOML + tree-sitter query. No Rust required.
 
-1. `src/burnt-engine/rules/tier1/{pyspark,sql,dlt}/BXXX_rule.toml`
+1. `src/burnt-engine/rules/{performance,sql,delta,sdp,notebook,style}/BXXX_rule.toml`
 2. Fixture in `tests/fixtures/tier1/`
 3. `cargo test tier1_rules`
 4. PR
+
+See `docs/writing-rules.md` for the full rule format including the `[fix]` section for autofixable rules.
 
 ---
 
@@ -207,7 +230,7 @@ Tier 1 rules = TOML + tree-sitter query. No Rust.
 
 ```bash
 cd src/burnt-engine && maturin develop --release && cargo test
-uv sync && uv run pytest -m unit -v && uv run ruff check src/ tests/
+uv sync --all-extras && uv run pytest -m unit -v && uv run ruff check src/ tests/
 ```
 
 ---

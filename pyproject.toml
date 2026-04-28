@@ -1,7 +1,7 @@
 [project]
 name = "burnt"
 version = "0.2.0"
-description = "Notebook quality and cost analysis for Databricks"
+description = "Cost Compiler for Spark — per-operation, per-table cost analysis"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.10"
