@@ -300,51 +300,6 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
         return "\n".join(lines)
 
-    def _to_html_table(self) -> str:
-        """Generate HTML table for notebooks."""
-        rows = []
-        if self.estimated_dbu is not None:
-            rows.append(
-                f"<tr><td>Estimated DBU</td><td>{self.estimated_dbu:.2f}</td></tr>"
-            )
-        if self.estimated_cost_usd is not None:
-            rows.append(
-                f"<tr><td>Estimated Cost</td><td>${self.estimated_cost_usd:.2f}</td></tr>"
-            )
-        rows.append(f"<tr><td>Confidence</td><td>{self.confidence}</td></tr>")
-
-        html = f"""
-        <div style="font-family: monospace; margin: 20px 0;">
-            <h3>Cost Estimate</h3>
-            <table style="border-collapse: collapse; width: 100%;">
-                <thead>
-                    <tr style="background-color: #f0f0f0;">
-                        <th style="padding: 8px; border: 1px solid #ccc;">Field</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {"".join(rows)}
-                </tbody>
-            </table>
-        """
-
-        if self.breakdown:
-            html += "<h4>Breakdown:</h4><ul>"
-            for key, value in self.breakdown.items():
-                html += f"<li>{key}: {value:.2f}</li>"
-            html += "</ul>"
-
-        if self.warnings:
-            html += '<div style="margin: 10px 0; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107;">'
-            html += "<strong>Warnings:</strong><ul>"
-            for warning in self.warnings:
-                html += f"<li>{warning}</li>"
-            html += "</ul></div>"
-
-        html += "</div>"
-        return html
-
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""
         rows = []
@@ -403,34 +358,6 @@ class ClusterRecommendation(BaseModel, _DisplayMixin):
             f"Rationale: {self.rationale}",
         ]
         return "\n".join(lines)
-
-    def _to_html_table(self) -> str:
-        """Generate HTML table for notebooks."""
-        rows = [
-            f"<tr><td>Economy</td><td>{self.economy.instance_type}</td><td>{self.economy.num_workers}</td><td>{self.economy.dbu_per_hour:.2f}</td><td>${self.economy.dbu_per_hour * 1.0:.2f}</td></tr>",
-            f"<tr><td>Balanced</td><td>{self.balanced.instance_type}</td><td>{self.balanced.num_workers}</td><td>{self.balanced.dbu_per_hour:.2f}</td><td>${self.balanced.dbu_per_hour * 1.5:.2f}</td></tr>",
-            f"<tr><td>Performance</td><td>{self.performance.instance_type}</td><td>{self.performance.num_workers}</td><td>{self.performance.dbu_per_hour:.2f}</td><td>${self.performance.dbu_per_hour * 2.0:.2f}</td></tr>",
-        ]
-        return f"""
-        <div style="font-family: monospace; margin: 20px 0;">
-            <h3>Cluster Recommendation</h3>
-            <table style="border-collapse: collapse; width: 100%;">
-                <thead>
-                    <tr style="background-color: #f0f0f0;">
-                        <th style="padding: 8px; border: 1px solid #ccc;">Tier</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Instance</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Workers</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">DBU/hr</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Est. Cost</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {"".join(rows)}
-                </tbody>
-            </table>
-            <p><strong>Rationale:</strong> {self.rationale}</p>
-        </div>
-        """
 
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""
@@ -645,50 +572,6 @@ class SimulationResult(BaseModel, _DisplayMixin):
 
         return "\n".join(lines)
 
-    def _to_html_table(self) -> str:
-        """Generate HTML table for notebooks."""
-        original_cost = self.original.estimated_cost_usd or 0
-        projected_cost = self.projected.estimated_cost_usd or 0
-
-        mod_rows = []
-        for mod in self.modifications:
-            verified = "✓" if mod.is_verified else "≈"
-            mod_rows.append(
-                f"<li>{verified} <strong>{mod.name}</strong>: {mod.cost_multiplier:.2f}x - {mod.rationale}</li>"
-            )
-
-        return f"""
-        <div style="font-family: monospace; margin: 20px 0;">
-            <h3>Simulation Comparison</h3>
-            <table style="border-collapse: collapse; width: 100%;">
-                <thead>
-                    <tr style="background-color: #f0f0f0;">
-                        <th style="padding: 8px; border: 1px solid #ccc;">Metric</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Original</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Projected</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Δ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ccc;">DBU</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">{self.original.estimated_dbu:.2f}</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">{self.projected.estimated_dbu:.2f}</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">{self.total_savings_pct:.1f}%</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ccc;">Cost (USD)</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">${original_cost:.2f}</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">${projected_cost:.2f}</td>
-                        <td style="padding: 8px; border: 1px solid #ccc;">{self.total_savings_pct:.1f}%</td>
-                    </tr>
-                </tbody>
-            </table>
-            <h4>Modifications:</h4>
-            <ul>{"".join(mod_rows)}</ul>
-        </div>
-        """
-
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""
         original_cost = self.original.estimated_cost_usd or 0
@@ -796,47 +679,6 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
             lines.append(f"{name:<20} ${cost:<14.2f} {vs_baseline:<15} {mods:<30}")
 
         return "\n".join(lines)
-
-    def _to_html_table(self) -> str:
-        """Generate HTML table for notebooks."""
-        if not self.scenarios:
-            return "<p>No scenarios to compare.</p>"
-
-        rows = []
-        for name, result in self.scenarios:
-            cost = result.projected.estimated_cost_usd or 0
-            vs_baseline = (
-                "—"
-                if name == self.scenarios[0][0]
-                else f"{result.total_savings_pct:+.1f}%"
-            )
-            mods = (
-                ", ".join(m.name for m in result.modifications)
-                if result.modifications
-                else "—"
-            )
-            rows.append(
-                f"<tr><td>{name}</td><td>${cost:.2f}</td><td>{vs_baseline}</td><td>{mods}</td></tr>"
-            )
-
-        return f"""
-        <div style="font-family: monospace; margin: 20px 0;">
-            <h3>Scenario Comparison</h3>
-            <table style="border-collapse: collapse; width: 100%;">
-                <thead>
-                    <tr style="background-color: #f0f0f0;">
-                        <th style="padding: 8px; border: 1px solid #ccc;">Scenario</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Cost (USD)</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">vs Baseline</th>
-                        <th style="padding: 8px; border: 1px solid #ccc;">Modifications</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {"".join(rows)}
-                </tbody>
-            </table>
-        </div>
-        """
 
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""

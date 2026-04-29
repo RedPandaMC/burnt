@@ -19,7 +19,7 @@ Per-operation, per-table, per-dollar.
 
 burnt parses Spark pipelines — Python, SQL, or DLT/SDP — and shows you what each operation costs: statically before the job runs, with live metrics while it runs, and as a CI gate before it ships.
 
-Works on **Databricks today**. EMR, Glue, Dataproc, and on-prem Spark next.
+Works on **any Spark deployment** — Databricks, EMR, Glue, Dataproc, and on-prem.
 
 ```python
 import burnt
@@ -28,9 +28,6 @@ burnt.check().display()
 
 ```
 daily_pipeline.py  │  Python  │  6 cells  │  2 via %run
-
-⏱ 22 min session │ 4 min code │ 18 min idle │ 18% util
-💰 Code: $3.20 │ Idle: $14.80 │ Total: $18.00
 
   Cost: $18.45/run (24.6 DBU)  │  HIGH confidence
 
@@ -45,8 +42,6 @@ daily_pipeline.py  │  Python  │  6 cells  │  2 via %run
   ⚠ BP004  line 78  toPandas() full dataset     $0.60
 
   → Replace crossJoin: saves $12.36 (67%)
-  → Jobs Compute: saves $5.11 (28%)
-  → Serverless: kills $14.80 idle cost
 ```
 
 ---
@@ -55,9 +50,9 @@ daily_pipeline.py  │  Python  │  6 cells  │  2 via %run
 
 Auto-detected. One command.
 
-**Static lint** — run offline, no credentials, no Spark. 84 rules fire immediately.
+**Static lint** — run offline, no credentials, no Spark. 43 rules fire immediately.
 
-**In-notebook coaching** — attach to a live Spark session; `burnt.check()` correlates actual stage metrics to your source lines.
+**In-notebook** — attach to a live Spark session; `burnt.check()` correlates actual stage metrics to your source lines via the Spark monitoring REST API.
 
 **CI gate** — block PRs on cost regressions or lint errors using `--output sarif` or `--max-cost`.
 
@@ -87,22 +82,21 @@ Inside Databricks:
 %pip install burnt
 ```
 
-> **Current status (v0.2.0-dev):** Static lint (84 rules) and CostGraph (compute-seconds)
-> are fully operational. Live sparkMeasure runtime capture is wired but in active
-> development (PX/02). Dollar estimates require a pricing-backend extra (Phase N).
+> **Current status (v0.2.0-dev):** Static lint (43 rules) and CostGraph (compute-seconds)
+> are fully operational. REST API runtime enrichment is in active development (P2/02).
+> Dollar estimates require a pricing-backend extra (P3 milestone).
 
 ### Install matrix
 
-| Install | Lint (84 rules) | Compute-seconds | Live runtime | Dollars | System-table enrichment | HTML / .dbc |
-|---------|:--------------:|:---------------:|:------------:|:-------:|:----------------------:|:-----------:|
-| `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ✅ core | ❌ | ❌ | ❌ |
-| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ user-supplied rates | ❌ | ❌ |
-| `+ [databricks]` alone | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `+ [azure-databricks]` | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ | ❌ |
-| `+ [aws-databricks]` | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ | ❌ |
-| `+ [gcp-databricks]` | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ | ❌ |
-| `+ [notebook]` | ✅ | ✅ | ✅ | per other extras | per other extras | ✅ |
-| `[all]` | ✅ | ✅ | ✅ | ✅ selected backend | ✅ | ✅ |
+| Install | Lint (43 rules) | Compute-seconds | Live runtime | Dollars | System-table enrichment |
+|---------|:--------------:|:---------------:|:------------:|:-------:|:----------------------:|
+| `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ✅ core | ❌ | ❌ |
+| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ user-supplied rates | ❌ |
+| `+ [databricks]` alone | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `+ [azure-databricks]` | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ |
+| `+ [aws-databricks]` | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ |
+| `+ [gcp-databricks]` | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ |
+| `[all]` | ✅ | ✅ | ✅ | ✅ selected backend | ✅ |
 
 Every `[*-databricks]` extra auto-pulls `[databricks]` (workspace API + system tables). `[onprem-spark]` is self-contained — configure your own `$/vCPU-hour` in `burnt.toml`.
 
@@ -113,7 +107,7 @@ Every `[*-databricks]` extra auto-pulls `[databricks]` (workspace API + system t
 ```python
 import burnt
 
-burnt.start_session()   # attach sparkMeasure to the active SparkSession
+burnt.start_session()   # attach to the active SparkSession (REST API)
 
 # ... run your Spark code ...
 
@@ -123,7 +117,6 @@ result.findings         # list[Finding]
 result.to_json()        # dict
 result.to_markdown()    # str
 result.to_sarif()       # SARIF 2.1.0 dict
-result.to_html()        # requires pip install burnt[notebook]
 ```
 
 ## CLI
@@ -143,7 +136,7 @@ burnt check ./notebooks/ --unsafe-fixes
 # Diff-aware lint — only files changed since main
 burnt check ./notebooks/ --diff main
 
-burnt rules                     # Browse all 84 rules (interactive TUI)
+burnt rules                     # Browse all 43 rules (interactive TUI)
 burnt init                      # Generate burnt.toml
 burnt doctor                    # Check config, Spark availability, system-table access
 ```
@@ -177,7 +170,7 @@ Discovery: walks up from target path looking for `burnt.toml`, `.burnt.toml`, or
 
 ---
 
-## 84 Rules
+## 43 Rules
 
 ```
 ERROR  BP001   collect() without limit
@@ -196,7 +189,7 @@ Three tiers: Tier 1 (TOML + tree-sitter query, no Rust needed), Tier 2 (Rust con
 CLI: burnt check                 Notebook: burnt.check()
       │                                │
   Rust engine (PyO3)          Rust engine (same)
-  84 rules, CostGraph         + sparkMeasure enrichment
+  43 rules, CostGraph         + REST API enrichment
   tree-sitter Py/SQL/DLT      + PricingBackend (optional)
                                     │
                           ┌─────────┴──────────┐
@@ -207,8 +200,8 @@ CLI: burnt check                 Notebook: burnt.check()
                  [gcp-databricks]
 ```
 
-Rust engine: tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph, 84 rules.
-Python: sparkMeasure session wrapper, graph enrichment, cost estimation via `PricingBackend`, display, CLI.
+Rust engine: tree-sitter Python + SQL, `%run` resolution, mode detection, semantic model, CostGraph, 43 rules.
+Python: REST API session client, graph enrichment, cost estimation via `PricingBackend`, display, CLI.
 Core install: zero cloud SDK, zero credentials required.
 
 ---

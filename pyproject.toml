@@ -15,11 +15,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-sql = ["sqlglot>=26.0,<27"]
-spark = ["sparkmeasure>=2.0"]
-alerts = ["slack-sdk>=3.0,<4"]
-databricks = ["databricks-sdk>=0.50,<1", "requests>=2.32,<3"]
-all = ["burnt[sql,spark,alerts,databricks]"]
+databricks       = ["databricks-sdk>=0.50,<1", "requests>=2.32,<3"]
+azure-databricks = ["burnt[databricks]", "azure-mgmt-compute>=33,<34", "azure-mgmt-billing>=6,<7"]
+aws-databricks   = ["burnt[databricks]", "boto3>=1.35,<2"]
+gcp-databricks   = ["burnt[databricks]", "google-cloud-billing>=1.15,<2"]
+onprem-spark     = []
+all              = ["burnt[azure-databricks,aws-databricks,gcp-databricks,onprem-spark]"]
 
 [project.scripts]
 burnt = "burnt.cli.main:app"
@@ -114,7 +115,6 @@ known-first-party = ["burnt"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["S101"]
-"templates/**/*" = ["F821", "E402", "I001"]
 
 [tool.ruff.format]
 quote-style = "double"

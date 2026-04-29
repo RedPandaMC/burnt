@@ -1,8 +1,14 @@
 """
-burnt - Performance coach for Spark data engineers.
+burnt — static cost analyzer for Spark.
 
-Watches your practice runs, learns from Spark metrics,
-and tells you how to ship cheaper code.
+Parses Python, SQL, and notebook source with a Rust engine (tree-sitter + CostGraph),
+applies 43 lint rules, and produces actionable findings ranked by cost impact.
+
+Three modes (auto-detected):
+- Static lint: zero credentials, zero Spark connection required.
+- In-notebook: attach to a live Spark session via the REST monitoring API for
+  per-stage metric enrichment.
+- CI gate: emit SARIF / JSON and block on --max-cost or --fail-on.
 """
 
 from __future__ import annotations
@@ -35,7 +41,6 @@ __all__ = [
     "config",
     "start_session",
     "version",
-    "watch",
 ]
 
 
@@ -52,11 +57,12 @@ def start_session(
     capture_stages: bool = True,
     capture_cells: bool = True,
 ) -> None:
-    """Start listening to the active Spark session.
+    """Attach to the active Spark session for runtime metric enrichment.
 
-    Registers a SparkListener to capture stage metrics, SQL execution,
-    and cell timings during your notebook session. Call this once at
-    the top of your notebook, then run your code normally.
+    Resolves the Spark monitoring REST endpoint (driver-proxy-api on Databricks,
+    or spark.sparkContext.uiWebUrl on local Spark) and records it for use at
+    check() time. If no Spark session is active, returns silently — subsequent
+    check() calls run in static-only mode.
 
     Args:
         capture_sql: Capture SQL query text and duration.
@@ -97,15 +103,15 @@ def check(
     """Analyze code for cost anti-patterns and runtime performance.
 
     Combines static analysis (Rust engine) with runtime metrics (if
-    start_session() was called) to produce actionable recommendations.
+    start_session() was called) to produce findings ranked by cost impact.
 
     Args:
-        path: Path to a .py, .sql, or .ipynb file. Defaults to current directory.
-        max_cost: Exit with error if estimated cost exceeds this amount.
+        path: Path to a .py, .sql, .ipynb, or .dbc file. Defaults to current directory.
+        max_cost: Raise CostBudgetExceeded if estimated cost exceeds this amount.
         severity: Minimum severity to report (error, warning, info).
-        skip: List of rule IDs to skip.
-        only: List of rule IDs to run (exclusive with skip).
-        cluster: Cluster config for cost estimation.
+        skip: Rule IDs or prefixes to skip (e.g. ["BP008", "BNT*"]).
+        only: Run only these rule IDs (exclusive with skip).
+        cluster: Cluster config identifier for cost estimation.
         json: Output results as JSON.
         markdown: Output results as Markdown.
 
@@ -128,44 +134,6 @@ def check(
 
 
 # ---------------------------------------------------------------------------
-# Watch
-# ---------------------------------------------------------------------------
-
-
-def watch(
-    tag_key: str | None = None,
-    *,
-    drift_threshold: float = 0.25,
-    idle_threshold: float = 0.10,
-    budget: float | None = None,
-    days: int = 30,
-    job_id: int | None = None,
-    pipeline_id: str | None = None,
-) -> Any:
-    """Monitor Databricks workspace costs.
-
-    Requires ``pip install burnt[databricks]``.
-    """
-    try:
-        from burnt.databricks.watch.core import watch as _watch_impl
-    except ImportError:
-        raise NotAvailableError(
-            "Workspace monitoring requires burnt[databricks]. "
-            "Install with: pip install burnt[databricks]"
-        ) from None
-
-    return _watch_impl(
-        tag_key=tag_key,
-        drift_threshold=drift_threshold,
-        idle_threshold=idle_threshold,
-        budget=budget,
-        days=days,
-        job_id=job_id,
-        pipeline_id=pipeline_id,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -176,18 +144,18 @@ def config(
     skip: list[str] | None = None,
     max_cost: float | None = None,
     severity: str | None = None,
-    tag_key: str | None = None,
-    drift_threshold: float | None = None,
-    idle_threshold: float | None = None,
-    budget: float | None = None,
-    alert_slack: str | None = None,
-    alert_teams: str | None = None,
-    alert_webhook: str | None = None,
-    calibration_store: str | None = None,
 ) -> None:
     """Configure burnt programmatically.
 
     These settings override config files but are overridden by CLI flags.
+    For full configuration options use burnt.toml (see docs/configuration.md).
+
+    Args:
+        warehouse_id: Databricks SQL warehouse ID for system-table queries.
+        billing_table: Override path for system.billing.usage.
+        skip: Rule IDs or prefixes to suppress globally.
+        max_cost: Default cost gate (same as --max-cost).
+        severity: Minimum severity to report.
     """
     from . import _config
 
@@ -197,14 +165,6 @@ def config(
         skip=skip,
         max_cost=max_cost,
         severity=severity,
-        tag_key=tag_key,
-        drift_threshold=drift_threshold,
-        idle_threshold=idle_threshold,
-        budget=budget,
-        alert_slack=alert_slack,
-        alert_teams=alert_teams,
-        alert_webhook=alert_webhook,
-        calibration_store=calibration_store,
     )
 
 

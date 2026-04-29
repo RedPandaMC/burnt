@@ -8,46 +8,52 @@ This directory is the **handoff protocol** between the Planner agent and the Exe
 
 ```
 Phase 0: Base Rework ──────────────── Cleanup, new architecture setup [done]
-Phase 1: Rust Engine ──────────────── tree-sitter, CostGraph, 84 rules [done]
-Phase X: Design Alignment ─────────── Dead code removal, docs, sparkMeasure session [in-progress]
-Phase N: Modular Architecture ─────── Pricing backends, [notebook] extra, pyproject restructure [todo]
-Phase 2: Session & Intelligence ───── Cost estimation, EXPLAIN enrichment [todo, unblocked after PX]
-Phase 3: CLI Completion ───────────── Rewire check, SARIF output, event log [todo]
-Phase 4: Databricks Module ────────── DatabricksBackend, dollar estimates, Delta enrichment [todo]
-Phase 5: Integration & Hardening ──── E2E tests, CI examples, packaging [todo]
-Phase 6: Validation ───────────────── Dogfood, security audit, ship v0.2.0 [todo]
+Phase 1: Rust Engine ──────────────── tree-sitter, CostGraph, 43 rules [done]
+Phase 2: Design Alignment ─────────── Dead code removal, REST session client, docs [in-progress]
+Phase 3: Modular Architecture ─────── Pricing backends, pyproject restructure [in-progress]
+Phase 4: Session & Intelligence ───── Cost estimation, EXPLAIN enrichment [todo, unblocked after P2]
+Phase 5: CLI Completion ───────────── Rewire check, SARIF output, event log [todo]
+Phase 6: Databricks Backend ────────── PricingBackend impls, dollar estimates [todo]
+Phase 7: Integration & Hardening ──── E2E tests, CI examples, packaging [todo]
+Phase 8: Validation ───────────────── Dogfood, security audit, ship v0.2.0 [todo]
 ```
 
 > **Strategic Position (April 2026):**
-> - **Spark-generic** — 84 lint rules + CostGraph work on any Spark code (EMR, Glue, Dataproc, on-prem, Databricks); cost-in-dollars requires a pricing-backend extra
+> - **Spark-generic** — 43 active lint rules + CostGraph work on any Spark code (EMR, Glue, Dataproc, on-prem, Databricks); cost-in-dollars requires a pricing-backend extra (rule count reconciliation: P3-06)
 > - **CLI-first** — `burnt check` is the product; notebook API is a second mode
+> - **REST API runtime** — `start_session()` uses the Spark monitoring REST API; no sparkMeasure dependency
 > - **Full notebook hygiene** — cost + style + structure rules ("ruff for Databricks notebooks, and beyond")
-> - **sparkMeasure is core** — runtime metric capture ships with `pip install burnt`; no extra needed
 
 ---
 
-## Phase X: Design Alignment *(do these first)*
+## Phase 2: Design Alignment *(do these first)*
 
 | Task | Status | What |
 |------|--------|------|
-| `PX/01-remove-dead-code` | todo | Remove advise, tutorial, estimate, simulate — pre-pivot debris |
-| `PX/02-sparkmeasure-session` | todo | Replace broken SparkListener with sparkMeasure |
-| `PX/03-cli-rewire` | todo | Wire `burnt check` to `_check.run()` instead of old antipatterns path |
-| `PX/04-sarif-output` | todo | Add SARIF 2.1.0 output format for GitHub Code Scanning |
-| `PX/05-design-doc-update` | done | Update DESIGN.md, AGENTS.md, README.md, pyproject.toml |
-| `PX/06-tasks-cleanup` | done | Archive old P4 tasks, rewrite thin tasks, update this README |
+| `P2/01a-cli-surface-cleanup` | done | Remove advise, tutorial CLI commands; fix graph/estimate.py stub |
+| `P2/01b-subtree-removal` | done | Delete watch/, _watch/, alerts/, intelligence/, templates/burnt_monitor.py, run_ts.rs |
+| `P2/02-rest-session-client` | todo | Implement REST API session client (replaces sparkMeasure) |
+| `P2/03-cli-rewire` | todo | Wire `burnt check` to `_check.run()` instead of old antipatterns path |
+| `P2/04-sarif-output` | todo | Add SARIF 2.1.0 output format for GitHub Code Scanning |
+| `P2/05-design-doc-update` | done | Update DESIGN.md, README.md, docs/ |
+| `P2/06-tasks-cleanup` | done | Archive old tasks, rewrite thin tasks, update this README |
+| `P2/07-public-api-cleanup` | done | Drop watch() from `__init__.py`, strip pre-pivot config() params |
 
 ---
 
-## Phase N: Modular Architecture *(acts on the April 2026 re-statement in `docs/modular-architecture.md`)*
+## Phase 3: Modular Architecture
 
 | Task | Status | What |
 |------|--------|------|
-| `PN/01-pyproject-extras-restructure` | todo | Remove `[sql]`,`[spark]`,`[alerts]`; add `sparkmeasure`+`libcst` to core; add `[notebook]`,`[azure-databricks]`,`[aws-databricks]`,`[gcp-databricks]`,`[onprem-spark]` |
-| `PN/02-pricing-backend-protocol` | todo | Create `PricingBackend` protocol in `src/burnt/core/pricing.py`; stub `src/burnt/cloud/` dirs; migrate `DatabricksPricingBackend` out of core |
-| `PN/03-notebook-extra-split` | todo | Gate `display/notebook.py` behind `[notebook]`; add `parsers/dbc.py`; core stub raises `NotAvailableError` |
-| `PN/04-cli-fix-diff-flags` | todo | Add `--fix`, `--unsafe-fixes`, `--diff <ref>` to `burnt check` (core, no extra needed) |
-| `PN/05-config-schema-additions` | todo | Add `[burnt.databricks.system_tables]` paths + `[burnt.pricing] backend` selection to config schema |
+| `P3/01-pyproject-extras-restructure` | done | Remove `[sql]`,`[spark]`,`[alerts]`; add `[databricks]`,`[*-databricks]`,`[onprem-spark]` |
+| `P3/02-pricing-backend-protocol` | todo | Create `PricingBackend` protocol in `src/burnt/core/pricing.py`; stub `src/burnt/cloud/` dirs |
+| `P3/04-cli-fix-diff-flags` | todo | Add `--fix`, `--unsafe-fixes`, `--diff <ref>` to `burnt check` (Rust engine, no libcst) |
+| `P3/05-config-schema-additions` | todo | Add `[burnt.databricks.system_tables]` + `[burnt.pricing] backend` to config schema |
+| `P3/06-rule-count-reconciliation` | todo | Make `burnt rules \| wc -l` match README; add TOML stubs for Tier 2/3 rules |
+| `P3/07-vulture-ci-enforcement` | todo | Add vulture to CI to catch dead code re-introduction |
+| `P3/09-rust-physical-plan-parser` | todo | Parse `/sql/{id}` physical plan JSON in Rust engine, annotate CostGraph nodes |
+
+*(P3/03-notebook-extra-split was cancelled — [notebook] extra dropped; .dbc parsing is core; HTML output removed)*
 
 ---
 
@@ -73,9 +79,9 @@ Phase 6: Validation ───────────────── Dogfood,
 | `P1/08-python-cost-graph` | done | Build CostGraph for Python code |
 | `P1/09-sql-cost-graph` | done | Build CostGraph for SQL statements |
 | `P1/10-dlt-pipeline-graph` | done | Build PipelineGraph for DLT/SDP |
-| `P1/11-tier1-rules` | done | ~48 TOML-based rules |
-| `P1/12-tier2-rules` | done | ~25 Rust context-aware rules |
-| `P1/13-tier3-rules` | done | ~11 Rust semantic rules |
+| `P1/11-tier1-rules` | done | TOML-based pattern rules |
+| `P1/12-tier2-rules` | done | Rust context-aware rules |
+| `P1/13-tier3-rules` | done | Rust semantic/dataflow rules |
 | `P1/14-rule-pipeline` | done | Rule execution and suppression |
 | `P1/15-pyo3-bridge` | done | Expose engine to Python via PyO3 |
 | `P1/16-parity-validation` | done | Ensure parity with v1.0 |
@@ -84,70 +90,66 @@ Phase 6: Validation ───────────────── Dogfood,
 | `P1/19-rework-rules-to-use-cpl` | done | CPL pattern language integration |
 | `P1/20-rework-burnt-engine` | done | Engine cleanup and optimization |
 
-## Phase 2: Session & Intelligence
+## Phase 4: Session & Intelligence
 
 | Task | Status | What |
 |------|--------|-------|
-| `P2/01-pydantic-models` | done | Core models (CostEstimate, CheckResult, Finding) |
-| `P2/02-env-detection` | done | Spark detection (not just Databricks) |
-| `P2/03-spark-integration` | done | Session listener (⚠ being replaced by PX/02) |
-| `P2/04-rest-backend` | done | databricks-sdk moved to optional extra |
-| `P2/05-dabs-parser` | cancelled | Databricks-only, not core |
-| `P2/06-delta-enrichment` | todo | DESCRIBE DETAIL via DatabricksBackend |
-| `P2/07-dlt-enrichment` | cancelled | DLT Pipelines API — Databricks-only |
-| `P2/08-explain-enrichment` | todo | EXPLAIN EXTENDED parsing and enrichment |
-| `P2/09-scaling-functions` | done | 5 scaling models (Linear, Quadratic, etc.) |
-| `P2/10-cost-estimation` | todo | Merge sparkMeasure stage data with graph nodes |
-| `P2/11-session-cost` | done | Session cost analysis (idle vs execution) |
-| `P2/12-recommendations` | cancelled | Replaced by generic Spark advice |
-| `P2/13-feedback-loop` | cancelled | Removed (bad design choice) |
-| `P2/14-instance-catalog` | cancelled | DBU pricing moved to burnt[databricks] |
-
-## Phase 3: CLI Completion
-
-| Task | Status | What |
-|------|--------|------|
-| `P3/01-notebook-renderer` | done | HTML output for Jupyter/Databricks notebooks |
-| `P3/02-terminal-renderer` | done | Rich table output for CLI |
-| `P3/03-export` | done | JSON and Markdown export |
-| `P3/04-check-wiring` | done | `burnt.check()` orchestrates Rust + runtime merge |
-| `P3/05-config-system` | done | `burnt.toml` / `pyproject.toml` loading |
-| `P3/06-cli-implementation` | todo | Rewire check, add SARIF + event-log, remove dead commands |
-| `P3/07-graceful-degradation` | done | Static-only when Spark/Databricks unavailable |
-| `P3/08-performance-tuning` | todo | Benchmark script, latency and memory targets |
-
-## Phase 4: Databricks Backend *(scope: Databricks-specific extras, after Phase N)*
-
-| Task | Status | What |
-|------|--------|-------|
-| `P4/01-databricks-namespace` | todo | Consolidate Databricks code under `burnt/databricks/` (workspace API + system-table reader, no pricing data) |
-| `P4/02-rest-backend-move` | todo | Move RestBackend to `burnt/databricks/runtime/` |
-| `P4/03-databricks-cli` | todo | Databricks-specific CLI commands |
+| `P4/01-pydantic-models` | done | Core models (CostEstimate, CheckResult, Finding) |
+| `P4/02-env-detection` | done | Spark detection (not just Databricks) |
+| `P4/03-spark-integration` | done | Session listener (superseded by P2-02 REST client) |
+| `P4/04-rest-backend` | done | databricks-sdk moved to optional extra |
 | `P4/06-delta-enrichment` | todo | DESCRIBE DETAIL via DatabricksBackend |
-| `P4/07-dlt-analysis` | todo | PipelineGraph enrichment for DLT |
+| `P4/08-explain-enrichment` | todo | EXPLAIN EXTENDED parsing and enrichment (blocked: P2-02) |
+| `P4/09-scaling-functions` | done | 5 scaling models (Linear, Quadratic, etc.) |
+| `P4/10-cost-estimation` | todo | Merge REST stage data with graph nodes (blocked: P2-02) |
+| `P4/11-session-cost` | done | Session cost analysis (idle vs execution) |
 
-## Phase 5: Integration & Hardening
+*(P4/05-dabs-parser, P4/07-dlt-enrichment, P4/12-recommendations, P4/13-feedback-loop, P4/14-instance-catalog → archived)*
 
-| Task | Status | What |
-|------|--------|------|
-| `P5/01-e2e-tests` | todo | Fixtures and E2E tests for full pipeline |
-| `P5/02-dynamic-sql` | todo | Variable resolution in SQL strings |
-| `P5/03-error-handling-audit` | todo | Eliminate tracebacks on failure |
-| `P5/05-config-validation` | todo | Catch invalid configs with clear errors |
-| `P5/06-ci-examples` | todo | Pre-commit, GitHub Actions (SARIF + cost gate), DABs |
-| `P5/07-packaging` | todo | Verify wheels work without databricks-sdk |
-| `P5/08-documentation` | todo | CHANGELOG, docs/ site |
-
-## Phase 6: Validation
+## Phase 5: CLI Completion
 
 | Task | Status | What |
 |------|--------|------|
-| `P6/01-dogfood` | todo | Test on 5+ real-world notebooks |
-| `P6/02-performance-validation` | todo | Profile latency and memory |
-| `P6/03-security-audit` | todo | cargo audit, pip-audit |
-| `P6/04-edge-case-testing` | todo | Empty, large, syntax-error notebooks |
-| `P6/05-version-pins` | todo | Finalize Python dependency bounds |
-| `P6/06-ship` | todo | Tag v0.2.0 and publish |
+| `P5/01-notebook-renderer` | done | Terminal Rich table output |
+| `P5/02-terminal-renderer` | done | Rich table output for CLI |
+| `P5/03-export` | done | JSON and Markdown export |
+| `P5/04-check-wiring` | done | `burnt.check()` orchestrates Rust + runtime merge |
+| `P5/05-config-system` | done | `burnt.toml` / `pyproject.toml` loading |
+| `P5/06-cli-implementation` | todo | Rewire check, add SARIF + event-log (blocked: P2-01a, P2-03, P2-04) |
+| `P5/07-graceful-degradation` | done | Static-only when Spark/Databricks unavailable |
+| `P5/08-performance-tuning` | todo | Benchmark script, latency and memory targets (blocked: P5-06) |
+
+## Phase 6: Databricks Backend
+
+| Task | Status | What |
+|------|--------|-------|
+| `P6/00-onprem-spark-backend` | todo | user-supplied $/vCPU-hour in burnt.toml; zero cloud SDKs (blocked: P3-02, P3-05) |
+| `P6/05-azure-databricks-backend` | todo | Azure DBU × VM SKU pricing (blocked: P6-00, P4-01) |
+
+## Phase 7: Integration & Hardening
+
+| Task | Status | What |
+|------|--------|------|
+| `P7/01-e2e-tests` | todo | Fixtures and E2E tests for full pipeline (blocked: P5-06, P2-02) |
+| `P7/02-dynamic-sql` | todo | Variable resolution in SQL strings |
+| `P7/03-error-handling-audit` | todo | Eliminate tracebacks on failure |
+| `P7/05-config-validation` | todo | Catch invalid configs with clear errors |
+| `P7/06-ci-examples` | todo | Pre-commit, GitHub Actions (SARIF + cost gate) (blocked: P2-04, P5-06) |
+| `P7/07-packaging` | todo | Verify wheels work without databricks-sdk |
+| `P7/08-documentation` | todo | CHANGELOG, docs/ site |
+
+*(P7/04-access-level-tests → archived — old access-level model replaced by optional extras)*
+
+## Phase 8: Validation
+
+| Task | Status | What |
+|------|--------|------|
+| `P8/01-dogfood` | todo | Test on 5+ real-world notebooks |
+| `P8/02-performance-validation` | todo | Profile latency and memory |
+| `P8/03-security-audit` | todo | cargo audit, pip-audit |
+| `P8/04-edge-case-testing` | todo | Empty, large, syntax-error notebooks |
+| `P8/05-version-pins` | todo | Finalize Python dependency bounds |
+| `P8/06-ship` | todo | Tag v0.2.0 and publish |
 
 ---
 
@@ -166,13 +168,16 @@ Executor → claims (status: in-progress, agent: <model-id>)
 
 ## Cancelled Tasks
 
-- `P2/05-dabs-parser` — Databricks Asset Bundle parsing is Databricks-only
-- `P2/07-dlt-enrichment` — DLT Pipelines API is Databricks-only
-- `P2/12-recommendations` — Replaced by simpler generic Spark advice
-- `P2/13-feedback-loop` — Removed (temporal mismatch, telemetry burden)
-- `P2/14-instance-catalog` — DBU pricing moved to optional Databricks module
-- `P5/04-access-level-tests` — Old access-level model replaced by optional extras
+- `P3/03-notebook-extra-split` — `[notebook]` extra cancelled; .dbc parsing is core; HTML output removed
+- `P4/05-dabs-parser` — Databricks Asset Bundle parsing is Databricks-only, out of scope
+- `P4/07-dlt-enrichment` — DLT Pipelines API is Databricks-only, out of scope
+- `P4/12-recommendations` — Replaced by simpler generic Spark advice
+- `P4/13-feedback-loop` — Removed (temporal mismatch, telemetry burden)
+- `P4/14-instance-catalog` — DBU pricing moved to optional Databricks module (P6)
+- `P7/04-access-level-tests` — Old access-level model replaced by optional extras
 
 ## Archived Tasks
 
-See `tasks/archive/` — pre-pivot Databricks watch features (tag attribution, idle cluster detection, cost drift, job/pipeline reports, monitoring template). These completed the old crystal-ball design and do not apply to the current architecture.
+See `tasks/archive/` — pre-pivot Databricks watch features (tag attribution, idle cluster
+detection, cost drift, job/pipeline reports, monitoring template). These completed the old
+crystal-ball design and do not apply to the current architecture.
