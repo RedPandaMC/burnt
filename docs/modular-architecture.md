@@ -5,14 +5,14 @@
 > **Decision status:**
 > - ✅ All decisions in this document are recorded and agreed
 > - ✅ Docs updated: `README.md`, `DESIGN.md`, `docs/configuration.md`, `tasks/README.md`
-> - ⏳ Tasks created for code implementation: `tasks/PN/01` through `tasks/PN/05`
-> - ❌ Code not yet implemented — see `tasks/PN/` for the implementation work queue
+> - ⏳ Tasks created for code implementation: `tasks/P3/01` through `tasks/P3/05`
+> - ❌ Code not yet implemented — see `tasks/P3/` for the implementation work queue
 
 ---
 
 ## Context
 
-burnt's April 2026 pivot removed the "crystal-ball" pre-execution surface (`advise`, `tutorial`, `simulate`, the recommendations engine, the feedback-loop calibrator) and re-anchored the package on three modes: CLI lint, in-notebook coaching, CI gate. The Rust engine + sparkMeasure runtime + optional Databricks `$$` backend is the spine.
+burnt's April 2026 pivot removed the "crystal-ball" pre-execution surface (`advise`, `tutorial`, `simulate`, the recommendations engine, the feedback-loop calibrator) and re-anchored the package on three modes: CLI lint, in-notebook coaching, CI gate. The Rust engine + Spark monitoring REST API runtime + optional pricing backends is the spine.
 
 The pivot was correct, but the **identity that ships in `README.md`/`DESIGN.md` is "Cost Compiler for Databricks"**, while the technical reality is mostly Spark-generic with Databricks as one (currently the only) cost backend. Data engineers running Spark anywhere — EMR, Glue, Dataproc, on-prem, Databricks — have the same need: see what each pipeline costs, before and after running it. The package today is closer to serving that audience than its README admits.
 
@@ -21,10 +21,10 @@ This document re-states burnt as a **modular facets package** under a Spark-gene
 Decisions recorded here so the next session doesn't re-litigate:
 
 - **Identity:** Spark-generic, Databricks is one backend among several planned.
-- **New facet:** `[notebook]` (HTML rendering split out + `.dbc` archive parsing added).
-- **Promoted to core:** `sparkmeasure` (was `[spark]`) — runtime metric capture is fundamental to the "honest confidence" pitch.
-- **Folded into core CLI:** `--fix` / `--unsafe-fixes` (was `[fix]`) and `--diff <ref>` (was `[git]`) — match ruff's shape.
-- **Removed:** `[sql]` (Rust engine replaces sqlglot), `[alerts]` (out of mission — orchestration concern), and the `[chargeback]` / `[sample]` / `[bench]` / `[catalog]` candidates (not good fits).
+- **Runtime capture:** sparkMeasure dropped entirely; replaced by the Spark monitoring REST API (`/api/v1/applications/...`). No JAR install, no Spark Connect incompatibility. `.dbc` archive parsing moved to core parsers.
+- **HTML output removed:** output formats are table (Rich), JSON, Markdown, SARIF. `[notebook]` extra dropped.
+- **Folded into core CLI:** `--fix` / `--unsafe-fixes` (Rust engine `InputEdit`, not libcst) and `--diff <ref>` (shells to `git`).
+- **Removed:** `[sql]` (Rust engine replaces sqlglot), `[alerts]` (orchestration concern), `[spark]` (sparkMeasure dropped), and the `[chargeback]` / `[sample]` / `[bench]` / `[catalog]` candidates (not good fits).
 - **Pricing-backend naming:** `[azure-databricks]` / `[aws-databricks]` / `[gcp-databricks]` / `[onprem-spark]`. Every `[*-databricks]` extra auto-pulls `[databricks]` (workspace API + system tables); `[onprem-spark]` is self-contained.
 - **System tables:** four bounded uses (DBU rate lookup, table-size enrichment, cluster profile resolution, opt-in last-run cost), with config-driven path overrides for orgs that mirror system tables. See §3.5.
 
@@ -57,7 +57,7 @@ Decisions recorded here so the next session doesn't re-litigate:
 
 | Component | Path | Role |
 |---|---|---|
-| Rust lint engine + tree-sitter | `src/burnt-engine/` (PyO3 wheel) | 84 rules, CostGraph construction. Always works, no creds. |
+| Rust lint engine + tree-sitter | `src/burnt-engine/` (PyO3 wheel) | 43 rules, CostGraph construction. Always works, no creds. |
 | Check orchestration | `src/burnt/_check/` | `check()` entry, CheckResult model, finding aggregation |
 | Config | `src/burnt/_config/` | `burnt.toml` / `[tool.burnt]` discovery |
 | Data models | `src/burnt/core/` | `Finding`, `CheckResult`, `CostEstimate`, `CostGraph`, `CostNode` |
@@ -67,54 +67,26 @@ Decisions recorded here so the next session doesn't re-litigate:
 | Parsers (text formats) | `src/burnt/parsers/` (Python wrapper of Rust) | `.py`, `.sql`, `.ipynb` |
 | Instance/scaling catalog | `src/burnt/catalog/` | Backend-agnostic lookup tables (kept generic; cloud-specific data lives in the cloud extras) |
 
-**Core dependencies:** `pydantic`, `pydantic-settings`, `typer`, `rich`, `pyyaml`, `tabulate`, **`sparkmeasure>=2.0`** (promoted from the old `[spark]` extra — runtime metric capture is core to the "honest confidence" story and ships always).
+**Core dependencies:** `pydantic`, `pydantic-settings`, `typer`, `rich`, `pyyaml`, `tabulate`. No `sparkmeasure` (REST API, no JAR). No `libcst` (autofix in Rust engine). No `jinja2` (HTML output removed).
 
 **Core CLI capabilities (folded in, no extras needed):**
 
-- `burnt check --fix` / `burnt check --unsafe-fixes` — autofix subset of lint findings in place, ruff-style. Each rule declares whether it's autofixable; `--unsafe-fixes` opts into fixes that may change semantics. No `[fix]` extra; `LibCST` for Python rewrites is a core dep.
+- `burnt check --fix` / `burnt check --unsafe-fixes` — autofix via `tree-sitter::InputEdit` inside the Rust engine. No libcst, no separate `[fix]` extra.
 - `burnt check --diff <ref>` — diff-aware lint, only files changed since `<ref>`. Shells out to `git diff --name-only`; no Python git library, no `[git]` extra.
 
-**Core promise:** zero credentials, zero network, zero cloud SDK. `burnt check ./notebook.py` produces all 84 lint findings + a CostGraph in compute-seconds. This is the contract that makes burnt safe to install in any environment.
+**Core promise:** zero credentials, zero network, zero cloud SDK. `burnt check ./notebook.py` produces all 43 lint findings + a CostGraph in compute-seconds. This is the contract that makes burnt safe to install in any environment.
 
 ### 2.2 Existing extras — kept, retasked, or removed
 
 | Extra | Status | Role under new identity |
 |---|---|---|
 | `[sql]` | **Removed.** | `sqlglot` is replaced by the Rust engine's tree-sitter SQL coverage. No optional SQL parser is needed; what tree-sitter doesn't catch, the engine grows native support for. One fewer dep, one fewer failure mode. |
-| `[spark]` | **Removed (promoted to core).** | `sparkmeasure>=2.0` ships as a core dependency. Runtime metric capture is fundamental to the "honest confidence" pitch — gating it behind an extra was wrong. |
+| `[spark]` | **Removed.** | `sparkmeasure` is dropped entirely. Runtime capture uses the Spark monitoring REST API (`/api/v1/applications/...`) — no JAR install, works with Spark Connect, works on Databricks Serverless. |
 | `[alerts]` | **Removed.** | Out of mission. burnt is a linter + cost analyser; result dispatch (Slack, webhooks, email) is an orchestration concern that lives in CI, dbt, Airflow, or the user's own scripts consuming `result.to_json()`. No `slack-sdk` dependency. |
 | `[databricks]` | **Kept, repositioned as base.** `databricks-sdk>=0.50,<1`, `requests`. | Workspace API client + system-table reader (see §3.5). Does **not** ship a `PricingBackend` itself; pricing data lives in the cloud-specific `[*-databricks]` extras (DBU rates differ across Azure/AWS/GCP). Auto-installed as a transitive dep of any `[*-databricks]` extra — users install `[azure-databricks]` and get `[databricks]` for free. |
-| `[all]` | meta | `burnt[notebook,databricks,azure-databricks,aws-databricks,gcp-databricks,onprem-spark]`. |
+| `[all]` | meta | `burnt[databricks,azure-databricks,aws-databricks,gcp-databricks,onprem-spark]`. |
 
-### 2.3 New facet: `[notebook]` — HTML rendering + `.dbc` archive support
-
-Why a separate extra: HTML rendering carries template/asset weight that CLI users don't need, and `.dbc` parsing requires a ZIP/encoding pipeline that's dead weight for `.py`/`.sql`-only users. Splitting it out preserves the "core install is small" promise from `DESIGN.md`.
-
-**Contents:**
-
-| Piece | Path (proposed) | Purpose |
-|---|---|---|
-| HTML renderer (move from core) | `src/burnt/display/notebook.py` | Already exists in core; this extra owns its dependencies (Jinja2 + minimal CSS). Core retains a stub that raises `NotAvailableError("pip install burnt[notebook]")`. |
-| `.dbc` parser (new) | `src/burnt/parsers/dbc.py` | ZIP archive → JSON notebooks. Supports plain UTF-8, Base64, and gzip-compressed cell content. |
-| Cell-magic router | already in `parsers/` | Routes `%sql` → SQL parser, `%python` → Python AST/tree-sitter, `%scala` → unsupported (skip with note). Lives in core; `[notebook]` only adds `.dbc` upstream. |
-
-**Dependencies:** `jinja2>=3,<4` (templating). `.dbc` uses stdlib `zipfile`, `json`, `gzip`, `base64` — no new deps.
-
-**Public API:**
-
-```python
-result = burnt.check("notebook.dbc")     # works only if [notebook] installed for .dbc
-result.display()                          # in Jupyter: HTML rendering only if [notebook] installed
-result.to_html()                          # raises NotAvailableError without [notebook]
-```
-
-**Graceful degradation:**
-
-- `.dbc` without `[notebook]` → `BurntError("'.dbc' archives require pip install burnt[notebook]")`. CLI exits 2 (config/parse error).
-- `.ipynb` continues to work in the core install.
-- Notebook-rendered `display()` in Jupyter falls back to the terminal renderer (Rich → text) if `[notebook]` is absent.
-
-### 2.4 Future extras — named placeholders only
+### 2.3 Future extras — named placeholders only
 
 Two groups. The pricing backends are **structural** — required by the Spark-generic identity choice. The rest are **candidate facets** chosen for buildability and direct alignment with "help DEs build cost-effective Spark pipelines + cost transparency".
 
@@ -136,8 +108,8 @@ The naming pattern (`<cloud>-<runtime>`) makes it explicit what each extra knows
 
 Six prior candidates are retired:
 
-- `[fix]` — folded into `burnt check --fix` / `--unsafe-fixes` (core). See §2.1.
-- `[git]` — folded into `burnt check --diff <ref>` (core). See §2.1.
+- `[fix]` — folded into `burnt check --fix` / `--unsafe-fixes` (core, Rust `InputEdit`). See §2.1.
+- `[git]` — folded into `burnt check --diff <ref>` (core, shells to `git`). See §2.1.
 - `[chargeback]`, `[sample]`, `[bench]`, `[catalog]` — dropped as bad fits (chargeback drifts toward fleet-FinOps; sample/bench overlap the runtime story without adding a clean signal; catalog requires too many divergent adapters for one extra).
 
 Remaining candidates (explicitly named, design deferred):
@@ -224,16 +196,15 @@ Behaviour rules:
 
 ## 4. Install matrix (the user-visible contract)
 
-| Install | Lint | Compute-seconds | Live runtime (sparkMeasure) | Dollars | System-table enrichment | HTML / `.dbc` |
-|---|---|---|---|---|---|---|
-| `pip install burnt` | ✅ 84 rules + `--fix`/`--unsafe-fixes` + `--diff` | ✅ | ✅ (core) | ❌ | ❌ | ❌ |
-| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ from user-supplied `$/vCPU-hour` etc. | ❌ | ❌ |
-| `+ [databricks]` (alone) | ✅ | ✅ | ✅ | ❌ — pricing data lives in cloud-specific extras | ✅ | ❌ |
-| `+ [azure-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ | ❌ |
-| `+ [aws-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ | ❌ |
-| `+ [gcp-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ | ❌ |
-| `+ [notebook]` | ✅ | ✅ | ✅ | per other extras | per other extras | ✅ |
-| `[all]` | ✅ | ✅ | ✅ | ✅ (whichever pricing backend is selected in `burnt.toml`) | ✅ | ✅ |
+| Install | Lint | Compute-seconds | Live runtime (REST) | Dollars | System-table enrichment |
+|---|---|---|---|---|---|
+| `pip install burnt` | ✅ 43 rules + `--fix`/`--unsafe-fixes` + `--diff` | ✅ | ✅ (core) | ❌ | ❌ |
+| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ from user-supplied `$/vCPU-hour` etc. | ❌ |
+| `+ [databricks]` (alone) | ✅ | ✅ | ✅ | ❌ — pricing data lives in cloud-specific extras | ✅ |
+| `+ [azure-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ |
+| `+ [aws-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ |
+| `+ [gcp-databricks]` (auto-pulls `[databricks]`) | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ |
+| `[all]` | ✅ | ✅ | ✅ | ✅ (whichever pricing backend is selected in `burnt.toml`) | ✅ |
 
 This matrix is the single source of truth for what users get from each combination — it should be embedded in the README and `DESIGN.md` once codified.
 
@@ -243,17 +214,16 @@ This matrix is the single source of truth for what users get from each combinati
 
 The following are the surfaces that future task work will touch when this re-statement is acted on:
 
-- `README.md` — tagline, three-modes section, install matrix, access-levels table. Drop mentions of `[sql]` / `[alerts]`. Promote sparkMeasure to core.
+- `README.md` — tagline, three-modes section, install matrix. Drop mentions of `[sql]` / `[alerts]`. Updated with REST API references and 43-rule count.
 - `DESIGN.md` — §1 Product, §2 Philosophy, §3 Environments, §4 Architecture, §10 Databricks Optional Module (rename to "Pricing Backends"), §11 Configuration (add backend selection, system-table path overrides per §3.5, on-prem rates for `[onprem-spark]`).
-- `pyproject.toml` — remove `[sql]`, `[spark]`, `[alerts]`. Add `sparkmeasure>=2.0` and `LibCST` to core deps. Add `[notebook]`, `[azure-databricks]`, `[aws-databricks]`, `[gcp-databricks]`, `[onprem-spark]`. `[databricks]` becomes a transitive of every `[*-databricks]` extra. Update `[all]` accordingly.
-- `src/burnt/core/` — new `pricing.py` (`PricingBackend` protocol).
+- `pyproject.toml` — removed `[sql]`, `[spark]`, `[alerts]`. Added `[azure-databricks]`, `[aws-databricks]`, `[gcp-databricks]`, `[onprem-spark]`. `[databricks]` is a transitive of every `[*-databricks]` extra. `[all]` updated accordingly. HTML output removed — no jinja2 in core or any extra.
+- `src/burnt/core/` — new `pricing.py` (`PricingBackend` protocol); `session_cost.py` (moved from `intelligence/`).
 - `src/burnt/databricks/` — workspace API client + system-table reader (no `PricingBackend` here). The current `DatabricksPricingBackend` migrates out into the cloud-specific extras.
 - `src/burnt/cloud/azure_databricks/`, `aws_databricks/`, `gcp_databricks/`, `onprem_spark/` — one `PricingBackend` per package, each gated by its extra.
-- `src/burnt/display/notebook.py` — gated by `[notebook]`; core stub raises `NotAvailableError`.
-- `src/burnt/parsers/` — new `dbc.py` gated by `[notebook]`.
-- `src/burnt/_check/` — wire `--fix`, `--unsafe-fixes`, `--diff` flags into the core CLI (folded in from former `[fix]` / `[git]` extras).
+- `src/burnt/parsers/` — `dbc.py` (core, no extra required — `.dbc` archive parsing ships with base install).
+- `src/burnt/_check/` — `--fix`, `--unsafe-fixes`, `--diff` flags wired into core CLI; autofix implemented in Rust engine via `tree-sitter::InputEdit` (no libcst).
 - `src/burnt/_config/` — schema additions for `[burnt.databricks.system_tables]` and `[burnt.pricing] backend = "..."`.
-- `tasks/` — new tasks under PX (or a new PN phase) for: (a) pricing-backend protocol extraction, (b) cloud-pricing extra split, (c) `[notebook]` extra split, (d) sparkMeasure promotion, (e) `[sql]`/`[alerts]` removal, (f) docs alignment.
+- `tasks/` — new tasks under P2 (Design Alignment) and P3 (Modular Architecture) for: (a) pricing-backend protocol extraction, (b) cloud-pricing extra split, (c) REST session client, (d) `[sql]`/`[alerts]` removal, (e) docs alignment.
 
 Reuse: existing lazy-import patterns in `src/burnt/runtime/__init__.py`, `src/burnt/databricks/__init__.py`, and the `__getattr__` deferral in core `__init__.py` already demonstrate the right shape — new extras follow the same pattern, no new infrastructure needed.
 
@@ -263,11 +233,11 @@ Reuse: existing lazy-import patterns in `src/burnt/runtime/__init__.py`, `src/bu
 
 Architecture-level checks:
 
-1. **Core install isolation:** in a clean venv, `pip install burnt && burnt check ./examples/notebook.py` produces 84 rules' findings + a CostGraph in compute-seconds, no network calls, no cloud SDK imports. `pip show burnt` lists only core deps (pydantic, pydantic-settings, typer, rich, pyyaml, tabulate, sparkmeasure, LibCST).
-2. **Folded-in CLI flags work in core:** `burnt check --fix` rewrites a known-fixable rule's match site; `burnt check --unsafe-fixes` additionally applies semantic-shift fixes; `burnt check --diff main` only lints files reported by `git diff --name-only main...HEAD`. None of these require an extra.
+1. **Core install isolation:** in a clean venv, `pip install burnt && burnt check ./examples/notebook.py` produces 43 rules' findings + a CostGraph in compute-seconds, no network calls, no cloud SDK imports. `pip show burnt` lists only core deps (pydantic, pydantic-settings, typer, rich, pyyaml, tabulate).
+2. **Folded-in CLI flags work in core:** `burnt check --fix` rewrites a known-fixable rule's match site; `burnt check --unsafe-fixes` additionally applies semantic-shift fixes; `burnt check --diff main` only lints files reported by `git diff --name-only main...HEAD`. None of these require an extra (autofix is implemented in the Rust engine via `tree-sitter::InputEdit`).
 3. **`*-databricks` auto-pull works:** `pip install burnt[azure-databricks]` results in `databricks-sdk` being importable (transitive of `[databricks]`). Same for `aws-databricks`, `gcp-databricks`. Installing `[onprem-spark]` does **not** pull `databricks-sdk`.
-4. **Each extra is independently installable, no silent pulls:** `pip install burnt[notebook]` adds Jinja2 only; `pip install burnt[databricks]` adds `databricks-sdk` + `requests` only; `pip install burnt[azure-databricks]` adds Azure-pricing data + the `[databricks]` deps and nothing else.
-5. **Graceful absence:** without `[notebook]`, `burnt check x.dbc` exits 2 with `pip install burnt[notebook]`; without any pricing extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported; without `[databricks]`, system-table enrichment is silently skipped.
+4. **Each extra is independently installable, no silent pulls:** `pip install burnt[databricks]` adds `databricks-sdk` + `requests` only; `pip install burnt[azure-databricks]` adds Azure-pricing data + the `[databricks]` deps and nothing else.
+5. **Graceful absence:** `burnt check x.dbc` works in core (`.dbc` parsing ships with base install); without any pricing extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported; without `[databricks]`, system-table enrichment is silently skipped.
 6. **Backend swap by config:** with `[azure-databricks]` and `[onprem-spark]` both installed, `[burnt.pricing] backend = "onprem-spark"` in `burnt.toml` produces `result.cost_estimate.backend == "onprem-spark"`. Switching to `"azure-databricks"` switches the backend without re-installing.
 7. **System-table path override:** setting `[burnt.databricks.system_tables] query_history = "prod_observability.query_history"` causes burnt to query that table; pointing at a non-existent table logs once at INFO and falls back without erroring (per §3.5 rule 1).
 8. **Install-matrix doc parity:** the README install matrix is the same matrix the test suite asserts against — one truth, both surfaces.
@@ -283,4 +253,4 @@ These are the gates that distinguish "we said it's modular" from "it actually is
 - No re-litigation of the April 2026 pivot. `advise`/`simulate`/recommendations/feedback-loop stay deleted.
 - No re-introduction of the dropped extras (`[sql]`, `[spark]`, `[alerts]`, `[chargeback]`, `[sample]`, `[bench]`, `[catalog]`, `[fix]`, `[git]`). Their decisions are recorded in §2.2 and §2.4 above.
 - No fleet/historical FinOps in burnt itself — that remains a separate-product concern. System-table use is bounded to the four narrow uses listed in §3.5.
-- No new lint rules. The 84-rule catalog is unchanged by this document.
+- No new lint rules. The 43 active rules are unchanged by this document (rule count reconciliation tracked in task P3-06).

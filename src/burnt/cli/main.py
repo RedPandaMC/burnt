@@ -16,7 +16,7 @@ from rich.table import Table
 from ..core.config import Settings
 
 app = typer.Typer(
-    help="burnt - Pre-execution cost analysis for Databricks",
+    help="burnt - Static cost analyzer for Spark",
     no_args_is_help=True,
 )
 cache_app = typer.Typer(help="Manage the burnt local cache")
@@ -271,71 +271,6 @@ def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bo
 
 
 # ---------------------------------------------------------------------------
-# burnt advise
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def advise(
-    run_id: str = typer.Option(None, "--run-id", help="Databricks Job Run ID"),
-    statement_id: str = typer.Option(None, "--statement-id", help="SQL statement ID"),
-    job_id: str = typer.Option(None, "--job-id", help="Databricks Job ID"),
-    job_name: str = typer.Option(None, "--job-name", help="Databricks Job name"),
-    output: str = typer.Option(
-        "table", "--output", "-o", help="Output format: table|json|text"
-    ),
-) -> None:
-    """Analyze a historical run and recommend an optimized cluster configuration."""
-    import burnt
-
-    try:
-        if job_id:
-            console.print(f"[bold blue]Analyzing job {job_id}...[/bold blue]")
-            advice = burnt.advise(job_id=job_id)
-            if advice.num_runs_analyzed:
-                console.print(
-                    f"[dim]Based on {advice.num_runs_analyzed} runs — {advice.confidence_level} confidence[/dim]"
-                )
-        elif job_name:
-            console.print(f"[dim]Looking up job '{job_name}'...[/dim]")
-            advice = burnt.advise(job_name=job_name)
-        elif run_id or statement_id:
-            advice = burnt.advise(run_id=run_id, statement_id=statement_id)
-        else:
-            console.print(
-                "[red]Error:[/red] Provide --run-id, --statement-id, --job-id, or --job-name."
-            )
-            console.print(
-                "[dim]Hint: to analyze a notebook session, use burnt.advise() in Python.[/dim]"
-            )
-            raise typer.Exit(1)
-
-        if output == "json":
-            import json
-
-            console.print(json.dumps(advice.model_dump(), indent=2))
-        elif output == "text":
-            console.print(advice.comparison_table())
-            if advice.insights:
-                for insight in advice.insights:
-                    console.print(f"• {insight}")
-            console.print("\nRecommended Cluster:")
-            console.print(advice.recommended.model_dump_json(indent=2))
-        else:
-            advice.display()
-
-    except NotImplementedError as e:
-        console.print(f"[red]Not implemented:[/red] {e}")
-        raise typer.Exit(1) from e
-    except RuntimeError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1) from e
-    except Exception as e:
-        console.print(f"[red]Unexpected error:[/red] {e}")
-        raise typer.Exit(1) from e
-
-
-# ---------------------------------------------------------------------------
 # burnt init
 # ---------------------------------------------------------------------------
 
@@ -434,79 +369,6 @@ def init() -> None:
     else:
         gitignore.write_text(f"# burnt cache\n{cache_entry}\n")
         console.print(f"[green]✓[/green] Created .gitignore with {cache_entry}")
-
-    # Optionally generate examples
-    if typer.confirm("Generate examples/?", default=True):
-        _run_tutorial()
-
-
-# ---------------------------------------------------------------------------
-# burnt tutorial
-# ---------------------------------------------------------------------------
-
-_NOTEBOOK_TEMPLATE = """\
-{{
- "nbformat": 4,
- "nbformat_minor": 5,
- "metadata": {{"kernelspec": {{"display_name": "Python 3", "language": "python", "name": "python3"}}}},
- "cells": [
-  {{
-   "cell_type": "markdown",
-   "metadata": {{}},
-   "source": ["# {title}\\n"]
-  }},
-  {{
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {{}},
-   "outputs": [],
-   "source": ["{code}"]
-  }}
- ]
-}}
-"""
-
-_TUTORIAL_NOTEBOOKS = [
-    (
-        "01_estimate_cost.ipynb",
-        "Cost Estimation",
-        "import burnt\\ne = burnt.estimate('SELECT * FROM orders o JOIN customers c ON o.id = c.id')\\nprint(e)",
-    ),
-    (
-        "02_simulate_scenarios.ipynb",
-        "Simulation Scenarios",
-        "import burnt\\ne = burnt.estimate('SELECT COUNT(*) FROM events')\\nr = e.simulate().scenario('Photon').cluster().enable_photon().scenario('Serverless').cluster().to_serverless().compare()\\nprint(r.comparison_table())",
-    ),
-    (
-        "03_advise.ipynb",
-        "Cluster Advisor",
-        "import burnt\\nreport = burnt.advise(run_id='your-run-id')\\nreport.display()",
-    ),
-    (
-        "04_check_antipatterns.ipynb",
-        "Anti-Pattern Check",
-        "# Run from terminal:\\n# burnt check src/ --output table",
-    ),
-]
-
-
-def _run_tutorial() -> None:
-    examples_dir = Path.cwd() / "examples"
-    examples_dir.mkdir(exist_ok=True)
-
-    for filename, title, code in _TUTORIAL_NOTEBOOKS:
-        notebook_path = examples_dir / filename
-        content = _NOTEBOOK_TEMPLATE.format(title=title, code=code)
-        notebook_path.write_text(content)
-        console.print(f"[green]✓[/green] Created {notebook_path}")
-
-    console.print(f"\n[bold]Examples written to {examples_dir}/[/bold]")
-
-
-@app.command()
-def tutorial() -> None:
-    """Generate example notebooks in examples/."""
-    _run_tutorial()
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +643,6 @@ def doctor(
     console.print(f"  {'Python':<22} {py_ver:<14} [green]OK[/green]")
 
     _PACKAGES = [
-        ("sqlglot", "sqlglot"),
         ("pydantic", "pydantic"),
         ("pydantic-settings", "pydantic_settings"),
         ("rich", "rich"),
@@ -809,7 +670,7 @@ def doctor(
     else:
         console.print(
             f"  {'DATABRICKS_HOST':<22} [yellow]NOT SET ⚠[/yellow]"
-            "       advise() and live features unavailable"
+            "       live Databricks features unavailable"
         )
 
     if token:
@@ -818,7 +679,7 @@ def doctor(
     else:
         console.print(
             f"  {'DATABRICKS_TOKEN':<22} [yellow]NOT SET ⚠[/yellow]"
-            "       advise() and live features unavailable"
+            "       live Databricks features unavailable"
         )
 
     # ── Connection test ───────────────────────────────────────────────────────
