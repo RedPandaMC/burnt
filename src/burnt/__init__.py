@@ -51,32 +51,18 @@ __all__ = [
 _SESSION: Any = None
 
 
-def start_session(
-    *,
-    capture_sql: bool = True,
-    capture_stages: bool = True,
-    capture_cells: bool = True,
-) -> None:
+def start_session() -> None:
     """Attach to the active Spark session for runtime metric enrichment.
 
     Resolves the Spark monitoring REST endpoint (driver-proxy-api on Databricks,
-    or spark.sparkContext.uiWebUrl on local Spark) and records it for use at
-    check() time. If no Spark session is active, returns silently — subsequent
-    check() calls run in static-only mode.
-
-    Args:
-        capture_sql: Capture SQL query text and duration.
-        capture_stages: Capture stage-level metrics (shuffle, spill, etc.).
-        capture_cells: Capture cell execution times.
+    or uiWebUrl on generic Spark) and records it for use at check() time.
+    If no Spark session is active, returns silently — subsequent check() calls
+    run in static-only mode.
     """
     global _SESSION
-    from . import _session
+    from ._session import start
 
-    _SESSION = _session.start(
-        capture_sql=capture_sql,
-        capture_stages=capture_stages,
-        capture_cells=capture_cells,
-    )
+    _SESSION = start()
 
 
 def _get_session() -> Any:
@@ -119,6 +105,10 @@ def check(
         CheckResult with findings, graph, and optional runtime metrics.
     """
     from . import _check
+    from ._session import collect
+
+    if _SESSION is not None and _SESSION.active:
+        collect(_SESSION)
 
     return _check.run(
         path=path,
