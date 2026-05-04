@@ -8,8 +8,14 @@ suggestion = "Consider approx_count_distinct() for large datasets where exact co
 category = "SqlQuality"
 tags = ["sql", "performance", "aggregation"]
 
-[context]
-type = "count_distinct"
+[query]
+detect = """
+(invocation
+  (object_reference
+    name: (identifier) @fn)
+  (keyword_distinct)
+  (#match? @fn "(?i)^count$"))
+"""
 
 [tests]
 pass = [
@@ -18,4 +24,5 @@ pass = [
 ]
 fail = [
     "SELECT COUNT(DISTINCT id) FROM users",
+    "SELECT count(distinct id) FROM users",
 ]

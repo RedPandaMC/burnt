@@ -8,5 +8,21 @@ suggestion = "Use a descriptive name: orders_df, customers, filtered_events"
 category = "NotebookStyle"
 tags = ["python", "style", "naming"]
 
-[context]
-type = "generic_df_name"
+[query]
+detect = """
+(assignment
+  left: (identifier) @var
+  (#match? @var "^df[0-9]*$"))
+"""
+
+[tests]
+pass = [
+    "orders_df = spark.read.table('orders')",
+    "customers = spark.read.table('customers')",
+    "df_filtered = df.filter(col('id') > 0)",
+]
+fail = [
+    "df = spark.read.table('orders')",
+    "df1 = df.filter(col('id') > 0)",
+    "df2 = df.select('id', 'name')",
+]

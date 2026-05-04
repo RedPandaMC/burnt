@@ -10,24 +10,17 @@ tags = ["sql", "performance", "subquery"]
 
 [query]
 detect = """
-; Detect correlated subquery
-(subquery
-  (where_clause
-    (binary_expression
-      left: (column_reference) @left_ref
-      right: (parenthesized
-        (subquery) @inner)) @where
-  (#is-not? @where "nil"))
-
-; Also detect EXISTS with correlated reference
-(exists
-  (subquery
-    (where_clause
-      (binary_expression
-        left: (column_reference) @ref
-        right: (parenthesized
-          (subquery))) @corr_condition))
+(binary_expression
+  (not_in)
+  (subquery) @inner)
 """
 
-[context]
-enabled = true
+[tests]
+pass = [
+    "SELECT id FROM users WHERE status = 'active'",
+    "SELECT id FROM users WHERE id IN (1, 2, 3)",
+]
+fail = [
+    "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
+    "SELECT id FROM orders WHERE customer_id NOT IN (SELECT id FROM customers)",
+]

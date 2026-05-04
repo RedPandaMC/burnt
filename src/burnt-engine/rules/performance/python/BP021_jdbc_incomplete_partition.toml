@@ -11,3 +11,13 @@ tags = ["pyspark", "jdbc", "performance"]
 [context]
 type = "jdbc_partition"
 
+[tests]
+pass = [
+    "df = spark.read.jdbc('jdbc:mysql://host/db', 'table', partitionColumn='id', numPartitions=10, lowerBound=0, upperBound=1000)",
+    "df = spark.read.jdbc(url, table, properties={'driver': 'com.mysql.Driver'}, numPartitions=4, partitionColumn='created_at', lowerBound='2020-01-01', upperBound='2024-01-01')",
+]
+fail = [
+    "df = spark.read.jdbc('jdbc:mysql://host/db', 'large_table')",
+    "df = spark.read.option('driver', 'com.mysql.Driver').jdbc('jdbc:postgresql://host/db')",
+]
+

@@ -11,3 +11,13 @@ tags = ["pyspark", "window", "shuffle"]
 [context]
 type = "window_partition"
 
+[tests]
+pass = [
+    "window_spec = Window.orderBy('date').partitionBy('user_id')",
+    "w = Window.order_by('ts').partition_by('session_id')",
+]
+fail = [
+    "window_spec = Window.orderBy('date')",
+    "w = Window.order_by('timestamp')",
+]
+

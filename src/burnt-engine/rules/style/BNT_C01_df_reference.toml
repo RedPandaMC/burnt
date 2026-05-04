@@ -8,5 +8,22 @@ suggestion = "Use F.col('col') which resolves at evaluation time"
 category = "NotebookStyle"
 tags = ["python", "style", "correctness"]
 
-[context]
-type = "df_bracket_ref"
+[query]
+detect = """
+(subscript
+  value: (identifier) @obj
+  subscript: (string)
+  (#match? @obj "^df"))
+"""
+
+[tests]
+pass = [
+    "result = F.col('column')",
+    "result = col('column')",
+    "items = my_list['key']",
+]
+fail = [
+    "val = df['column']",
+    "val = df[\"column\"]",
+    "val = df1['column']",
+]

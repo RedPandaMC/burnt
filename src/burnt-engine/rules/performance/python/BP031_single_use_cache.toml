@@ -15,11 +15,14 @@ suggestion = "Remove .cache() if the DataFrame is only used in one action"
 category = "BestPractice"
 tags = ["pyspark", "memory", "caching"]
 
+[dataflow]
+type = "cache_lifecycle"
+
 [tests]
 pass = [
-    "df.take(5)",
+    "cached_df = df.cache()\nresult1 = cached_df.collect()\nresult2 = cached_df.count()\ncached_df.unpersist()",
 ]
 fail = [
-    "df.cache()",
+    "cached_df = df.cache()\nresult = cached_df.collect()",
 ]
 

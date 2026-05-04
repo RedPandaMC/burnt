@@ -15,8 +15,25 @@ suggestion = "Use .withColumns() (Spark 3.3+) or a single .select() statement"
 category = "BestPractice"
 tags = ["pyspark", "catalyst", "loop"]
 
-[context]
-enabled = true
+[query]
+detect = """
+(for_statement
+  body: (block
+    (expression_statement
+      (assignment
+        right: (call
+          function: (attribute
+            attribute: (identifier) @method)
+          (#eq? @method "withColumn"))))))
+
+(for_statement
+  body: (block
+    (expression_statement
+      (call
+        function: (attribute
+          attribute: (identifier) @method)
+        (#eq? @method "withColumn")))))
+"""
 
 [tests]
 pass = [

@@ -15,11 +15,14 @@ suggestion = "Call .unpersist() when the cached DataFrame is no longer needed"
 category = "BestPractice"
 tags = ["pyspark", "memory", "caching"]
 
+[dataflow]
+type = "cache_lifecycle"
+
 [tests]
 pass = [
-    "df.cache().unpersist()",
+    "cached_df = df.cache()\ncached_df.unpersist()",
 ]
 fail = [
-    "df.cache()",
+    "cached_df = df.cache()\nresult = cached_df.collect()",
 ]
 
