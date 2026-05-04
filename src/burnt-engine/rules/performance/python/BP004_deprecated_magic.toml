@@ -8,6 +8,20 @@ suggestion = "Use new-style magic format"
 category = "BestPractice"
 tags = ["python", "databricks", "magic"]
 
-[context]
-type = "deprecated_magic"
+[query]
+detect = """
+((comment) @c
+ (#match? @c "^# MAGIC (run|sql|md)( |$)"))
+"""
+
+[tests]
+pass = [
+    "# MAGIC %python",
+    "# This is a normal comment",
+]
+fail = [
+    "# MAGIC run some_command",
+    "# MAGIC sql SELECT * FROM table",
+    "# MAGIC md",
+]
 

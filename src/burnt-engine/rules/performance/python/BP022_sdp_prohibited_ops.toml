@@ -11,3 +11,13 @@ tags = ["pyspark", "sdp", "dlt"]
 [context]
 type = "sdp_prohibited_ops"
 
+[tests]
+pass = [
+    "@sdp.table\ndef my_table():\n    return spark.read.table('source')",
+    "spark.write.saveAsTable('output')",
+]
+fail = [
+    "sdp.collect(df)",
+    "sdp.table.show(df)",
+]
+

@@ -8,5 +8,17 @@ suggestion = "Adjust vacuum retention based on table size and update frequency"
 category = "Delta"
 tags = ["delta", "maintenance", "sql"]
 
-[context]
-type = "vacuum_frequency"
+[query]
+detect = """
+(keyword_vacuum) @vac
+"""
+
+[tests]
+pass = [
+    "SELECT id FROM users WHERE status = 'active'",
+    "OPTIMIZE my_table",
+]
+fail = [
+    "VACUUM my_table",
+    "VACUUM my_table RETAIN 168 HOURS",
+]

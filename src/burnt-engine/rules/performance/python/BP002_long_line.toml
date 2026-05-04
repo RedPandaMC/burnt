@@ -11,3 +11,12 @@ tags = ["python", "style", "readability"]
 [context]
 type = "long_line"
 
+[tests]
+pass = [
+    "x = 1  # short line",
+    "result = df.filter(col('id') > 0).select('id', 'name', 'email').limit(100)",
+]
+fail = [
+    "very_long_variable_name_that_exceeds_the_limit = some_function_call_with_many_arguments(argument_one, argument_two, argument_three, argument_four)",
+]
+

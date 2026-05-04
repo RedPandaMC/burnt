@@ -11,3 +11,11 @@ tags = ["pyspark", "performance", "caching"]
 [dataflow]
 type = "repeated_actions"
 
+[tests]
+pass = [
+    "cached_df = df.cache()\nresult = cached_df.collect()\ncached_df.unpersist()",
+]
+fail = [
+    "result = big_df.collect()\nresult = big_df.count()",
+]
+

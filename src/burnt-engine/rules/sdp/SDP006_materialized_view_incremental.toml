@@ -1,0 +1,21 @@
+[rule]
+id = "materialized_view_incremental"
+code = "SDP006"
+severity = "warning"
+language = "python"
+description = "Materialized view defined without incremental strategy"
+suggestion = "Consider incremental materialized view for large datasets"
+category = "SDP"
+tags = ["sdp", "dlt", "incremental", "performance"]
+
+[context]
+type = "materialized_view_incremental"
+
+[tests]
+pass = [
+    "@sdp.table\ndef my_table(incremental):\n    return spark.read.table('x')",
+    "sdp.table(stream=True)\ndef streaming_table():\n    pass",
+]
+fail = [
+    "@sdp.table\ndef my_table():\n    return spark.read.table('x')",
+]

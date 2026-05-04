@@ -8,6 +8,19 @@ suggestion = "Remove magic or use .py (Databricks) extension"
 category = "BestPractice"
 tags = ["python", "databricks", "magic"]
 
-[context]
-type = "magic_in_plain"
+[query]
+detect = """
+((comment) @c
+ (#match? @c "^# MAGIC"))
+"""
+
+[tests]
+pass = [
+    "x = 1  # regular comment",
+    "# This is a regular Python comment",
+]
+fail = [
+    "# MAGIC run some_command",
+    "# MAGIC sql SELECT * FROM table",
+]
 
