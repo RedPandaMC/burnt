@@ -1,0 +1,23 @@
+[rule]
+id = "csv_json_analytical_write"
+code = "BD013"
+severity = "warning"
+language = "python"
+description = "Writing analytical tables as CSV or JSON lacks schema enforcement, ACID transactions, and time travel"
+suggestion = "Use .format('delta') for analytical tables; reserve CSV/JSON for landing zones or exports"
+category = "BestPractice"
+tags = ["pyspark", "delta", "write"]
+platform = "all"
+
+[context]
+type = "csv_json_analytical_write"
+
+[tests]
+pass = [
+    "df.write.format('delta').save('/data/output')",
+    "df.write.format('csv').save('/data/landing')",
+]
+fail = [
+    "df.write.format('csv').save('/data/analytics/events')",
+    "df.write.format('json').saveAsTable('processed_events')",
+]

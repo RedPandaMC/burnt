@@ -1,0 +1,33 @@
+[rule]
+id = "unnecessary_broadcast"
+code = "BP042"
+severity = "info"
+language = "python"
+description = "Explicit broadcast() hints can backfire — AQE automatically broadcasts small tables when spark.sql.autoBroadcastJoinThreshold is set"
+suggestion = "Remove the explicit broadcast() hint and let AQE decide, or verify the table is genuinely small enough to broadcast"
+category = "Performance"
+tags = ["pyspark", "join", "aqe", "broadcast"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @fn)
+  (#eq? @fn "broadcast"))
+
+(call
+  function: (identifier) @fn
+  (#eq? @fn "broadcast"))
+"""
+
+[tests]
+pass = [
+    "df.join(other, 'id', 'left')",
+    "df.join(other.hint('broadcast'), 'id')",
+]
+fail = [
+    "df.join(broadcast(small_df), 'id')",
+    "joined = F.broadcast(lookup_df)",
+]

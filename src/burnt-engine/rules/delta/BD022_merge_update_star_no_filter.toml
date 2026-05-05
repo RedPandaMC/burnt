@@ -1,0 +1,21 @@
+[rule]
+id = "merge_update_star_no_filter"
+code = "BD022"
+severity = "info"
+language = "sql"
+description = "WHEN MATCHED THEN UPDATE SET * without an AND condition updates unchanged rows, causing unnecessary rewrites"
+suggestion = "Add a change-detection condition: WHEN MATCHED AND source.updated_at > target.updated_at THEN UPDATE SET *"
+category = "BestPractice"
+tags = ["delta", "performance", "sql"]
+platform = "delta"
+
+[context]
+type = "merge_update_star_no_filter"
+
+[tests]
+pass = [
+    "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED AND s.ts > t.ts THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *",
+]
+fail = [
+    "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *",
+]

@@ -1,0 +1,23 @@
+[rule]
+id = "too_many_cluster_keys"
+code = "BD032"
+severity = "warning"
+language = "sql"
+description = "More than 4 Liquid Clustering keys reduces clustering effectiveness and increases write overhead"
+suggestion = "Limit CLUSTER BY to the 2-4 most-queried columns; additional columns provide diminishing returns"
+category = "BestPractice"
+tags = ["delta", "performance", "sql"]
+platform = "databricks"
+
+[context]
+type = "too_many_cluster_keys"
+
+[tests]
+pass = [
+    "CREATE TABLE t (a INT, b STRING) CLUSTER BY (a, b)",
+    "CREATE TABLE t (a INT) CLUSTER BY (a, b, c, d)",
+]
+fail = [
+    "CREATE TABLE t (a INT) CLUSTER BY (a, b, c, d, e)",
+    "CREATE TABLE t (a INT) CLUSTER BY (col1, col2, col3, col4, col5, col6)",
+]

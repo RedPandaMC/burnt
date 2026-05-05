@@ -1,0 +1,22 @@
+[rule]
+id = "filter_after_cache"
+code = "BP060"
+severity = "warning"
+language = "python"
+description = ".filter() applied after .cache() forces a full scan of the cached data; cache the filtered DataFrame instead"
+suggestion = "Apply .filter() before .cache() so only the relevant rows are stored in memory"
+category = "Performance"
+tags = ["pyspark", "cache", "filter", "performance"]
+platform = "all"
+
+[dataflow]
+type = "filter_after_cache"
+
+[tests]
+pass = [
+    "cached_df = df.filter(col('x') > 10).cache()\nresult = cached_df.collect()",
+]
+fail = [
+    "cached_df = df.cache()\nresult = cached_df.filter(col('x') > 10).collect()",
+    "big_df = spark.read.parquet(path).cache()\nbig_df.filter('date > 2024').show()",
+]

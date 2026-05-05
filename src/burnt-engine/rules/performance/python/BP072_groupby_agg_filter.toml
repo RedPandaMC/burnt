@@ -1,0 +1,23 @@
+[rule]
+id = "groupby_agg_filter"
+code = "BP072"
+severity = "info"
+language = "python"
+description = ".filter() after .agg() is equivalent to SQL HAVING — using filter on post-agg columns is correct but this is a style flag"
+suggestion = "If filtering on aggregated columns, this is fine; if filtering on non-aggregated columns, move the filter before groupBy for better performance"
+category = "Performance"
+tags = ["pyspark", "groupby", "filter", "performance"]
+platform = "all"
+
+[context]
+type = "groupby_agg_filter"
+
+[tests]
+pass = [
+    "df.filter('age > 18').groupBy('dept').agg(count('*'))",
+    "df.groupBy('dept').agg(count('*'))",
+]
+fail = [
+    "df.groupBy('dept').agg(count('*').alias('cnt')).filter('cnt > 100')",
+    "df.groupBy('category').agg(sum('amount')).filter(col('sum(amount)') > 1000)",
+]

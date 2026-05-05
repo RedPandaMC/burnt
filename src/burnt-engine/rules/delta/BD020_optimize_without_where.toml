@@ -1,0 +1,23 @@
+[rule]
+id = "optimize_without_where"
+code = "BD020"
+severity = "info"
+language = "sql"
+description = "OPTIMIZE without a WHERE clause rewrites the entire table — expensive on large tables"
+suggestion = "Add a WHERE clause on a partition column to scope the optimization to recent data only"
+category = "BestPractice"
+tags = ["delta", "performance", "sql"]
+platform = "delta"
+
+[context]
+type = "optimize_without_where"
+
+[tests]
+pass = [
+    "OPTIMIZE events WHERE date >= '2024-01-01'",
+    "OPTIMIZE catalog.schema.table WHERE partition_col = '2024-01'",
+]
+fail = [
+    "OPTIMIZE events",
+    "OPTIMIZE catalog.schema.large_table",
+]

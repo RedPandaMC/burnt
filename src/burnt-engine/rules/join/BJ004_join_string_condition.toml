@@ -1,0 +1,32 @@
+[rule]
+id = "join_string_condition"
+code = "BJ004"
+severity = "warning"
+language = "python"
+description = "Passing a column name as a string to .join() produces an ambiguous column reference when both DataFrames have that column"
+suggestion = "Use col('left_df.col') == col('right_df.col') or join on a list of column names for unambiguous column resolution"
+category = "BestPractice"
+tags = ["pyspark", "join", "correctness"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    . (_) .
+    (string) @cond)
+  (#eq? @method "join"))
+"""
+
+[tests]
+pass = [
+    "df.join(other, col('df.id') == col('other.id'), 'left')",
+    "df.join(other, ['id', 'date'], 'inner')",
+]
+fail = [
+    "df.join(other, 'user_id')",
+    "df.join(lookup, 'id', 'left')",
+]

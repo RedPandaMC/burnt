@@ -1,0 +1,22 @@
+[rule]
+id = "pandas_pyspark_mix"
+code = "BP080"
+severity = "warning"
+language = "python"
+description = "Mixing pyspark.pandas and pandas in the same file causes implicit .to_pandas() / .to_spark() conversions"
+suggestion = "Use pyspark.pandas (Koalas API) exclusively, or convert to Spark DataFrame at the boundary and stay in Spark"
+category = "Performance"
+tags = ["pyspark", "pandas", "performance"]
+platform = "all"
+
+[context]
+type = "pandas_pyspark_mix"
+
+[tests]
+pass = [
+    "import pyspark.pandas as ps\ndf = ps.read_csv('data.csv')",
+    "import pandas as pd\ndf = pd.read_csv('data.csv')",
+]
+fail = [
+    "import pyspark.pandas as ps\nimport pandas as pd\ndf = ps.from_pandas(pd.DataFrame({'a': [1]}))",
+]

@@ -1,0 +1,23 @@
+[rule]
+id = "broadcast_streaming"
+code = "BP110"
+severity = "error"
+language = "python"
+description = "broadcast() applied to a streaming DataFrame is not supported and causes a StreamingQueryException at runtime"
+suggestion = "Remove broadcast() from streaming DataFrames; Spark Structured Streaming handles stream-static joins automatically"
+category = "Correctness"
+tags = ["pyspark", "streaming", "broadcast", "correctness"]
+platform = "all"
+
+[context]
+type = "broadcast_streaming"
+
+[tests]
+pass = [
+    "df.join(broadcast(small_static_df), 'id')",
+    "stream_df.join(lookup_df, 'id')",
+]
+fail = [
+    "stream_df = spark.readStream.format('delta').load(path)\nbroadcast(stream_df).join(other, 'id')",
+    "joined = broadcast(spark.readStream.load()).join(df, 'id')",
+]

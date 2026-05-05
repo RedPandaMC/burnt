@@ -16,6 +16,8 @@ fn extract_action(line: &str) -> Option<&'static str> {
 pub fn check_dataflow_rules(rule_code: &str, source: &str) -> Vec<Finding> {
     match rule_code {
         "BP030" | "BP031" | "BP032" => check_cache_lifecycle(rule_code, source),
+        "BP060" => check_filter_after_cache(source),
+        "BNT-A02" => check_chained_select_alias(source),
         _ => vec![],
     }
 }
@@ -118,6 +120,76 @@ fn check_cache_lifecycle(rule_code: &str, source: &str) -> Vec<Finding> {
     }
 
     findings
+}
+
+fn check_filter_after_cache(source: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    // Track variable names that are directly assigned from .cache()
+    let mut cached_vars: HashMap<String, u32> = HashMap::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let line_num = (i + 1) as u32;
+
+        // Detect: `var = something.cache()`
+        if trimmed.contains(".cache()") {
+            let parts: Vec<&str> = trimmed.splitn(2, '=').collect();
+            if parts.len() == 2 {
+                let var = parts[0].trim().to_string();
+                if var.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
+                    cached_vars.insert(var, line_num);
+                }
+            }
+        }
+
+        // Detect: `cached_var.filter(...)` — filter on a cached variable
+        for (var, cache_line) in &cached_vars {
+            let filter_pat = format!("{}.filter(", var);
+            let where_pat = format!("{}.where(", var);
+            if trimmed.contains(&filter_pat) || trimmed.contains(&where_pat) {
+                findings.push(make_finding(
+                    "BP060",
+                    Severity::Warning,
+                    ".filter() on a cached DataFrame scans all cached data — cache after filtering instead",
+                    "Apply .filter() before .cache() so only the needed rows are materialised",
+                    *cache_line,
+                    Confidence::High,
+                ));
+                break;
+            }
+        }
+    }
+
+    findings
+}
+
+fn check_chained_select_alias(source: &str) -> Vec<Finding> {
+    // Count the number of `.select(` followed by `.alias(` patterns in the source
+    // Fire if there are 3+ consecutive `.select(...alias...)` calls
+    let mut chain_count = 0;
+    let mut pos = 0;
+    while let Some(sel_pos) = source[pos..].find(".select(") {
+        let abs = pos + sel_pos;
+        let snippet = &source[abs..std::cmp::min(abs + 200, source.len())];
+        if snippet.contains(".alias(") {
+            chain_count += 1;
+        } else {
+            chain_count = 0;
+        }
+        if chain_count >= 3 {
+            return vec![make_finding(
+                "BNT-A02",
+                Severity::Info,
+                "Multiple chained .select(...alias(...)) calls for renaming — consolidate into a single rename operation",
+                "Use .withColumnsRenamed({'old': 'new', ...}) or .toDF(*new_names) for batch renaming",
+                1,
+                Confidence::Medium,
+            )];
+        }
+        pos = abs + 8; // advance past ".select("
+    }
+    vec![]
 }
 
 #[cfg(test)]

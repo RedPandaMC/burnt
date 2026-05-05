@@ -1,0 +1,23 @@
+[rule]
+id = "single_withcolumn"
+code = "BP074"
+severity = "info"
+language = "python"
+description = "Multiple chained .withColumn() calls each add a Project node — use .withColumns({}) to add all columns in one step"
+suggestion = "Replace multiple .withColumn() calls with a single .withColumns({'col1': expr1, 'col2': expr2})"
+category = "Performance"
+tags = ["pyspark", "withColumn", "performance"]
+platform = "all"
+
+[context]
+type = "single_withcolumn"
+
+[tests]
+pass = [
+    "df.withColumns({'a': col('x') + 1, 'b': col('y') * 2})",
+    "df.withColumn('a', col('x') + 1)",
+]
+fail = [
+    "df.withColumn('a', col('x') + 1).withColumn('b', col('y') * 2).withColumn('c', lit(0))",
+    "df.withColumn('flag', lit(True)).withColumn('ts', current_timestamp()).withColumn('id', monotonically_increasing_id())",
+]

@@ -1,0 +1,21 @@
+[rule]
+id = "event_time_no_watermark"
+code = "BS003"
+severity = "warning"
+language = "python"
+description = "Event-time aggregation (groupBy(window(...))) without withWatermark causes unbounded state accumulation"
+suggestion = "Add .withWatermark('event_time_col', '10 minutes') before the groupBy to bound the state store"
+category = "Streaming"
+tags = ["pyspark", "streaming", "performance"]
+platform = "all"
+
+[context]
+type = "event_time_no_watermark"
+
+[tests]
+pass = [
+    "df.withWatermark('timestamp', '5 minutes').groupBy(window('timestamp', '1 hour')).agg(count('*'))",
+]
+fail = [
+    "df.groupBy(window('timestamp', '1 hour')).agg(count('*'))",
+]

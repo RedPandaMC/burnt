@@ -1,0 +1,23 @@
+[rule]
+id = "two_part_table_name"
+code = "BU001"
+severity = "warning"
+language = "sql"
+description = "Two-part table name (schema.table) omits the Unity Catalog catalog prefix and resolves to the default catalog"
+suggestion = "Use three-part naming: catalog.schema.table to make catalog resolution explicit and portable"
+category = "Governance"
+tags = ["unity-catalog", "governance", "sql"]
+platform = "databricks"
+
+[context]
+type = "two_part_table_name"
+
+[tests]
+pass = [
+    "SELECT * FROM my_catalog.my_schema.my_table",
+    "SELECT * FROM catalog.schema.table",
+]
+fail = [
+    "SELECT * FROM my_schema.my_table",
+    "SELECT * FROM default.events WHERE date > '2024-01-01'",
+]

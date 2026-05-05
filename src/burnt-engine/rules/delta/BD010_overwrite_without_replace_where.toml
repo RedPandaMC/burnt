@@ -1,0 +1,23 @@
+[rule]
+id = "overwrite_without_replace_where"
+code = "BD010"
+severity = "warning"
+language = "python"
+description = "mode('overwrite') on a Delta table replaces the entire table — use replaceWhere to scope the overwrite to a partition"
+suggestion = "Replace .mode('overwrite') with .option('replaceWhere', 'partition_col = value') for partition-level writes"
+category = "BestPractice"
+tags = ["pyspark", "delta", "write", "performance"]
+platform = "delta"
+
+[context]
+type = "overwrite_without_replace_where"
+
+[tests]
+pass = [
+    "df.write.format('delta').option('replaceWhere', \"date='2024-01'\").mode('overwrite').save(path)",
+    "df.write.format('delta').mode('append').save(path)",
+]
+fail = [
+    "df.write.format('delta').mode('overwrite').save(path)",
+    "df.write.format('delta').mode('overwrite').saveAsTable('events')",
+]

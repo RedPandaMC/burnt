@@ -1,0 +1,23 @@
+[rule]
+id = "monotonically_increasing_id_join"
+code = "BP090"
+severity = "warning"
+language = "python"
+description = "monotonically_increasing_id() used as a join key — IDs are not stable across recomputation and differ between runs"
+suggestion = "Use a deterministic business key or UUID seeded from existing columns instead of monotonically_increasing_id()"
+category = "Correctness"
+tags = ["pyspark", "join", "correctness", "determinism"]
+platform = "all"
+
+[context]
+type = "monotonically_increasing_id_join"
+
+[tests]
+pass = [
+    "df.withColumn('id', col('business_key'))",
+    "df.join(other, 'stable_id')",
+]
+fail = [
+    "df.withColumn('row_id', monotonically_increasing_id()).join(other, 'row_id')",
+    "df2 = df.withColumn('id', monotonically_increasing_id())\ndf2.join(lookup, 'id')",
+]
