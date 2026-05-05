@@ -1,0 +1,35 @@
+[rule]
+id = "aqe_disabled"
+code = "BP041"
+severity = "warning"
+language = "python"
+description = "Disabling AQE removes runtime skew handling, partition coalescing and SMJ→BHJ conversion"
+suggestion = "Remove this config or set it to true; AQE is enabled by default on Spark 3.2+"
+category = "BestPractice"
+tags = ["pyspark", "performance", "shuffle", "config", "aqe"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "adaptive\\.enabled")
+  (#match? @val "false"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.adaptive.enabled\", \"false\")",
+]

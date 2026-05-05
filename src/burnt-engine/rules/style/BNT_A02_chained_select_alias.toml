@@ -1,0 +1,23 @@
+[rule]
+id = "chained_select_alias"
+code = "BNT-A02"
+severity = "info"
+language = "python"
+description = "Multiple chained .select(col('a').alias('b')) calls for renaming — consolidate into a single .toDF() or .withColumnsRenamed()"
+suggestion = "Replace sequential .select().select()... renames with .withColumnsRenamed({'old': 'new', ...}) or .toDF(*new_names)"
+category = "Style"
+tags = ["pyspark", "style", "readability"]
+platform = "all"
+
+[dataflow]
+type = "chained_select_alias"
+
+[tests]
+pass = [
+    "df.select(col('a'), col('b'))",
+    "df.withColumnsRenamed({'old_a': 'a', 'old_b': 'b', 'old_c': 'c'})",
+]
+fail = [
+    "df.select(col('a').alias('x')).select(col('x').alias('y')).select(col('y').alias('z'))",
+    "df.select(col('col1').alias('a')).select(col('a').alias('b')).select(col('b').alias('c'))",
+]

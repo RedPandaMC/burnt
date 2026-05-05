@@ -1,0 +1,21 @@
+[rule]
+id = "merge_without_partition_predicate"
+code = "BD021"
+severity = "warning"
+language = "sql"
+description = "MERGE INTO without a partition column in the ON condition causes a full table scan on every merge"
+suggestion = "Add a partition predicate to the ON clause: ON target.partition_col = source.partition_col AND target.id = source.id"
+category = "BestPractice"
+tags = ["delta", "performance", "sql"]
+platform = "delta"
+
+[context]
+type = "merge_without_partition_predicate"
+
+[tests]
+pass = [
+    "MERGE INTO target USING source ON target.date = source.date AND target.id = source.id WHEN MATCHED THEN UPDATE SET *",
+]
+fail = [
+    "MERGE INTO events USING updates ON events.id = updates.id WHEN MATCHED THEN UPDATE SET *",
+]

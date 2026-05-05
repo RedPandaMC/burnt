@@ -1,0 +1,23 @@
+[rule]
+id = "readstream_no_schema"
+code = "BP052"
+severity = "warning"
+language = "python"
+description = "readStream on JSON/CSV/Avro without an explicit schema triggers schema inference on every micro-batch restart"
+suggestion = "Provide an explicit schema: .schema(my_schema) before .load() to avoid costly inference and ensure stability"
+category = "Performance"
+tags = ["pyspark", "streaming", "schema", "performance"]
+platform = "all"
+
+[context]
+type = "readstream_no_schema"
+
+[tests]
+pass = [
+    "spark.readStream.schema(my_schema).format('json').load(path)",
+    "spark.readStream.format('delta').load(path)",
+]
+fail = [
+    "spark.readStream.format('json').load(path)",
+    "spark.readStream.format('csv').option('header', 'true').load(path)",
+]

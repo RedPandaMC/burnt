@@ -1,0 +1,35 @@
+[rule]
+id = "coalesce_partitions_disabled"
+code = "BP045"
+severity = "warning"
+language = "python"
+description = "Disabling AQE partition coalescing forfeits the principal AQE benefit: small post-shuffle task amalgamation"
+suggestion = "Remove this config or set it to true"
+category = "BestPractice"
+tags = ["pyspark", "performance", "shuffle", "config", "aqe"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "coalescePartitions\\.enabled")
+  (#match? @val "false"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.adaptive.coalescePartitions.enabled\", \"true\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.adaptive.coalescePartitions.enabled\", \"false\")",
+]

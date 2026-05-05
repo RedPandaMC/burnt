@@ -14,6 +14,7 @@ description = ".cache() with no .unpersist() in the same scope — potential mem
 suggestion = "Call .unpersist() when the cached DataFrame is no longer needed"
 category = "BestPractice"
 tags = ["pyspark", "memory", "caching"]
+platform = "all"
 
 [dataflow]
 type = "cache_lifecycle"

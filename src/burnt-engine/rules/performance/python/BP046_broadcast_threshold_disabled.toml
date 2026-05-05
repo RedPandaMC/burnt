@@ -1,0 +1,35 @@
+[rule]
+id = "broadcast_threshold_disabled"
+code = "BP046"
+severity = "info"
+language = "python"
+description = "Setting autoBroadcastJoinThreshold to -1 disables all automatic broadcast joins, forcing every dimension join to shuffle"
+suggestion = "Lower the threshold (e.g. 50MB) instead of disabling entirely"
+category = "BestPractice"
+tags = ["pyspark", "performance", "config", "aqe"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "autoBroadcastJoinThreshold")
+  (#match? @val "-1"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", \"52428800\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", \"-1\")",
+]

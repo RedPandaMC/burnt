@@ -1,0 +1,23 @@
+[rule]
+id = "writestream_no_checkpoint"
+code = "BS001"
+severity = "error"
+language = "python"
+description = "writeStream without checkpointLocation loses all progress on restart — the stream reprocesses from the beginning"
+suggestion = "Add .option('checkpointLocation', '/path/to/checkpoint') before .start()"
+category = "Streaming"
+tags = ["pyspark", "streaming", "correctness"]
+platform = "all"
+
+[context]
+type = "writestream_no_checkpoint"
+
+[tests]
+pass = [
+    "df.writeStream.option('checkpointLocation', '/tmp/ckpt').start()",
+    "df.writeStream.option('checkpointLocation', checkpoint_path).format('delta').start()",
+]
+fail = [
+    "df.writeStream.format('delta').start()",
+    "df.writeStream.outputMode('append').format('delta').start()",
+]

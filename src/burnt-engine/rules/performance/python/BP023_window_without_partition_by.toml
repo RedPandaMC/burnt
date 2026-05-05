@@ -7,6 +7,7 @@ description = "Window.orderBy() without .partitionBy() causes global sort"
 suggestion = "Add .partitionBy() before .orderBy() or use .orderBy().limit()"
 category = "BestPractice"
 tags = ["pyspark", "window", "shuffle"]
+platform = "all"
 
 [context]
 type = "window_partition"

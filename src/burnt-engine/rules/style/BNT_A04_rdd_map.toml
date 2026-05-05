@@ -1,0 +1,32 @@
+[rule]
+id = "rdd_map"
+code = "BNT-A04"
+severity = "warning"
+language = "python"
+description = "df.rdd.map() deserialises rows to Python objects and loses all Spark/Photon optimisations"
+suggestion = "Use df.select() or df.withColumn() with built-in functions instead of df.rdd.map()"
+category = "Style"
+tags = ["pyspark", "performance", "rdd"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (_)
+      attribute: (identifier) @rdd)
+    attribute: (identifier) @map)
+  (#eq? @rdd "rdd")
+  (#eq? @map "map"))
+"""
+
+[tests]
+pass = [
+    "df.select(col('a') * 2)",
+    "df.withColumn('b', col('a') + 1)",
+]
+fail = [
+    "df.rdd.map(lambda r: r['a'] * 2)",
+    "result = df.rdd.map(transform_fn).toDF()",
+]

@@ -7,6 +7,7 @@ description = "SDP incremental table defined without a primary key"
 suggestion = "Add keys= parameter to @dlt.table or use APPLY CHANGES INTO"
 category = "SDP"
 tags = ["sdp", "dlt", "incremental"]
+platform = "databricks"
 
 [query]
 detect = """

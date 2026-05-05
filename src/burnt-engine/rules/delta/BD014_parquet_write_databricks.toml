@@ -1,0 +1,23 @@
+[rule]
+id = "parquet_write_databricks"
+code = "BD014"
+severity = "info"
+language = "python"
+description = "Writing as Parquet on Databricks foregoes Delta Lake ACID transactions, schema enforcement, and time travel"
+suggestion = "Use .format('delta') instead of .format('parquet') for analytical tables on Databricks"
+category = "BestPractice"
+tags = ["pyspark", "delta", "write", "databricks"]
+platform = "databricks"
+
+[context]
+type = "parquet_write_databricks"
+
+[tests]
+pass = [
+    "df.write.format('delta').save(path)",
+    "df.write.format('orc').save(path)",
+]
+fail = [
+    "df.write.format('parquet').save(path)",
+    "df.write.format('parquet').saveAsTable('events')",
+]

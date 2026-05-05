@@ -1,0 +1,31 @@
+[rule]
+id = "dbutils_mount"
+code = "BU004"
+severity = "error"
+language = "python"
+description = "dbutils.fs.mount() creates DBFS mounts which are deprecated in Unity Catalog workspaces"
+suggestion = "Use Unity Catalog external locations or Volumes instead of DBFS mounts"
+category = "Governance"
+tags = ["unity-catalog", "governance", "security"]
+platform = "databricks"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier) @db
+      attribute: (identifier) @fs)
+    attribute: (identifier) @method)
+  (#eq? @db "dbutils")
+  (#eq? @fs "fs")
+  (#eq? @method "mount"))
+"""
+
+[tests]
+pass = [
+    "dbutils.fs.ls('/Volumes/catalog/schema/vol/')",
+]
+fail = [
+    "dbutils.fs.mount('s3://my-bucket', '/mnt/mydata')",
+]

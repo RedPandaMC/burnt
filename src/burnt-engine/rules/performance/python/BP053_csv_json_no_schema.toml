@@ -1,0 +1,33 @@
+[rule]
+id = "csv_json_no_schema"
+code = "BP053"
+severity = "warning"
+language = "python"
+description = "Reading CSV or JSON without an explicit schema forces Spark to scan the data to infer types"
+suggestion = "Call .schema(StructType([...])) before .csv()/.json() to avoid the extra scan and ensure type safety"
+category = "BestPractice"
+tags = ["pyspark", "performance", "schema"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (_)
+      attribute: (identifier) @read)
+    attribute: (identifier) @fmt)
+  (#eq? @read "read")
+  (#match? @fmt "^(csv|json)$"))
+"""
+
+[tests]
+pass = [
+    "spark.read.schema(schema).csv('/data/path')",
+    "spark.read.schema(schema).json('/data/path')",
+    "spark.read.parquet('/data/path')",
+]
+fail = [
+    "spark.read.csv('/data/path')",
+    "spark.read.json('/data/path')",
+]

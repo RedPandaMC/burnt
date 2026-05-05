@@ -7,6 +7,7 @@ description = "Materialized view defined without incremental strategy"
 suggestion = "Consider incremental materialized view for large datasets"
 category = "SDP"
 tags = ["sdp", "dlt", "incremental", "performance"]
+platform = "databricks"
 
 [context]
 type = "materialized_view_incremental"

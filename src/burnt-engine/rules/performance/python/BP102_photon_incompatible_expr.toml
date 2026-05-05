@@ -1,0 +1,23 @@
+[rule]
+id = "photon_incompatible_expr"
+code = "BP102"
+severity = "info"
+language = "python"
+description = "from_xml() and to_xml() are not supported by Photon — the query falls back to the non-Photon engine"
+suggestion = "If XML parsing is required, pre-process with a pandas UDF or parse outside Spark; otherwise switch to JSON/Avro format"
+category = "Performance"
+tags = ["pyspark", "photon", "xml", "databricks"]
+platform = "databricks"
+
+[context]
+type = "photon_incompatible_expr"
+
+[tests]
+pass = [
+    "df.select(from_json(col('data'), schema))",
+    "df.select(col('value'))",
+]
+fail = [
+    "df.select(from_xml(col('data'), schema))",
+    "df.select(to_xml(col('struct_col')))",
+]

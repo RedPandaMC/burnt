@@ -1,0 +1,31 @@
+[rule]
+id = "output_mode_complete"
+code = "BS005"
+severity = "warning"
+language = "python"
+description = "outputMode('complete') recomputes and rewrites the entire result table on every trigger — only valid with aggregation"
+suggestion = "Use outputMode('append') for non-aggregating queries, or ensure an aggregation is upstream of this writeStream"
+category = "Streaming"
+tags = ["pyspark", "streaming", "performance"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @mode)
+  (#eq? @method "outputMode")
+  (#match? @mode "complete"))
+"""
+
+[tests]
+pass = [
+    "df.writeStream.outputMode('append').start()",
+    "df.writeStream.outputMode('update').start()",
+]
+fail = [
+    "df.writeStream.outputMode('complete').start()",
+]

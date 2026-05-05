@@ -14,6 +14,7 @@ description = "Python UDF has 10-100x overhead vs Pandas UDF"
 suggestion = "Use @pandas_udf for vectorized operations"
 category = "BestPractice"
 tags = ["pyspark", "udf", "performance"]
+platform = "all"
 
 [query]
 detect = """

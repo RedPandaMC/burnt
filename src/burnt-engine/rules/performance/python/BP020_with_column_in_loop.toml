@@ -14,6 +14,7 @@ description = ".withColumn() inside a loop causes O(n²) Catalyst plan analysis"
 suggestion = "Use .withColumns() (Spark 3.3+) or a single .select() statement"
 category = "BestPractice"
 tags = ["pyspark", "catalyst", "loop"]
+platform = "all"
 
 [query]
 detect = """

@@ -1,0 +1,31 @@
+[rule]
+id = "todf_splat_rename"
+code = "BNT-A01"
+severity = "warning"
+language = "python"
+description = ".toDF(*new_names) renames by position and breaks silently if the column count changes"
+suggestion = "Use .withColumnsRenamed({old: new, ...}) or an explicit .select(col('a').alias('x'), ...) for safe renaming"
+category = "Style"
+tags = ["pyspark", "style", "correctness"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (list_splat))
+  (#eq? @method "toDF"))
+"""
+
+[tests]
+pass = [
+    "df.toDF('a', 'b', 'c')",
+    "df.withColumnsRenamed({'old': 'new'})",
+]
+fail = [
+    "df.toDF(*new_names)",
+    "df.toDF(*['x', 'y', 'z'])",
+]

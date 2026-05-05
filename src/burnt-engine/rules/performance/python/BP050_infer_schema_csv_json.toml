@@ -1,0 +1,34 @@
+[rule]
+id = "infer_schema_csv_json"
+code = "BP050"
+severity = "warning"
+language = "python"
+description = "inferSchema=True forces Spark to read the entire file twice — a 2× I/O multiplier on large CSV/JSON"
+suggestion = "Define an explicit StructType schema or convert to Parquet/Delta once"
+category = "BestPractice"
+tags = ["pyspark", "performance", "correctness", "io"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (keyword_argument
+      name: (identifier) @kw
+      value: (true)))
+  (#match? @method "^(csv|json)$")
+  (#eq? @kw "inferSchema"))
+"""
+
+[tests]
+pass = [
+    "df = spark.read.schema(schema).csv(path)",
+    "df = spark.read.csv(path, inferSchema=False)",
+]
+fail = [
+    "df = spark.read.csv(path, inferSchema=True)",
+    "df = spark.read.json(path, inferSchema=True)",
+]

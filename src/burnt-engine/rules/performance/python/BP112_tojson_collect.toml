@@ -1,0 +1,23 @@
+[rule]
+id = "tojson_collect"
+code = "BP112"
+severity = "warning"
+language = "python"
+description = ".toJSON().collect() converts every row to a JSON string and pulls all data to the driver — use .toPandas() or write to storage instead"
+suggestion = "Replace .toJSON().collect() with df.toPandas().to_json() for small data, or write directly to storage for large data"
+category = "Performance"
+tags = ["pyspark", "collect", "performance", "driver"]
+platform = "all"
+
+[context]
+type = "tojson_collect"
+
+[tests]
+pass = [
+    "df.write.format('json').save(path)",
+    "pdf = df.toPandas()",
+]
+fail = [
+    "rows = df.toJSON().collect()",
+    "data = df.select('id').toJSON().collect()",
+]

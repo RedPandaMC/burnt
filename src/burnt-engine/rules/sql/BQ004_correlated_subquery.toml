@@ -7,20 +7,18 @@ description = "Correlated subquery references outer columns — Spark may execut
 suggestion = "Rewrite as a join or use window functions"
 category = "SqlQuality"
 tags = ["sql", "performance", "subquery"]
+platform = "all"
 
-[query]
-detect = """
-(binary_expression
-  (not_in)
-  (subquery) @inner)
-"""
+[context]
+type = "correlated_subquery"
 
 [tests]
 pass = [
     "SELECT id FROM users WHERE status = 'active'",
     "SELECT id FROM users WHERE id IN (1, 2, 3)",
+    "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
 ]
 fail = [
-    "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
-    "SELECT id FROM orders WHERE customer_id NOT IN (SELECT id FROM customers)",
+    "SELECT * FROM orders WHERE id NOT IN (SELECT order_id FROM items WHERE items.customer_id = orders.id)",
+    "SELECT id FROM a WHERE val NOT IN (SELECT val FROM b WHERE b.group_id = a.group_id)",
 ]

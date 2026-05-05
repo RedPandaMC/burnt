@@ -1,0 +1,35 @@
+[rule]
+id = "skew_join_disabled"
+code = "BP044"
+severity = "warning"
+language = "python"
+description = "Disabling AQE skew join handling prevents automatic splitting of skewed sort-merge join tasks"
+suggestion = "Remove this config or set it to true"
+category = "BestPractice"
+tags = ["pyspark", "performance", "shuffle", "config", "aqe"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "skewJoin\\.enabled")
+  (#match? @val "false"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.adaptive.skewJoin.enabled\", \"true\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.adaptive.skewJoin.enabled\", \"false\")",
+]

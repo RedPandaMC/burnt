@@ -1,0 +1,21 @@
+[rule]
+id = "convert_to_delta_no_optimize"
+code = "BD026"
+severity = "info"
+language = "sql"
+description = "CONVERT TO DELTA leaves small files from the source format — run OPTIMIZE afterward"
+suggestion = "Follow CONVERT TO DELTA with OPTIMIZE <table> to compact the converted files"
+category = "BestPractice"
+tags = ["delta", "performance", "sql"]
+platform = "delta"
+
+[context]
+type = "convert_to_delta_no_optimize"
+
+[tests]
+pass = [
+    "CONVERT TO DELTA parquet.`/path/to/data`;\nOPTIMIZE my_table",
+]
+fail = [
+    "CONVERT TO DELTA parquet.`/path/to/data`",
+]

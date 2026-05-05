@@ -1,0 +1,30 @@
+[rule]
+id = "show_in_code"
+code = "BO002"
+severity = "info"
+language = "python"
+description = ".show() triggers a full Spark job and should not remain in production pipelines"
+suggestion = "Remove .show() from production code; use display() in notebooks or structured logging in jobs"
+category = "Observability"
+tags = ["pyspark", "observability", "debugging"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  (#eq? @method "show"))
+"""
+
+[tests]
+pass = [
+    "df.write.format('delta').save('/data')",
+    "result = df.count()",
+]
+fail = [
+    "df.show()",
+    "df.show(20)",
+    "df.show(truncate=False)",
+]

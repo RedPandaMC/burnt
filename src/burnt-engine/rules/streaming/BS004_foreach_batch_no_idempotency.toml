@@ -1,0 +1,21 @@
+[rule]
+id = "foreach_batch_no_idempotency"
+code = "BS004"
+severity = "info"
+language = "python"
+description = "foreachBatch without txnAppId/txnVersion idempotency options may cause duplicate writes on retry"
+suggestion = "Pass txnAppId and txnVersion to Delta writes inside foreachBatch to ensure exactly-once semantics"
+category = "Streaming"
+tags = ["pyspark", "streaming", "correctness"]
+platform = "all"
+
+[context]
+type = "foreach_batch_no_idempotency"
+
+[tests]
+pass = [
+    "df.writeStream.foreachBatch(lambda df, epoch: df.write.option('txnAppId', 'myapp').option('txnVersion', epoch).save(path)).start()",
+]
+fail = [
+    "df.writeStream.foreachBatch(lambda df, epoch: df.write.format('delta').save(path)).start()",
+]

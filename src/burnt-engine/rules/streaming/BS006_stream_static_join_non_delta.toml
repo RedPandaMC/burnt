@@ -1,0 +1,22 @@
+[rule]
+id = "stream_static_join_non_delta"
+code = "BS006"
+severity = "warning"
+language = "python"
+description = "Stream-static join with a non-Delta static side does not automatically pick up updates to the static table"
+suggestion = "Use a Delta table for the static side of stream-static joins so updates are reflected without restarting the stream"
+category = "Streaming"
+tags = ["pyspark", "streaming", "delta", "join"]
+platform = "all"
+
+[context]
+type = "stream_static_join_non_delta"
+
+[tests]
+pass = [
+    "stream_df = spark.readStream.format('delta').load(path)\nstream_df.join(spark.read.format('delta').load(lookup_path), 'id')",
+]
+fail = [
+    "stream_df = spark.readStream.format('delta').load(path)\nstream_df.join(spark.read.format('parquet').load(lookup_path), 'id')",
+    "spark.readStream.load().join(spark.read.csv(path), 'id')",
+]

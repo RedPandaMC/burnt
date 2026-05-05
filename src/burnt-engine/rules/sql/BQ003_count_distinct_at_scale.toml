@@ -7,6 +7,7 @@ description = "COUNT(DISTINCT col) requires full shuffle and sort — expensive 
 suggestion = "Consider approx_count_distinct() for large datasets where exact count is not required"
 category = "SqlQuality"
 tags = ["sql", "performance", "aggregation"]
+platform = "all"
 
 [query]
 detect = """

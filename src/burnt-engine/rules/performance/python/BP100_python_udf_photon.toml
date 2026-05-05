@@ -1,0 +1,23 @@
+[rule]
+id = "python_udf_photon"
+code = "BP100"
+severity = "warning"
+language = "python"
+description = "Python UDFs disable Photon acceleration — each row serialized to Python and back"
+suggestion = "Rewrite the UDF using Spark built-in functions or use a Pandas UDF (Arrow-based) for better Photon compatibility"
+category = "Performance"
+tags = ["pyspark", "udf", "photon", "databricks"]
+platform = "databricks"
+
+[context]
+type = "python_udf_photon"
+
+[tests]
+pass = [
+    "df.select(upper(col('name')))",
+    "@pandas_udf(StringType())\ndef my_udf(s): return s.str.upper()",
+]
+fail = [
+    "@udf(returnType=StringType())\ndef my_udf(x): return x.upper()",
+    "my_fn = udf(lambda x: x * 2, IntegerType())",
+]

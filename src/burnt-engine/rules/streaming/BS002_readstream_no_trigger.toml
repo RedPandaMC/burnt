@@ -1,0 +1,23 @@
+[rule]
+id = "readstream_no_trigger"
+code = "BS002"
+severity = "warning"
+language = "python"
+description = "readStream without .trigger() runs in micro-batch mode at full speed — add a trigger interval to control cost and latency"
+suggestion = "Add .trigger(processingTime='1 minute') or .trigger(availableNow=True) to control batch cadence"
+category = "Streaming"
+tags = ["pyspark", "streaming", "databricks"]
+platform = "databricks"
+
+[context]
+type = "readstream_no_trigger"
+
+[tests]
+pass = [
+    "df.readStream.format('delta').load(path).trigger(processingTime='1 minute').writeStream.start()",
+    "spark.readStream.format('delta').load().trigger(availableNow=True).writeStream.start()",
+]
+fail = [
+    "spark.readStream.format('delta').load(path).writeStream.outputMode('append').start()",
+    "df.readStream.option('header', 'true').load().writeStream.start()",
+]

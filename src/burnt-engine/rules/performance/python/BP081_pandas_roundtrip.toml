@@ -1,0 +1,23 @@
+[rule]
+id = "pandas_roundtrip"
+code = "BP081"
+severity = "warning"
+language = "python"
+description = ".to_pandas() followed by .to_spark() materialises the entire DataFrame to the driver and back — an expensive round-trip"
+suggestion = "Keep data in Spark; use Spark built-in functions or pandas UDFs instead of converting to pandas and back"
+category = "Performance"
+tags = ["pyspark", "pandas", "performance"]
+platform = "all"
+
+[context]
+type = "pandas_roundtrip"
+
+[tests]
+pass = [
+    "result = df.toPandas()",
+    "spark_df = ps_df.to_spark()",
+]
+fail = [
+    "result = df.toPandas().to_spark()",
+    "pdf = df.to_pandas()\nspark_df = pdf.to_spark()",
+]

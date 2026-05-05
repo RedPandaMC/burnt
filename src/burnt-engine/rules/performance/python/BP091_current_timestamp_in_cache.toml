@@ -1,0 +1,23 @@
+[rule]
+id = "current_timestamp_in_cache"
+code = "BP091"
+severity = "warning"
+language = "python"
+description = "current_timestamp() or now() inside a cached DataFrame returns the evaluation time, not query time — cached values become stale"
+suggestion = "Materialise the timestamp before caching, or avoid caching DataFrames that contain current_timestamp()/now()"
+category = "Correctness"
+tags = ["pyspark", "cache", "correctness", "determinism"]
+platform = "all"
+
+[context]
+type = "current_timestamp_in_cache"
+
+[tests]
+pass = [
+    "df.withColumn('ts', lit('2024-01-01')).cache()",
+    "df.withColumn('ts', current_timestamp())",
+]
+fail = [
+    "df.withColumn('ts', current_timestamp()).cache()",
+    "df.withColumn('now', F.now()).cache()",
+]

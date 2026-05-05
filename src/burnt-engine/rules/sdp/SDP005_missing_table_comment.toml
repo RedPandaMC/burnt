@@ -7,6 +7,7 @@ description = "SDP table missing comment metadata"
 suggestion = "Add table comment for documentation"
 category = "SDP"
 tags = ["sdp", "dlt", "documentation"]
+platform = "databricks"
 
 [query]
 detect = """

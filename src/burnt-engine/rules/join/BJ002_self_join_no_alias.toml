@@ -1,0 +1,23 @@
+[rule]
+id = "self_join_no_alias"
+code = "BJ002"
+severity = "warning"
+language = "python"
+description = "Self-joining a DataFrame without aliasing produces ambiguous column references that cause AnalysisException"
+suggestion = "Alias both sides before joining: left = df.alias('left'); right = df.alias('right'); left.join(right, ...)"
+category = "BestPractice"
+tags = ["pyspark", "join", "correctness"]
+platform = "all"
+
+[context]
+type = "self_join_no_alias"
+
+[tests]
+pass = [
+    "left = df.alias('left')\nright = df.alias('right')\nleft.join(right, left.id == right.parent_id)",
+    "df.join(other, 'id')",
+]
+fail = [
+    "df.join(df, df.parent_id == df.id)",
+    "employees.join(employees, employees.manager_id == employees.id)",
+]

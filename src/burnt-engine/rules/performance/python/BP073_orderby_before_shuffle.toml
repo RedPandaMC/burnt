@@ -1,0 +1,24 @@
+[rule]
+id = "orderby_before_shuffle"
+code = "BP073"
+severity = "warning"
+language = "python"
+description = ".orderBy() before a shuffle operation (groupBy/join/repartition) is discarded — the shuffle destroys the sort order"
+suggestion = "Remove the .orderBy() before shuffle operations; apply sorting after the shuffle if order is required"
+category = "Performance"
+tags = ["pyspark", "orderby", "shuffle", "performance"]
+platform = "all"
+
+[context]
+type = "orderby_before_shuffle"
+
+[tests]
+pass = [
+    "df.groupBy('dept').agg(count('*')).orderBy('count(1)')",
+    "df.join(other, 'id').orderBy('date')",
+]
+fail = [
+    "df.orderBy('date').groupBy('dept').agg(count('*'))",
+    "df.orderBy('id').join(other, 'id')",
+    "df.orderBy('col').repartition(10)",
+]

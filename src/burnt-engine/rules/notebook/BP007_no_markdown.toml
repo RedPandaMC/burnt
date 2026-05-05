@@ -7,6 +7,7 @@ description = "Notebook has no markdown cells for documentation"
 suggestion = "Add markdown cells to document your notebook"
 category = "Notebook"
 tags = ["notebook", "style", "documentation"]
+platform = "all"
 
 [context]
 type = "no_markdown"
