@@ -14,6 +14,7 @@ description = "SDP table missing data quality expectation"
 suggestion = "Add @dlt.expect or @dlt.expect_all constraint"
 category = "SDP"
 tags = ["sdp", "data-quality", "declarative"]
+platform = "databricks"
 
 [query]
 detect = """

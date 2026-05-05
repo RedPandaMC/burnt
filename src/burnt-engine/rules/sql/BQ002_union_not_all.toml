@@ -7,6 +7,7 @@ description = "UNION deduplicates rows with an expensive sort — use UNION ALL 
 suggestion = "Replace UNION with UNION ALL"
 category = "SqlQuality"
 tags = ["sql", "performance", "dedup"]
+platform = "all"
 
 [query]
 detect = """

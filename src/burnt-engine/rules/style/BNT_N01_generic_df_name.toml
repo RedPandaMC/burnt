@@ -7,6 +7,7 @@ description = "Variable named df/df1-df9 is too generic — hinders readability"
 suggestion = "Use a descriptive name: orders_df, customers, filtered_events"
 category = "NotebookStyle"
 tags = ["python", "style", "naming"]
+platform = "all"
 
 [query]
 detect = """

@@ -7,6 +7,7 @@ description = "Large notebook detected (>50 cells) - consider splitting"
 suggestion = "Split into multiple notebooks for better maintainability"
 category = "Notebook"
 tags = ["notebook", "structure", "maintainability"]
+platform = "all"
 
 [context]
 type = "large_notebook"

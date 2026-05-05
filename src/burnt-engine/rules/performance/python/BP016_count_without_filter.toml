@@ -14,6 +14,7 @@ description = "count() without filter scans the entire table"
 suggestion = "Apply .filter() or .where() before count()"
 category = "BestPractice"
 tags = ["pyspark", "performance", "full-scan"]
+platform = "all"
 
 [query]
 detect = """

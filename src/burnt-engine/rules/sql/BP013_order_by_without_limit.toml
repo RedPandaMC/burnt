@@ -7,6 +7,7 @@ description = "ORDER BY without LIMIT sorts the entire result set"
 suggestion = "Add LIMIT or use window functions with RANK/ROW_NUMBER"
 category = "BestPractice"
 tags = ["sql", "performance", "sort"]
+platform = "all"
 
 [context]
 type = "order_by_without_limit"

@@ -7,6 +7,7 @@ description = "Cell missing type declaration"
 suggestion = "Add cell type (python, sql, or markdown)"
 category = "Notebook"
 tags = ["notebook", "style", "structure"]
+platform = "databricks"
 
 [context]
 type = "missing_cell_type"

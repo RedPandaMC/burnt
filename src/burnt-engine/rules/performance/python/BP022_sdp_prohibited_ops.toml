@@ -7,6 +7,7 @@ description = "Prohibited operation inside Spark Declarative Pipeline function"
 suggestion = "Remove this operation from SDP pipeline code"
 category = "BestPractice"
 tags = ["pyspark", "sdp", "dlt"]
+platform = "databricks"
 
 [context]
 type = "sdp_prohibited_ops"

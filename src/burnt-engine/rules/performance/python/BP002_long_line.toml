@@ -7,6 +7,7 @@ description = "Line exceeds 120 characters"
 suggestion = "Break line for readability"
 category = "BestPractice"
 tags = ["python", "style", "readability"]
+platform = "all"
 
 [context]
 type = "long_line"

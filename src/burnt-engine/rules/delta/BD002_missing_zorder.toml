@@ -7,6 +7,7 @@ description = "Large Delta table missing ZORDER optimization"
 suggestion = "Add ZORDER BY on frequently filtered columns"
 category = "Delta"
 tags = ["delta", "performance", "sql"]
+platform = "delta"
 
 [context]
 type = "missing_zorder"

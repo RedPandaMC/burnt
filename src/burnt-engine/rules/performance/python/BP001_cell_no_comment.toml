@@ -7,6 +7,7 @@ description = "Cell has no comments"
 suggestion = "Add comments for clarity"
 category = "BestPractice"
 tags = ["python", "style", "readability"]
+platform = "all"
 
 [context]
 type = "cell_no_comment"

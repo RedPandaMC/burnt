@@ -7,6 +7,7 @@ description = "Same DataFrame has 2+ action calls without .cache() — plan exec
 suggestion = "Call .cache() before the first action and .unpersist() afterward"
 category = "BestPractice"
 tags = ["pyspark", "performance", "caching"]
+platform = "all"
 
 [dataflow]
 type = "repeated_actions"

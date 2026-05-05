@@ -14,6 +14,7 @@ description = "toPandas() brings the entire DataFrame to the driver"
 suggestion = "Add .limit(n).toPandas() or use Spark-native aggregations"
 category = "BestPractice"
 tags = ["pyspark", "memory", "driver-bound"]
+platform = "all"
 
 [query]
 detect = """

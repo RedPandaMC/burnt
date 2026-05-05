@@ -7,6 +7,7 @@ description = "Circular run directive detected - notebook would call itself"
 suggestion = "Remove the circular reference"
 category = "Notebook"
 tags = ["notebook", "structure", "correctness"]
+platform = "databricks"
 
 [context]
 type = "circular_run"

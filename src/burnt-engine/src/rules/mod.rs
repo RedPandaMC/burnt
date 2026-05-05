@@ -105,7 +105,7 @@ impl RulePipeline {
 
         for rule in &self.rules {
             if rule.has_dataflow && lang_matches(&rule.language, language) {
-                findings.extend(dataflow::check_dataflow_rules(source));
+                findings.extend(dataflow::check_dataflow_rules(&rule.code, source));
             }
         }
 

@@ -16,6 +16,7 @@ fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
         m.insert("BP021", check_jdbc_partition);
         m.insert("BP022", check_sdp_prohibited_ops);
         m.insert("BP023", check_window_without_partition);
+        m.insert("BQ004", check_correlated_subquery);
         m.insert("SDP006", check_materialized_view_incremental);
         m
     })
@@ -188,6 +189,46 @@ fn check_long_line(source: &str) -> Vec<Finding> {
     }
 
     findings
+}
+
+fn check_correlated_subquery(source: &str) -> Vec<Finding> {
+    let upper = source.to_uppercase();
+
+    // Must have NOT IN with a SELECT subquery
+    if !upper.contains("NOT IN") || !upper.contains("SELECT") {
+        return vec![];
+    }
+
+    // Correlation signal: the inner SELECT's WHERE clause contains a dotted column
+    // reference (e.g. outer_table.col = inner_table.col), typical of correlated subqueries.
+    // We look for NOT IN followed (within ~200 chars) by SELECT ... WHERE ... word.word
+    let not_in_positions: Vec<_> = upper.match_indices("NOT IN").collect();
+    for (pos, _) in not_in_positions {
+        let window = &source[pos..std::cmp::min(pos + 300, source.len())];
+        let window_upper = window.to_uppercase();
+        if window_upper.contains("SELECT") && window_upper.contains("WHERE") {
+            // Look for dotted identifier pattern (word.word) in the subquery window
+            let has_dot_ref = window
+                .split_whitespace()
+                .any(|tok| {
+                    let t = tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_');
+                    let parts: Vec<&str> = t.split('.').collect();
+                    parts.len() == 2 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '_'))
+                });
+            if has_dot_ref {
+                return vec![make_finding(
+                    "BQ004",
+                    Severity::Error,
+                    "Correlated subquery references outer columns — Spark may execute as a nested loop join",
+                    "Rewrite as a join or use window functions",
+                    1,
+                    Confidence::Medium,
+                )];
+            }
+        }
+    }
+
+    vec![]
 }
 
 #[cfg(test)]

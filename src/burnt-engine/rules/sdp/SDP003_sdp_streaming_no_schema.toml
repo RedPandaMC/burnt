@@ -7,6 +7,7 @@ description = "Streaming source missing explicit schema — schema inference on 
 suggestion = "Pass schema= to spark.readStream or use cloudFiles with schemaLocation"
 category = "SDP"
 tags = ["sdp", "streaming", "schema"]
+platform = "databricks"
 
 [query]
 detect = """
