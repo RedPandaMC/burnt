@@ -1,0 +1,29 @@
+[rule]
+id = "save_as_table_no_format"
+code = "BD015"
+severity = "warning"
+language = "python"
+description = "saveAsTable() without an explicit .format('delta') may write in the default Hive format on some clusters"
+suggestion = "Chain .format('delta').saveAsTable(...) to guarantee a Delta table is written"
+category = "BestPractice"
+tags = ["pyspark", "delta", "write"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  (#eq? @method "saveAsTable"))
+"""
+
+[tests]
+pass = [
+    "df.write.format('delta').save('/path/to/data')",
+    "df.write.format('parquet').save('/path')",
+]
+fail = [
+    "df.write.saveAsTable('mydb.mytable')",
+    "df.write.mode('overwrite').saveAsTable('events')",
+]

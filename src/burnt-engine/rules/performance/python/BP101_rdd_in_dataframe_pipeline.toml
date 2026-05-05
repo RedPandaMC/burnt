@@ -1,0 +1,30 @@
+[rule]
+id = "rdd_in_dataframe_pipeline"
+code = "BP101"
+severity = "warning"
+language = "python"
+description = "Accessing .rdd on a DataFrame drops out of the optimised DataFrame/Photon path into the Python RDD API"
+suggestion = "Replace .rdd usage with DataFrame API: use .select(), .withColumn(), or pandas UDFs for custom transformations"
+category = "Performance"
+tags = ["pyspark", "performance", "rdd", "photon"]
+platform = "all"
+
+[query]
+detect = """
+((attribute
+  object: (_)
+  attribute: (identifier) @attr)
+ (#eq? @attr "rdd"))
+"""
+
+[tests]
+pass = [
+    "df.select(col('a'))",
+    "df.withColumn('b', col('a') * 2)",
+    "spark.sparkContext.parallelize([1, 2, 3])",
+]
+fail = [
+    "df.rdd.map(lambda r: r[0])",
+    "count = df.rdd.count()",
+    "rows = df.rdd.collect()",
+]

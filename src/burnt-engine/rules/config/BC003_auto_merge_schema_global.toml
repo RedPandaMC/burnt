@@ -1,0 +1,35 @@
+[rule]
+id = "auto_merge_schema_global"
+code = "BC003"
+severity = "warning"
+language = "python"
+description = "Enabling Delta schema auto-merge at session scope is not recommended for production; use per-write mergeSchema instead"
+suggestion = "Replace with .option(\"mergeSchema\", \"true\") on individual writes"
+category = "Config"
+tags = ["delta", "correctness", "config"]
+platform = "databricks"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "schema\\.autoMerge\\.enabled")
+  (#match? @val "true"))
+"""
+
+[tests]
+pass = [
+    "df.write.option(\"mergeSchema\", \"true\").format(\"delta\").save(path)",
+]
+fail = [
+    "spark.conf.set(\"spark.databricks.delta.schema.autoMerge.enabled\", \"true\")",
+]

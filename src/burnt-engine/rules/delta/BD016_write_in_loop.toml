@@ -1,0 +1,44 @@
+[rule]
+id = "write_in_loop"
+code = "BD016"
+severity = "warning"
+language = "python"
+description = ".write inside a loop creates one small file per iteration and bypasses Delta's optimized bulk-write path"
+suggestion = "Collect data into a single DataFrame and call .write once, or use foreachBatch with Delta merge"
+category = "BestPractice"
+tags = ["pyspark", "delta", "loop", "performance"]
+platform = "all"
+
+[query]
+detect = """
+(for_statement
+  body: (block
+    (expression_statement
+      (call
+        function: (attribute
+          object: (attribute
+            object: (_)
+            attribute: (identifier) @write)
+          attribute: (_))
+        (#eq? @write "write")))))
+
+(for_statement
+  body: (block
+    (expression_statement
+      (assignment
+        right: (call
+          function: (attribute
+            object: (attribute
+              object: (_)
+              attribute: (identifier) @write2)
+            attribute: (_))
+          (#eq? @write2 "write"))))))
+"""
+
+[tests]
+pass = [
+    "df.write.format('delta').save('/data/output')",
+]
+fail = [
+    "for date in dates:\n    df.write.save(f'/data/{date}')",
+]

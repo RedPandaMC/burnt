@@ -1,0 +1,35 @@
+[rule]
+id = "print_action_result"
+code = "BO001"
+severity = "warning"
+language = "python"
+description = "print() of a Spark action result triggers a full job and discards the data — use logging or display() instead"
+suggestion = "Use logging.info() or display() (Databricks) to surface results; avoid print() around expensive Spark actions"
+category = "Observability"
+tags = ["pyspark", "observability", "logging"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (identifier) @fn
+  arguments: (argument_list
+    (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @action)))
+  (#eq? @fn "print")
+  (#match? @action "^(collect|count|first|take|toPandas|toLocalIterator)$"))
+"""
+
+[tests]
+pass = [
+    "logging.info(df.count())",
+    "result = df.collect()",
+    "print('hello world')",
+]
+fail = [
+    "print(df.collect())",
+    "print(df.count())",
+    "print(df.first())",
+]

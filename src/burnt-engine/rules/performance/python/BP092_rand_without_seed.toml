@@ -1,0 +1,31 @@
+[rule]
+id = "rand_without_seed"
+code = "BP092"
+severity = "warning"
+language = "python"
+description = "rand()/randn() without a seed produces non-reproducible results across runs and rerenders"
+suggestion = "Pass an explicit integer seed: rand(seed=42)"
+category = "BestPractice"
+tags = ["pyspark", "correctness"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @fn)
+  arguments: (argument_list) @args
+  (#match? @fn "^rand[n]?$")
+  (#not-match? @args "[a-zA-Z_]"))
+"""
+
+[tests]
+pass = [
+    "F.rand(seed=42)",
+    "F.randn(seed=0)",
+]
+fail = [
+    "F.rand()",
+    "F.randn()",
+]

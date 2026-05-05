@@ -1,0 +1,35 @@
+[rule]
+id = "persist_memory_only"
+code = "BP111"
+severity = "warning"
+language = "python"
+description = "StorageLevel.MEMORY_ONLY evicts partitions under memory pressure — lost partitions are recomputed from scratch"
+suggestion = "Use StorageLevel.MEMORY_AND_DISK or StorageLevel.MEMORY_AND_DISK_SER to allow spill to disk"
+category = "Performance"
+tags = ["pyspark", "performance", "cache"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (attribute
+      object: (identifier) @cls
+      attribute: (identifier) @level))
+  (#eq? @method "persist")
+  (#eq? @cls "StorageLevel")
+  (#eq? @level "MEMORY_ONLY"))
+"""
+
+[tests]
+pass = [
+    "df.persist(StorageLevel.MEMORY_AND_DISK)",
+    "df.persist(StorageLevel.MEMORY_AND_DISK_SER)",
+    "df.cache()",
+]
+fail = [
+    "df.persist(StorageLevel.MEMORY_ONLY)",
+]

@@ -1,0 +1,36 @@
+[rule]
+id = "shuffle_partitions_hardcoded"
+code = "BP040"
+severity = "warning"
+language = "python"
+description = "spark.sql.shuffle.partitions hardcoded to 200 disables AQE partition coalescing"
+suggestion = "Remove the hardcoded value or raise to ≥800 so AQE can coalesce dynamically"
+category = "BestPractice"
+tags = ["pyspark", "performance", "shuffle", "config", "aqe"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "shuffle\\.partitions")
+  (#match? @val "200"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.shuffle.partitions\", \"800\")",
+    "spark.conf.set(\"spark.sql.shuffle.partitions\", \"auto\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.shuffle.partitions\", \"200\")",
+]

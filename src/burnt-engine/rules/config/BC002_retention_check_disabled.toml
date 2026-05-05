@@ -1,0 +1,35 @@
+[rule]
+id = "retention_check_disabled"
+code = "BC002"
+severity = "error"
+language = "python"
+description = "Bypassing the 7-day VACUUM retention safety check has caused production data loss"
+suggestion = "Remove this config; use VACUUM RETAIN <hours> HOURS instead of disabling the check"
+category = "Config"
+tags = ["delta", "correctness", "config"]
+platform = "databricks"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (string) @val)
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "retentionDurationCheck\\.enabled")
+  (#match? @val "false"))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.databricks.delta.retentionDurationCheck.enabled\", \"true\")",
+]
+fail = [
+    "spark.conf.set(\"spark.databricks.delta.retentionDurationCheck.enabled\", \"false\")",
+]

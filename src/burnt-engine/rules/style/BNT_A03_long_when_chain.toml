@@ -1,0 +1,37 @@
+[rule]
+id = "long_when_chain"
+code = "BNT-A03"
+severity = "info"
+language = "python"
+description = "Long chains of .when().when().when()... are hard to read and maintain"
+suggestion = "Extract the mapping to a Python dict and use create_map() or a lookup join instead"
+category = "Style"
+tags = ["pyspark", "style", "readability"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (call
+          function: (attribute
+            object: (_)
+            attribute: (identifier) @w3)
+          (#eq? @w3 "when"))
+        attribute: (identifier) @w2)
+      (#eq? @w2 "when"))
+    attribute: (identifier) @w1)
+  (#eq? @w1 "when"))
+"""
+
+[tests]
+pass = [
+    "F.when(col('a') == 1, 'x').otherwise('y')",
+    "F.when(c1, v1).when(c2, v2).otherwise(v3)",
+]
+fail = [
+    "F.when(c1, v1).when(c2, v2).when(c3, v3).otherwise(v4)",
+    "F.when(a, 1).when(b, 2).when(c, 3).when(d, 4).otherwise(0)",
+]

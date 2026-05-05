@@ -1,0 +1,33 @@
+[rule]
+id = "redundant_operation_chain"
+code = "BP070"
+severity = "info"
+language = "python"
+description = "Chained identical operations (.distinct().distinct() or .sort().sort()) waste a full shuffle stage"
+suggestion = "Remove the redundant operation"
+category = "BestPractice"
+tags = ["pyspark", "performance", "shuffle"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (call
+      function: (attribute
+        object: (_)
+        attribute: (identifier) @inner))
+    attribute: (identifier) @outer)
+  (#eq? @inner @outer)
+  (#match? @inner "^(distinct|sort|orderBy|order_by)$"))
+"""
+
+[tests]
+pass = [
+    "df.distinct().sort('id')",
+    "df.orderBy('a').filter(col('b') > 0)",
+]
+fail = [
+    "df.distinct().distinct()",
+    "df.sort('id').sort('id')",
+]

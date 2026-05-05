@@ -1,0 +1,30 @@
+[rule]
+id = "drop_duplicates_no_subset"
+code = "BP071"
+severity = "warning"
+language = "python"
+description = "dropDuplicates() without a subset deduplicates on all columns, which is rarely intended and always expensive"
+suggestion = "Pass an explicit subset: dropDuplicates(['id', 'event_time'])"
+category = "BestPractice"
+tags = ["pyspark", "correctness", "performance"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  arguments: (argument_list) @args
+  (#eq? @method "dropDuplicates")
+  (#not-match? @args "[a-zA-Z_]"))
+"""
+
+[tests]
+pass = [
+    "df.dropDuplicates(subset=['id', 'email'])",
+    "df.dropDuplicates(['id'])",
+]
+fail = [
+    "df.dropDuplicates()",
+]

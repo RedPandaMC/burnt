@@ -1,0 +1,28 @@
+[rule]
+id = "uuid_in_transformation"
+code = "BP093"
+severity = "info"
+language = "python"
+description = "uuid() generates a different value on every recomputation of the same lineage — results differ across retries and rerenders"
+suggestion = "Generate UUIDs once, persist to Delta, then read back; or use monotonically_increasing_id() for row IDs"
+category = "BestPractice"
+tags = ["pyspark", "correctness", "style"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @fn)
+  arguments: (argument_list)
+  (#eq? @fn "uuid"))
+"""
+
+[tests]
+pass = [
+    "df.withColumn('id', F.monotonically_increasing_id())",
+]
+fail = [
+    "df.withColumn('uid', F.uuid())",
+]

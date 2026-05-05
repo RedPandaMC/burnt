@@ -1,0 +1,25 @@
+[rule]
+id = "hive_metastore_reference"
+code = "BU002"
+severity = "warning"
+language = "python"
+description = "hive_metastore references in new code prevent migration to Unity Catalog and break cross-workspace portability"
+suggestion = "Replace hive_metastore with a Unity Catalog three-part name: catalog.schema.table"
+category = "Governance"
+tags = ["unity-catalog", "governance", "delta"]
+platform = "databricks"
+
+[query]
+detect = """
+((string) @s
+ (#match? @s "hive_metastore"))
+"""
+
+[tests]
+pass = [
+    "spark.read.table(\"my_catalog.my_schema.my_table\")",
+]
+fail = [
+    "spark.read.table(\"hive_metastore.default.orders\")",
+    "df.write.saveAsTable(\"hive_metastore.analytics.results\")",
+]

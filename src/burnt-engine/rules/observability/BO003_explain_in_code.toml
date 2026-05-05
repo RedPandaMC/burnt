@@ -1,0 +1,29 @@
+[rule]
+id = "explain_in_code"
+code = "BO003"
+severity = "info"
+language = "python"
+description = ".explain() is a debugging tool that should not remain in production pipelines"
+suggestion = "Remove .explain() from production code; use Spark UI or structured logging for plan inspection"
+category = "Observability"
+tags = ["pyspark", "observability", "debugging"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (_)
+    attribute: (identifier) @method)
+  (#eq? @method "explain"))
+"""
+
+[tests]
+pass = [
+    "df.write.format('delta').save('/data')",
+]
+fail = [
+    "df.explain()",
+    "df.explain(True)",
+    "df.explain(mode='extended')",
+]

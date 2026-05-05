@@ -1,0 +1,27 @@
+[rule]
+id = "hardcoded_storage_path"
+code = "BU003"
+severity = "error"
+language = "python"
+description = "Hardcoded DBFS or cloud storage paths are deprecated on Databricks — both DBFS root and mounts are being phased out"
+suggestion = "Use Unity Catalog Volumes: /Volumes/<catalog>/<schema>/<volume>/..."
+category = "Governance"
+tags = ["unity-catalog", "governance", "security"]
+platform = "databricks"
+
+[query]
+detect = """
+((string) @s
+ (#match? @s "(dbfs:/(mnt|FileStore)|s3a?://|abfss://|gs://|wasbs?://)"))
+"""
+
+[tests]
+pass = [
+    "path = '/Volumes/my_catalog/my_schema/my_volume/data'",
+    "path = 'relative/path/to/data'",
+]
+fail = [
+    "path = 'dbfs:/mnt/mydata/file.csv'",
+    "path = 's3://my-bucket/prefix/data.parquet'",
+    "path = 'abfss://container@account.dfs.core.windows.net/path'",
+]

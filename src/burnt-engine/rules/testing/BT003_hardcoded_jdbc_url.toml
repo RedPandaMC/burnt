@@ -1,0 +1,26 @@
+[rule]
+id = "hardcoded_jdbc_url"
+code = "BT003"
+severity = "error"
+language = "python"
+description = "JDBC URL with embedded password found in source code"
+suggestion = "Store database credentials in Databricks Secrets and retrieve them at runtime with dbutils.secrets.get()"
+category = "Security"
+tags = ["security", "credentials", "jdbc"]
+platform = "all"
+
+[query]
+detect = """
+((string) @s
+ (#match? @s "jdbc:.*password="))
+"""
+
+[tests]
+pass = [
+    "url = 'jdbc:postgresql://host:5432/db'",
+    "spark.read.jdbc(url, table, properties={'user': user, 'password': pwd})",
+]
+fail = [
+    "url = 'jdbc:postgresql://host:5432/db?user=admin&password=secret'",
+    "url = 'jdbc:sqlserver://server;database=db;password=abc123'",
+]

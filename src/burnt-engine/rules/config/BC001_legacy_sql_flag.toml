@@ -1,0 +1,35 @@
+[rule]
+id = "legacy_sql_flag"
+code = "BC001"
+severity = "warning"
+language = "python"
+description = "spark.sql.legacy.* flag papers over real compatibility bugs instead of fixing them"
+suggestion = "Remove the legacy flag and migrate the code to Spark 3.x behavior"
+category = "Config"
+tags = ["pyspark", "sql", "correctness", "config"]
+platform = "all"
+
+[query]
+detect = """
+(call
+  function: (attribute
+    object: (attribute
+      object: (identifier)
+      attribute: (identifier) @conf)
+    attribute: (identifier) @method)
+  arguments: (argument_list
+    (string) @key
+    (_))
+  (#eq? @conf "conf")
+  (#eq? @method "set")
+  (#match? @key "spark\\.sql\\.legacy\\."))
+"""
+
+[tests]
+pass = [
+    "spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")",
+]
+fail = [
+    "spark.conf.set(\"spark.sql.legacy.timeParserPolicy\", \"LEGACY\")",
+    "spark.conf.set(\"spark.sql.legacy.parquet.datetimeRebaseModeInRead\", \"LEGACY\")",
+]
