@@ -7,11 +7,13 @@ mod ingestion;
 mod parse;
 pub mod rules;
 mod semantic;
+mod session;
 mod types;
 
 use detect::detect_mode_from_source;
 use graph::{CostGraph, CostGraphPy, PipelineGraph, PipelineGraphPy};
 use ingestion::files::ingest_file;
+use session::{session_collect, session_start, SessionStatePy};
 use types::{
     AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode, PyGraph,
     PyPipeline, PyPipelineTable, RuleEntry,
@@ -138,8 +140,8 @@ fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, String> {
     let source_file = ingest_file(path).map_err(|e| e.to_string())?;
     let mode = detect_mode_from_source(&source_file.content);
     let mut findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
-    let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, &source_file.content)
-        .map_err(|e| e.to_string())?;
+    let (graph, pipeline, sem_findings) =
+        build_graph_and_pipeline(&mode, &source_file.content).map_err(|e| e.to_string())?;
     findings.extend(sem_findings);
     Ok(AnalysisResultPy {
         mode: mode.to_string(),
@@ -154,9 +156,7 @@ fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, String> {
 /// Analyses a file on disk and returns a full `AnalysisResultPy`.
 #[pyfunction]
 fn analyze_file(py: Python<'_>, path: &str) -> PyResult<AnalysisResultPy> {
-    py.allow_threads(|| {
-        analyze_path_internal(path).map_err(pyo3::exceptions::PyIOError::new_err)
-    })
+    py.allow_threads(|| analyze_path_internal(path).map_err(pyo3::exceptions::PyIOError::new_err))
 }
 
 /// Analyses all `.py`, `.sql`, and `.ipynb` files in a directory in parallel.
@@ -212,7 +212,10 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(analyze_source, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_file, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(session_start, m)?)?;
+    m.add_function(wrap_pyfunction!(session_collect, m)?)?;
 
+    m.add_class::<SessionStatePy>()?;
     m.add_class::<CostGraphPy>()?;
     m.add_class::<PipelineGraphPy>()?;
     m.add_class::<PyCostNode>()?;

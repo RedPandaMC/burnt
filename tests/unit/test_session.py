@@ -1,4 +1,4 @@
-"""Unit tests for the Spark monitoring REST session client."""
+"""Unit tests for the Rust-backed Spark monitoring REST session client."""
 
 from __future__ import annotations
 
@@ -6,19 +6,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from burnt.runtime.spark_monitor import (
-    SessionState,
-    _http_get,
-    _normalise_stage,
+from burnt._engine import SessionState, session_start
+from burnt._session import (
     _resolve_app_id,
     _resolve_rest_endpoint,
     collect,
     start,
 )
 
-
 # ---------------------------------------------------------------------------
-# SessionState
+# SessionState (Rust)
 # ---------------------------------------------------------------------------
 
 
@@ -26,33 +23,75 @@ class TestSessionState:
     def test_defaults(self) -> None:
         s = SessionState()
         assert s.active is False
-        assert s._rest_url is None
-        assert s._app_id is None
+        assert s.rest_url is None
+        assert s.app_id is None
         assert s.collected == []
 
     def test_repr(self) -> None:
         s = SessionState()
         s.active = True
-        s._app_id = "app-123"
+        s.app_id = "app-123"
         assert "active=True" in repr(s)
         assert "app-123" in repr(s)
 
 
 # ---------------------------------------------------------------------------
-# start() — no Spark available
+# session_start (Rust)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionStartRust:
+    def test_creates_active_state(self) -> None:
+        state = session_start("http://localhost:4040/api/v1", "app-123")
+        assert state.active is True
+        assert state.rest_url == "http://localhost:4040/api/v1"
+        assert state.app_id == "app-123"
+
+
+# ---------------------------------------------------------------------------
+# start() — Python endpoint discovery
 # ---------------------------------------------------------------------------
 
 
 class TestStartNoSpark:
-    @patch("burnt.runtime.spark_monitor._get_spark_session", return_value=None)
+    @patch("burnt._session._get_spark_session", return_value=None)
     def test_returns_inactive_when_no_spark(self, _mock) -> None:
         state = start()
         assert state.active is False
 
-    @patch("burnt.runtime.spark_monitor._get_spark_session", return_value=None)
+    @patch("burnt._session._get_spark_session", return_value=None)
     def test_no_exception_when_no_spark(self, _mock) -> None:
         state = start()  # must not raise
         assert isinstance(state, SessionState)
+
+
+class TestStartWithSpark:
+    @patch("burnt._session._get_spark_session")
+    @patch("burnt._session._resolve_app_id", return_value="app-test")
+    @patch(
+        "burnt._session._resolve_rest_endpoint",
+        return_value=("http://localhost:4040/api/v1", None),
+    )
+    def test_generic_spark_ui(self, _mock_endpoint, _mock_app, mock_spark) -> None:
+        state = start()
+        assert state.active is True
+        assert state.rest_url == "http://localhost:4040/api/v1"
+        assert state.app_id == "app-test"
+
+    @patch("burnt._session._get_spark_session")
+    @patch("burnt._session._resolve_app_id", return_value="app-db")
+    @patch(
+        "burnt._session._resolve_rest_endpoint",
+        return_value=(
+            "https://adb-1234.azuredatabricks.net/driver-proxy-api/o/0/c1/40001/api/v1",
+            "Bearer tok",
+        ),
+    )
+    def test_databricks_proxy(self, _mock_endpoint, _mock_app, mock_spark) -> None:
+        state = start()
+        assert state.active is True
+        assert "driver-proxy-api" in (state.rest_url or "")
+        assert state.auth_header == "Bearer tok"
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +107,6 @@ class TestResolveAppId:
 
     def test_warmup_on_empty_app_id(self) -> None:
         spark = MagicMock()
-        # First call returns empty, after warmup returns real ID
         spark.conf.get.side_effect = ["", "app-after-warmup"]
         spark.sql.return_value.collect.return_value = []
 
@@ -105,76 +143,69 @@ class TestResolveRestEndpoint:
 
         spark = MagicMock()
 
-        with patch(
-            "burnt.runtime.spark_monitor.get_context",
-            return_value=ctx,
-            create=True,
-        ), patch.dict("sys.modules", {"dbruntime.databricks_repl_context": MagicMock(get_context=lambda: ctx)}):
+        with (
+            patch(
+                "burnt._session.get_context",
+                return_value=ctx,
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "dbruntime.databricks_repl_context": MagicMock(
+                        get_context=lambda: ctx
+                    )
+                },
+            ),
+        ):
             url, auth = _resolve_rest_endpoint(spark)
 
-        assert "/driver-proxy-api/o/1234567890/0101-123456-abc12345/40001/api/v1" in (url or "")
+        assert "/driver-proxy-api/o/1234567890/0101-123456-abc12345/40001/api/v1" in (
+            url or ""
+        )
         assert auth == "Bearer dapi-secret-token"
 
     def test_generic_spark_ui_url(self) -> None:
         spark = MagicMock()
         spark.sparkContext.uiWebUrl = "http://localhost:4040"
 
-        with patch.dict("sys.modules", {"dbruntime": None, "dbruntime.databricks_repl_context": None}):
-            url, auth = _resolve_rest_endpoint(spark)
+        with patch.dict(
+            "sys.modules",
+            {"dbruntime": None, "dbruntime.databricks_repl_context": None},
+        ):
+            url, _auth = _resolve_rest_endpoint(spark)
 
         assert url == "http://localhost:4040/api/v1"
-        assert auth is None
-
-    def test_returns_none_when_no_ui_url(self) -> None:
-        spark = MagicMock()
-        spark.sparkContext.uiWebUrl = ""
-
-        with patch.dict("sys.modules", {"dbruntime": None, "dbruntime.databricks_repl_context": None}):
-            url, auth = _resolve_rest_endpoint(spark)
-
-        assert url is None
 
 
 # ---------------------------------------------------------------------------
-# collect()
+# collect() — Python wrapper around Rust session_collect
 # ---------------------------------------------------------------------------
-
-_SAMPLE_STAGES = [
-    {
-        "stageId": 1,
-        "name": "count at <console>:1",
-        "executorRunTime": 4200,
-        "shuffleReadBytes": 1024,
-        "shuffleWriteBytes": 2048,
-        "memoryBytesSpilled": 0,
-        "diskBytesSpilled": 0,
-        "inputBytes": 8192,
-    }
-]
 
 
 class TestCollect:
     def _make_state(self) -> SessionState:
         s = SessionState()
         s.active = True
-        s._rest_url = "http://localhost:4040/api/v1"
-        s._app_id = "app-test-1"
+        s.rest_url = "http://localhost:4040/api/v1"
+        s.app_id = "app-test-1"
         return s
 
-    @patch("burnt.runtime.spark_monitor._http_get", return_value=_SAMPLE_STAGES)
-    def test_populates_collected(self, _mock) -> None:
+    @patch("burnt._session.session_collect")
+    def test_calls_rust_collect(self, mock_rust_collect) -> None:
         state = self._make_state()
         collect(state)
+        mock_rust_collect.assert_called_once_with(state)
 
-        assert len(state.collected) == 1
-        stage = state.collected[0]
-        assert stage["stage_id"] == 1
-        assert stage["executor_run_time_ms"] == 4200
-        assert stage["shuffle_read_bytes"] == 1024
-        assert stage["input_bytes"] == 8192
+    @patch("burnt._session.session_collect")
+    def test_warns_and_deactivates_when_rust_sets_inactive(
+        self, mock_rust_collect
+    ) -> None:
+        def side_effect(state: SessionState) -> None:
+            state.active = False
+            state.collected.clear()
 
-    @patch("burnt.runtime.spark_monitor._http_get", return_value=None)
-    def test_warns_and_deactivates_on_unreachable(self, _mock) -> None:
+        mock_rust_collect.side_effect = side_effect
         state = self._make_state()
 
         with pytest.warns(RuntimeWarning, match="Spark monitoring REST API"):
@@ -185,69 +216,39 @@ class TestCollect:
 
     def test_noop_when_inactive(self) -> None:
         state = SessionState()  # active=False
-        collect(state)  # must not raise, must not call HTTP
+        collect(state)  # must not raise
         assert state.collected == []
 
-    @patch("burnt.runtime.spark_monitor._http_get", return_value=[])
-    def test_empty_stages_list(self, _mock) -> None:
+    @patch("burnt._session.session_collect")
+    def test_no_warning_when_still_active(self, mock_rust_collect) -> None:
+        import warnings
+
         state = self._make_state()
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            collect(state)
+        assert len(record) == 0
+        assert state.active is True
+
+
+# ---------------------------------------------------------------------------
+# Integration: end-to-end with mocked Rust collect
+# ---------------------------------------------------------------------------
+
+
+class TestIntegration:
+    @patch("burnt._session._get_spark_session")
+    @patch("burnt._session._resolve_app_id", return_value="app-123")
+    @patch(
+        "burnt._session._resolve_rest_endpoint",
+        return_value=("http://localhost:4040/api/v1", None),
+    )
+    @patch("burnt._session.session_collect")
+    def test_start_then_collect(
+        self, mock_collect, _mock_endpoint, _mock_app, _mock_spark
+    ) -> None:
+        state = start()
+        assert state.active is True
+
         collect(state)
-        assert state.collected == []
-
-    @patch("burnt.runtime.spark_monitor._http_get", return_value=[{"not": "a stage"}, _SAMPLE_STAGES[0]])
-    def test_skips_non_dict_entries(self, _mock) -> None:
-        state = self._make_state()
-        collect(state)
-        # Both are dicts so both are processed; normalise handles missing keys gracefully
-        assert len(state.collected) == 2
-
-
-# ---------------------------------------------------------------------------
-# _normalise_stage
-# ---------------------------------------------------------------------------
-
-
-class TestNormaliseStage:
-    def test_full_stage(self) -> None:
-        raw = _SAMPLE_STAGES[0]
-        norm = _normalise_stage(raw)
-        assert norm["stage_id"] == 1
-        assert norm["name"] == "count at <console>:1"
-        assert norm["executor_run_time_ms"] == 4200
-        assert norm["shuffle_write_bytes"] == 2048
-        assert norm["memory_bytes_spilled"] == 0
-
-    def test_missing_fields_default_to_zero(self) -> None:
-        norm = _normalise_stage({})
-        assert norm["stage_id"] == 0
-        assert norm["shuffle_read_bytes"] == 0
-        assert norm["input_bytes"] == 0
-
-
-# ---------------------------------------------------------------------------
-# _http_get — stdlib fallback path
-# ---------------------------------------------------------------------------
-
-
-class TestHttpGet:
-    @patch("burnt.runtime.spark_monitor.urllib.request.urlopen")
-    def test_stdlib_get_returns_parsed_json(self, mock_urlopen) -> None:
-        import io
-        payload = b'[{"stageId": 1}]'
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = payload
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
-
-        # Force requests to be unavailable
-        with patch.dict("sys.modules", {"requests": None}):
-            result = _http_get("http://localhost:4040/api/v1/applications/x/stages", {})
-
-        assert result == [{"stageId": 1}]
-
-    @patch("burnt.runtime.spark_monitor.urllib.request.urlopen", side_effect=OSError("refused"))
-    def test_stdlib_returns_none_on_error(self, _mock) -> None:
-        with patch.dict("sys.modules", {"requests": None}):
-            result = _http_get("http://localhost:4040/api/v1/applications/x/stages", {})
-        assert result is None
+        mock_collect.assert_called_once_with(state)

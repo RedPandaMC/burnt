@@ -118,10 +118,8 @@ fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
 fn check_window_without_partition(source: &str) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let has_window_order =
-        source.contains("Window.orderBy") || source.contains("Window.order_by");
-    let has_partition_by =
-        source.contains(".partitionBy(") || source.contains(".partition_by(");
+    let has_window_order = source.contains("Window.orderBy") || source.contains("Window.order_by");
+    let has_partition_by = source.contains(".partitionBy(") || source.contains(".partition_by(");
 
     if has_window_order && !has_partition_by {
         findings.push(make_finding(
@@ -238,13 +236,14 @@ fn check_correlated_subquery(source: &str) -> Vec<Finding> {
         let window_upper = window.to_uppercase();
         if window_upper.contains("SELECT") && window_upper.contains("WHERE") {
             // Look for dotted identifier pattern (word.word) in the subquery window
-            let has_dot_ref = window
-                .split_whitespace()
-                .any(|tok| {
-                    let t = tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_');
-                    let parts: Vec<&str> = t.split('.').collect();
-                    parts.len() == 2 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '_'))
-                });
+            let has_dot_ref = window.split_whitespace().any(|tok| {
+                let t = tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_');
+                let parts: Vec<&str> = t.split('.').collect();
+                parts.len() == 2
+                    && parts.iter().all(|p| {
+                        !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    })
+            });
             if has_dot_ref {
                 return vec![make_finding(
                     "BQ004",
@@ -262,9 +261,11 @@ fn check_correlated_subquery(source: &str) -> Vec<Finding> {
 }
 
 fn check_overwrite_without_replace_where(source: &str) -> Vec<Finding> {
-    let has_overwrite = source.contains(".mode(\"overwrite\")") || source.contains(".mode('overwrite')");
+    let has_overwrite =
+        source.contains(".mode(\"overwrite\")") || source.contains(".mode('overwrite')");
     let has_delta = source.contains("\"delta\"") || source.contains("'delta'");
-    let has_replace_where = source.contains("replaceWhere") || source.contains("partitionOverwriteMode");
+    let has_replace_where =
+        source.contains("replaceWhere") || source.contains("partitionOverwriteMode");
     if has_overwrite && has_delta && !has_replace_where {
         vec![make_finding(
             "BD010",
@@ -280,10 +281,15 @@ fn check_overwrite_without_replace_where(source: &str) -> Vec<Finding> {
 }
 
 fn check_csv_json_analytical_write(source: &str) -> Vec<Finding> {
-    let has_csv_json_write = (source.contains(".format(\"csv\")") || source.contains(".format('csv')")
-        || source.contains(".format(\"json\")") || source.contains(".format('json')"))
+    let has_csv_json_write = (source.contains(".format(\"csv\")")
+        || source.contains(".format('csv')")
+        || source.contains(".format(\"json\")")
+        || source.contains(".format('json')"))
         && (source.contains(".saveAsTable(") || source.contains(".save("));
-    let is_landing = source.contains("landing") || source.contains("archive") || source.contains("export") || source.contains("raw");
+    let is_landing = source.contains("landing")
+        || source.contains("archive")
+        || source.contains("export")
+        || source.contains("raw");
     if has_csv_json_write && !is_landing {
         vec![make_finding(
             "BD013",
@@ -334,10 +340,14 @@ fn check_merge_without_partition_predicate(source: &str) -> Vec<Finding> {
     // Heuristic: partition predicate has a column *named* date/year/month/day (via `.date`, `_date`
     // suffix patterns). Avoid substring matches inside table names (e.g. "UPDATES" contains "DATE").
     let lower_on = on_clause.to_lowercase();
-    let has_partition_hint = lower_on.contains(".date") || lower_on.contains("_date")
-        || lower_on.contains(".year") || lower_on.contains("_year")
-        || lower_on.contains(".month") || lower_on.contains("_month")
-        || lower_on.contains(".day") || lower_on.contains("_day")
+    let has_partition_hint = lower_on.contains(".date")
+        || lower_on.contains("_date")
+        || lower_on.contains(".year")
+        || lower_on.contains("_year")
+        || lower_on.contains(".month")
+        || lower_on.contains("_month")
+        || lower_on.contains(".day")
+        || lower_on.contains("_day")
         || lower_on.contains("partition");
     if !has_partition_hint {
         vec![make_finding(
@@ -433,7 +443,8 @@ fn check_too_many_cluster_keys(source: &str) -> Vec<Finding> {
 
 fn check_pandas_pyspark_mix(source: &str) -> Vec<Finding> {
     let has_ps = source.contains("pyspark.pandas") || source.contains("import ps");
-    let has_pd = source.contains("import pandas") || (source.contains("import pd") && !source.contains("pyspark"));
+    let has_pd = source.contains("import pandas")
+        || (source.contains("import pd") && !source.contains("pyspark"));
     if has_ps && has_pd {
         vec![make_finding(
             "BP080",
@@ -486,7 +497,8 @@ fn check_writestream_no_checkpoint(source: &str) -> Vec<Finding> {
 }
 
 fn check_event_time_no_watermark(source: &str) -> Vec<Finding> {
-    let has_window_group = source.contains("groupBy(window(") || source.contains("groupBy( window(");
+    let has_window_group =
+        source.contains("groupBy(window(") || source.contains("groupBy( window(");
     let has_watermark = source.contains("withWatermark(") || source.contains("with_watermark(");
     if has_window_group && !has_watermark {
         vec![make_finding(
@@ -535,7 +547,9 @@ fn check_two_part_table_name(source: &str) -> Vec<Finding> {
             if dot_count == 1 && !token.is_empty() {
                 // Two-part name — check it's not a file path or special syntax
                 let first_part = token.split('.').next().unwrap_or("");
-                if !first_part.is_empty() && first_part.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                if !first_part.is_empty()
+                    && first_part.chars().all(|c| c.is_alphanumeric() || c == '_')
+                {
                     return vec![make_finding(
                         "BU001",
                         Severity::Warning,
@@ -553,7 +567,8 @@ fn check_two_part_table_name(source: &str) -> Vec<Finding> {
 }
 
 fn check_parquet_write_databricks(source: &str) -> Vec<Finding> {
-    let has_parquet_write = source.contains(".format(\"parquet\")") || source.contains(".format('parquet')");
+    let has_parquet_write =
+        source.contains(".format(\"parquet\")") || source.contains(".format('parquet')");
     let has_write = source.contains(".write") || source.contains(".saveAsTable(");
     if has_parquet_write && has_write {
         vec![make_finding(
@@ -595,12 +610,16 @@ fn check_stream_static_join_non_delta(source: &str) -> Vec<Finding> {
     }
     // Look for spark.read (static side) using a non-Delta format.
     // The readStream side may legitimately use delta; we only care about spark.read.
-    let static_read_parquet = source.contains("spark.read.format(\"parquet\")") || source.contains("spark.read.format('parquet')");
-    let static_read_csv = source.contains("spark.read.format(\"csv\")") || source.contains("spark.read.format('csv')")
+    let static_read_parquet = source.contains("spark.read.format(\"parquet\")")
+        || source.contains("spark.read.format('parquet')");
+    let static_read_csv = source.contains("spark.read.format(\"csv\")")
+        || source.contains("spark.read.format('csv')")
         || source.contains("spark.read.csv(");
-    let static_read_json = source.contains("spark.read.format(\"json\")") || source.contains("spark.read.format('json')")
+    let static_read_json = source.contains("spark.read.format(\"json\")")
+        || source.contains("spark.read.format('json')")
         || source.contains("spark.read.json(");
-    let static_read_orc = source.contains("spark.read.format(\"orc\")") || source.contains("spark.read.format('orc')");
+    let static_read_orc = source.contains("spark.read.format(\"orc\")")
+        || source.contains("spark.read.format('orc')");
     if static_read_parquet || static_read_csv || static_read_json || static_read_orc {
         vec![make_finding(
             "BS006",
@@ -628,7 +647,11 @@ fn check_self_join_no_alias(source: &str) -> Vec<Finding> {
             let lhs = trimmed[..join_pos].trim();
             // Extract the first argument of join
             let after_open = &trimmed[join_pos + 6..];
-            let first_arg = after_open.split(|c: char| c == ',' || c == ')').next().unwrap_or("").trim();
+            let first_arg = after_open
+                .split(|c: char| c == ',' || c == ')')
+                .next()
+                .unwrap_or("")
+                .trim();
             if !lhs.is_empty() && !first_arg.is_empty() && lhs == first_arg {
                 return vec![make_finding(
                     "BJ002",
@@ -649,9 +672,12 @@ fn check_readstream_no_schema(source: &str) -> Vec<Finding> {
     if !has_readstream {
         return vec![];
     }
-    let needs_schema = source.contains(".format(\"json\")") || source.contains(".format('json')")
-        || source.contains(".format(\"csv\")") || source.contains(".format('csv')")
-        || source.contains(".format(\"avro\")") || source.contains(".format('avro')");
+    let needs_schema = source.contains(".format(\"json\")")
+        || source.contains(".format('json')")
+        || source.contains(".format(\"csv\")")
+        || source.contains(".format('csv')")
+        || source.contains(".format(\"avro\")")
+        || source.contains(".format('avro')");
     let has_schema = source.contains(".schema(");
     if needs_schema && !has_schema {
         vec![make_finding(
@@ -670,9 +696,9 @@ fn check_readstream_no_schema(source: &str) -> Vec<Finding> {
 fn check_groupby_agg_filter(source: &str) -> Vec<Finding> {
     // Detect .agg(...).filter( or .agg(...).where(
     let has_agg = source.contains(".agg(");
-    let has_post_agg_filter = source.contains(".agg(") &&
-        (source.find(".filter(").unwrap_or(0) > source.find(".agg(").unwrap_or(usize::MAX)
-         || source.find(".where(").unwrap_or(0) > source.find(".agg(").unwrap_or(usize::MAX));
+    let has_post_agg_filter = source.contains(".agg(")
+        && (source.find(".filter(").unwrap_or(0) > source.find(".agg(").unwrap_or(usize::MAX)
+            || source.find(".where(").unwrap_or(0) > source.find(".agg(").unwrap_or(usize::MAX));
     if has_agg && has_post_agg_filter {
         vec![make_finding(
             "BP072",
@@ -688,8 +714,11 @@ fn check_groupby_agg_filter(source: &str) -> Vec<Finding> {
 }
 
 fn check_orderby_before_shuffle(source: &str) -> Vec<Finding> {
-    let orderby_pos = source.find(".orderBy(").or_else(|| source.find(".order_by("));
-    let shuffle_pos = source.find(".groupBy(")
+    let orderby_pos = source
+        .find(".orderBy(")
+        .or_else(|| source.find(".order_by("));
+    let shuffle_pos = source
+        .find(".groupBy(")
         .or_else(|| source.find(".join("))
         .or_else(|| source.find(".repartition("));
     if let (Some(ob), Some(sh)) = (orderby_pos, shuffle_pos) {
@@ -742,7 +771,9 @@ fn check_monotonically_increasing_id_join(source: &str) -> Vec<Finding> {
 }
 
 fn check_current_timestamp_in_cache(source: &str) -> Vec<Finding> {
-    let has_timestamp = source.contains("current_timestamp()") || source.contains("F.now()") || source.contains("functions.now()");
+    let has_timestamp = source.contains("current_timestamp()")
+        || source.contains("F.now()")
+        || source.contains("functions.now()");
     let has_cache = source.contains(".cache()") || source.contains(".persist(");
     if has_timestamp && has_cache {
         vec![make_finding(
@@ -777,9 +808,11 @@ fn check_input_file_name_as_key(source: &str) -> Vec<Finding> {
 
 fn check_python_udf_photon(source: &str) -> Vec<Finding> {
     // Detect Python UDFs (not pandas_udf which is Arrow-based and more Photon compatible)
-    let has_plain_udf = source.contains("@udf(") || source.contains("@udf\n")
+    let has_plain_udf = source.contains("@udf(")
+        || source.contains("@udf\n")
         || (source.contains("= udf(") && !source.contains("pandas_udf"));
-    let has_pandas_udf_only = source.contains("@pandas_udf") && !source.contains("@udf(") && !source.contains("= udf(");
+    let has_pandas_udf_only =
+        source.contains("@pandas_udf") && !source.contains("@udf(") && !source.contains("= udf(");
     if has_plain_udf && !has_pandas_udf_only {
         vec![make_finding(
             "BP100",
@@ -817,7 +850,8 @@ fn check_broadcast_streaming(source: &str) -> Vec<Finding> {
     }
     // Heuristic: broadcast( appears on the same line or close to readStream
     let broadcast_pos = source.find("broadcast(").unwrap_or(usize::MAX);
-    let readstream_pos = source.find("readStream")
+    let readstream_pos = source
+        .find("readStream")
         .or_else(|| source.find("read_stream"))
         .unwrap_or(usize::MAX);
     // Fire if broadcast wraps something near readStream (within 100 chars)
@@ -897,4 +931,3 @@ mod tests {
         assert!(findings.is_empty());
     }
 }
-

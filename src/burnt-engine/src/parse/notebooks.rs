@@ -1,4 +1,3 @@
-
 use crate::types::{CellKind, Confidence, Finding, Severity};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -236,10 +235,7 @@ impl ResolutionContext {
     }
 }
 
-pub fn parse_and_resolve(
-    path: &str,
-    root: Option<&str>,
-) -> Result<ResolvedCells, String> {
+pub fn parse_and_resolve(path: &str, root: Option<&str>) -> Result<ResolvedCells, String> {
     let root_path = match root {
         Some(r) => PathBuf::from(r),
         None => PathBuf::from("."),
@@ -256,10 +252,7 @@ pub fn parse_and_resolve(
     resolve_file(&canonical_path, &mut ctx)
 }
 
-fn resolve_file(
-    path: &Path,
-    ctx: &mut ResolutionContext,
-) -> Result<ResolvedCells, String> {
+fn resolve_file(path: &Path, ctx: &mut ResolutionContext) -> Result<ResolvedCells, String> {
     if ctx.is_visited(path) {
         let finding = Finding {
             rule_id: "BN003".to_string(),

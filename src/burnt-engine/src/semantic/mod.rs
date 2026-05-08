@@ -1,4 +1,3 @@
-
 use crate::types::Finding;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

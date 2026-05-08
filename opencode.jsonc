@@ -3,5 +3,16 @@
   "instructions": [
     "AGENTS.md"
   ],
-  "plugin": ["opencode-agent-memory", "opencode-agent-skills"]
+  "plugin": ["opencode-agent-memory", "opencode-agent-skills"],
+  "mcp": {
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {file:~/.config/opencode/.secrets/github-pat}"
+      }
+    }
+  }
 }

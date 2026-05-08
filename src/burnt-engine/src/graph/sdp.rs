@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::graph::python::PythonGraphBuilder;
-use crate::types::{CostEdge, SdpSourceType, SdpTableKind, PipelineTable};
+use crate::types::{CostEdge, PipelineTable, SdpSourceType, SdpTableKind};
 use tree_sitter::{Node, Parser};
 
 pub struct SdpGraphBuilder {

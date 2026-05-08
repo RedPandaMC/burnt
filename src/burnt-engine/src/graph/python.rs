@@ -31,7 +31,9 @@ impl PythonGraphBuilder {
         parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
             .expect("tree-sitter-python grammar failed to load");
-        let tree = parser.parse(source, None).expect("tree-sitter failed to parse");
+        let tree = parser
+            .parse(source, None)
+            .expect("tree-sitter failed to parse");
         let root = tree.root_node();
 
         self.visit_node(&root, source);
@@ -235,9 +237,7 @@ df2.write.mode("overwrite").parquet("output.parquet")
         assert!(nodes
             .iter()
             .any(|n| matches!(n.kind, OperationKind::Transform)));
-        assert!(nodes
-            .iter()
-            .any(|n| matches!(n.kind, OperationKind::Write)));
+        assert!(nodes.iter().any(|n| matches!(n.kind, OperationKind::Write)));
     }
 
     #[test]

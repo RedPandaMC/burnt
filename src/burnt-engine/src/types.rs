@@ -205,7 +205,6 @@ pub struct RuleEntry {
     pub tags: Vec<String>,
 }
 
-
 // Types for enhanced rule system with tree-sitter queries
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryPattern {

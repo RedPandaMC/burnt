@@ -45,12 +45,18 @@ fn check_cache_lifecycle(rule_code: &str, source: &str) -> Vec<Finding> {
                 .unwrap_or(false)
             {
                 if trimmed.contains(".cache()") {
-                    cache_ops.entry(var_name.to_string()).or_default().insert(line_num);
+                    cache_ops
+                        .entry(var_name.to_string())
+                        .or_default()
+                        .insert(line_num);
                     known_dfs.insert(var_name.to_string());
                 } else if trimmed.contains(".unpersist()") {
                     unpersist_ops.insert(var_name.to_string());
                 } else if extract_action(trimmed).is_some() {
-                    action_ops.entry(var_name.to_string()).or_default().insert(line_num);
+                    action_ops
+                        .entry(var_name.to_string())
+                        .or_default()
+                        .insert(line_num);
                     known_dfs.insert(var_name.to_string());
                 }
             }
@@ -58,13 +64,19 @@ fn check_cache_lifecycle(rule_code: &str, source: &str) -> Vec<Finding> {
 
         for df_name in &known_dfs {
             if trimmed.contains(&format!("{}.cache()", df_name)) {
-                cache_ops.entry(df_name.clone()).or_default().insert(line_num);
+                cache_ops
+                    .entry(df_name.clone())
+                    .or_default()
+                    .insert(line_num);
             } else if trimmed.contains(&format!("{}.unpersist()", df_name)) {
                 unpersist_ops.insert(df_name.clone());
             } else if extract_action(trimmed).is_some()
                 && trimmed.contains(&format!("{}.", df_name))
             {
-                action_ops.entry(df_name.clone()).or_default().insert(line_num);
+                action_ops
+                    .entry(df_name.clone())
+                    .or_default()
+                    .insert(line_num);
             }
         }
     }
@@ -137,7 +149,12 @@ fn check_filter_after_cache(source: &str) -> Vec<Finding> {
             let parts: Vec<&str> = trimmed.splitn(2, '=').collect();
             if parts.len() == 2 {
                 let var = parts[0].trim().to_string();
-                if var.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
+                if var
+                    .chars()
+                    .next()
+                    .map(|c| c.is_alphabetic())
+                    .unwrap_or(false)
+                {
                     cached_vars.insert(var, line_num);
                 }
             }

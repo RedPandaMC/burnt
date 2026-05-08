@@ -56,3 +56,45 @@ def to_table(result: Any) -> None:
 
     console.print(table)
     console.print()
+
+
+def to_table_multi(results: list[Any]) -> None:
+    """Render multiple CheckResult objects as a single combined Rich table.
+
+    Args:
+        results: List of CheckResult to render.
+    """
+    all_findings = [(r, f) for r in results for f in getattr(r, "findings", [])]
+
+    if not all_findings:
+        console.print("[green]✓ No cost anti-patterns found.[/green]\n")
+        return
+
+    table = Table(title=f"Cost Anti-Patterns ({len(all_findings)})")
+    table.add_column("File", style="cyan", no_wrap=True)
+    table.add_column("Severity", style="bold")
+    table.add_column("Rule", style="cyan")
+    table.add_column("Location")
+    table.add_column("Message")
+
+    for result, f in all_findings:
+        sev_color = {
+            "error": "red",
+            "warning": "yellow",
+            "info": "blue",
+        }.get(f.severity, "white")
+
+        file_path = getattr(result, "file_path", None) or "unknown"
+        location = f"line {f.line_number}" if f.line_number else "—"
+        table.add_row(
+            str(file_path),
+            f"[{sev_color}]{f.severity.upper()}[/{sev_color}]",
+            f.rule_id,
+            location,
+            f.message,
+        )
+        if getattr(f, "suggestion", None):
+            table.add_row("", "", "", "", f"[dim]→ {f.suggestion}[/dim]")
+
+    console.print(table)
+    console.print()

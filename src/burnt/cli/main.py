@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
-
-if TYPE_CHECKING:
-    from ..parsers.antipatterns import AntiPattern
 from rich.console import Console
 from rich.table import Table
 
+from .._check import run as check_run
 from ..core.config import Settings
 
 app = typer.Typer(
@@ -77,7 +74,7 @@ def check(
         "error", "--fail-on", help="Exit with code 1 on severity: info|warning|error"
     ),
     output: str = typer.Option(
-        "table", "--output", "-o", help="Output format: table|text|json"
+        "table", "--output", "-o", help="Output format: table|text|json|sarif"
     ),
     select: list[str] = typer.Option(  # noqa: B008
         [],
@@ -97,11 +94,21 @@ def check(
     ),
 ) -> None:
     """Check SQL/PySpark files for cost anti-patterns."""
+    import json as json_mod
+
+    from burnt import _SESSION
+    from burnt._check import CheckResult
+    from burnt.display.export import report_to_sarif  # type: ignore[import]
+
     from ..core.rule_filter import RuleIndex
     from ..core.suppression import apply_suppressions, parse_suppressions
-    from ..parsers.antipatterns import detect_antipatterns
+    from ..display import to_table_multi
 
-    _config_path, settings = Settings.discover()
+    try:
+        _config_path, settings = Settings.discover()
+    except Exception as exc:
+        console.print(f"[red]Config error: {exc}[/red]")
+        raise typer.Exit(2) from exc
 
     try:
         index = RuleIndex.build()
@@ -110,8 +117,10 @@ def check(
 
     target = Path(path)
     if not target.exists():
-        _check_inline_sql(path, console)
-        raise typer.Exit(0)
+        # Treat as inline source
+        result = check_run(path=path, severity=fail_on, session=_SESSION)
+        _render_inline(result, output, console)
+        raise typer.Exit(0 if not result.findings else 1)
 
     files_to_check: list[Path] = []
     if target.is_file():
@@ -126,17 +135,15 @@ def check(
         console.print("[yellow]No .sql or .py files found to check.[/yellow]")
         raise typer.Exit(0)
 
-    severity_levels = {"info": 1, "warning": 2, "error": 3}
-    fail_threshold = severity_levels.get(fail_on.lower(), 3)
-
     # Resolve active rule set: config + CLI overrides
     effective_select = settings.lint.select
     effective_extend_select = settings.lint.extend_select + list(extend_select)
     effective_ignore = settings.lint.ignore
-    effective_extend_ignore = settings.lint.extend_ignore + list(ignore) + list(extend_ignore)
+    effective_extend_ignore = (
+        settings.lint.extend_ignore + list(ignore) + list(extend_ignore)
+    )
 
     if index is not None:
-        # CLI --select overrides config select when provided
         if select:
             effective_select = list(select)
             effective_extend_select = list(extend_select)
@@ -147,119 +154,122 @@ def check(
             effective_extend_ignore,
         )
     else:
-        # Fallback: exact-ID matching only
         if settings.lint.select == ["ALL"]:
             active_rules = frozenset(_RULE_SEVERITIES.keys())
         else:
             active_rules = frozenset(settings.lint.select)
         active_rules -= frozenset(effective_extend_ignore) | frozenset(effective_ignore)
 
-    all_issues: list[tuple[Path, AntiPattern]] = []
+    results: list = []
     fail_build = False
 
     for file_path in files_to_check:
         source = file_path.read_text(encoding="utf-8")
-        lang = "pyspark" if file_path.suffix == ".py" else "sql"
 
-        # Per-file ignores from config
-        file_active = set(active_rules)
+        # Per-file ignores → skip list
+        file_skip: set[str] = set()
         if index is not None:
             for glob_pattern, patterns in settings.lint.per_file_ignores.items():
                 if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
                     file_path.name, glob_pattern
                 ):
                     for p in patterns:
-                        file_active -= index.resolve_pattern(p)
+                        file_skip |= index.resolve_pattern(p)
         else:
             for glob_pattern, rule_ids in settings.lint.per_file_ignores.items():
                 if fnmatch.fnmatch(str(file_path), glob_pattern) or fnmatch.fnmatch(
                     file_path.name, glob_pattern
                 ):
-                    file_active -= set(rule_ids)
+                    file_skip |= set(rule_ids)
 
-        issues = detect_antipatterns(source, lang)
-        issues = [i for i in issues if i.name in file_active]
+        # Build only/skip for _check.run
+        only = list(active_rules) if active_rules else None
+        skip = list(file_skip) if file_skip else None
+
+        result = check_run(
+            path=str(file_path),
+            severity=fail_on,
+            skip=skip,
+            only=only,
+            session=_SESSION,
+        )
 
         # Apply comment-based suppressions
         if index is not None:
             file_sup, line_sup, standalone = parse_suppressions(source, index)
-            issues = apply_suppressions(issues, file_sup, line_sup, standalone)
+            result.findings = apply_suppressions(
+                result.findings, file_sup, line_sup, standalone
+            )
 
-        for issue in issues:
-            all_issues.append((file_path, issue))
-            if severity_levels.get(str(issue.severity), 0) >= fail_threshold:
-                fail_build = True
+        # Post-filter by active rules (per-file ignores may have removed some)
+        if active_rules:
+            result.findings = [f for f in result.findings if f.rule_id in active_rules]
 
-    if not all_issues:
+        if result.findings:
+            fail_build = True
+
+        results.append(result)
+
+    if not fail_build:
         console.print("[green]No cost anti-patterns found.[/green]")
         raise typer.Exit(0)
 
     if output == "json":
-        import json
-
-        data = [
-            {
-                "file": str(fp),
-                "rule": issue.name,
-                "severity": issue.severity,
-                "description": issue.description,
-                "suggestion": issue.suggestion,
-            }
-            for fp, issue in all_issues
-        ]
-        console.print(json.dumps(data, indent=2))
+        data = [r.to_json() for r in results]
+        # Use plain print so soft-wrapping doesn't corrupt JSON strings.
+        print(json_mod.dumps(data, indent=2))
+    elif output == "sarif":
+        flat_result = CheckResult(
+            file_path=None,
+            mode="aggregate",
+            findings=[f for r in results for f in r.findings],
+        )
+        sarif = report_to_sarif(flat_result)
+        print(json_mod.dumps(sarif, indent=2))
     elif output == "text":
-        for file_path, issue in all_issues:
+        for result in results:
+            for f in result.findings:
+                color = (
+                    "red"
+                    if f.severity == "error"
+                    else "yellow"
+                    if f.severity == "warning"
+                    else "blue"
+                )
+                fp = getattr(result, "file_path", "unknown")
+                console.print(
+                    f"{fp}: [{color}]{f.severity.upper()}[/{color}] {f.rule_id}: {f.message}"
+                )
+                if f.suggestion:
+                    console.print(f"  [dim]Suggestion: {f.suggestion}[/dim]")
+    else:
+        to_table_multi(results)
+
+    raise typer.Exit(1)
+
+
+def _render_inline(result, output: str, console: Console) -> None:
+    """Render a single-file CheckResult for inline source."""
+    import json as json_mod
+
+    from ..display import to_table
+
+    if output == "json":
+        console.print(json_mod.dumps(result.to_json(), indent=2))
+    elif output == "text":
+        for f in result.findings:
             color = (
                 "red"
-                if issue.severity == "error"
+                if f.severity == "error"
                 else "yellow"
-                if issue.severity == "warning"
+                if f.severity == "warning"
                 else "blue"
             )
             console.print(
-                f"{file_path}: [{color}]{issue.severity.upper()}[/{color}] {issue.name}: {issue.description}"
+                f"[{color}]{f.severity.upper()}[/{color}] {f.rule_id}: {f.message}"
             )
-            console.print(f"  [dim]Suggestion: {issue.suggestion}[/dim]")
     else:
-        # table (default)
-        table = Table(title="Cost Anti-Patterns")
-        table.add_column("File", style="cyan", no_wrap=True)
-        table.add_column("Rule", style="bold")
-        table.add_column("Severity")
-        table.add_column("Description")
-
-        for file_path, issue in all_issues:
-            sev_color = (
-                "red"
-                if issue.severity == "error"
-                else "yellow"
-                if issue.severity == "warning"
-                else "blue"
-            )
-            table.add_row(
-                str(file_path),
-                issue.name,
-                f"[{sev_color}]{issue.severity}[/{sev_color}]",
-                issue.description,
-            )
-        console.print(table)
-
-    if fail_build:
-        raise typer.Exit(1)
-
-
-def _check_inline_sql(sql: str, console: Console) -> None:
-    """Print anti-pattern warnings for an inline SQL string."""
-    from ..parsers.antipatterns import detect_antipatterns
-
-    issues = detect_antipatterns(sql, "sql")
-    if issues:
-        console.print("Warnings:")
-        for issue in issues:
-            console.print(f"  ⚠ {issue.name} — {issue.description}")
-
-    console.print("\nConnect to a workspace for cost estimates: burnt doctor")
+        to_table(result)
 
 
 def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bool:

@@ -1,13 +1,15 @@
 use pyo3::prelude::*;
 
-use crate::types::{CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
+use crate::types::{
+    CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable,
+};
 
-pub mod sdp;
 pub mod python;
+pub mod sdp;
 pub mod sql;
 
-use sdp::SdpGraphBuilder;
 use python::PythonGraphBuilder;
+use sdp::SdpGraphBuilder;
 use sql::SqlGraphBuilder;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -54,8 +54,9 @@ class CheckResult(BaseModel):
         lines.append(f"**Findings:** {len(self.findings)}\n")
         lines.append("")
         for f in self.findings:
-            emoji = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}.get(f.severity, "•")
-            lines.append(f"{emoji} **{f.rule_id}** ({f.severity})")
+            ascii_map = {"error": "[X]", "warning": "[!]", "info": "[i]"}
+            icon = ascii_map.get(f.severity, "•")
+            lines.append(f"{icon} **{f.rule_id}** ({f.severity})")
             lines.append(f"   {f.message}")
             if f.suggestion:
                 lines.append(f"   → {f.suggestion}")
@@ -151,7 +152,7 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
 
     total_compute = 0.0
     for stage in session.stages:
-        total_compute += stage.get("executor_cpu_time_ms", 0) / 1000.0
+        total_compute += stage.get("executor_run_time", 0) / 1000.0
 
     result.compute_seconds = total_compute
 
@@ -168,8 +169,7 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
             )
             if shuffle_bytes > 1e9:  # > 1GB shuffle
                 finding.compute_seconds = (
-                    sum(s.get("executor_cpu_time_ms", 0) for s in session.stages)
-                    / 1000.0
+                    sum(s.get("executor_run_time", 0) for s in session.stages) / 1000.0
                 )
 
 
