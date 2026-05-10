@@ -1,5 +1,48 @@
 use std::collections::HashMap;
 
+pub const KNOWN_FRAMEWORKS: &[&str] = &["pyspark", "spark", "databricks"];
+
+pub const SPARK_METHODS: &[&str] = &[
+    "read",
+    "readStream",
+    "write",
+    "save",
+    "saveAsTable",
+    "select",
+    "filter",
+    "where",
+    "withColumn",
+    "withColumns",
+    "drop",
+    "alias",
+    "join",
+    "groupBy",
+    "groupby",
+    "orderBy",
+    "order_by",
+    "sort",
+    "limit",
+    "distinct",
+    "union",
+    "unionAll",
+    "intersect",
+    "except",
+    "collect",
+    "take",
+    "show",
+    "count",
+    "first",
+    "head",
+    "cache",
+    "persist",
+    "unpersist",
+    "broadcast",
+    "toPandas",
+    "to_pandas",
+    "toJSON",
+    "to_spark",
+];
+
 #[derive(Debug, Clone)]
 pub struct NamespaceTracker {
     simple_imports: HashMap<String, String>,
@@ -75,6 +118,63 @@ impl NamespaceTracker {
         self.resolve(namespace)
             .map(|ns| ns == "sdp" || ns == "dlt" || ns == "dp")
             .unwrap_or(false)
+    }
+
+    pub fn is_spark_namespace(&self, alias: &str) -> bool {
+        self.resolve(alias)
+            .map(|ns| KNOWN_FRAMEWORKS.iter().any(|f| *f == ns))
+            .unwrap_or(false)
+    }
+
+    pub fn is_spark_method(&self, method_name: &str) -> bool {
+        SPARK_METHODS.iter().any(|m| *m == method_name)
+    }
+
+    pub fn extract_call_parts<'a>(&self, call_text: &'a str) -> Option<(&'a str, &'a str)> {
+        if let Some(dot_pos) = call_text.find('.') {
+            if dot_pos > 0 {
+                let ns = &call_text[..dot_pos];
+                let rest = &call_text[dot_pos + 1..];
+                if !ns.is_empty() && !rest.is_empty() {
+                    if let Some(paren_pos) = rest.find('(') {
+                        let method = &rest[..paren_pos];
+                        if !method.is_empty() {
+                            return Some((ns, method));
+                        }
+                    } else {
+                        return Some((ns, rest));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn resolve_call_namespace<'a>(&self, call_text: &'a str) -> Option<&'a str> {
+        self.extract_call_parts(call_text).map(|(ns, _)| ns)
+    }
+
+    pub fn is_namespace_match(&self, call_text: &str, framework_methods_only: bool) -> bool {
+        if let Some((ns, method)) = self.extract_call_parts(call_text) {
+            if KNOWN_FRAMEWORKS.iter().any(|f| *f == ns) {
+                if framework_methods_only {
+                    let method_base = method.split('.').next().unwrap_or(method);
+                    return self.is_spark_method(method_base);
+                }
+                return true;
+            }
+            let resolved = self.resolve(ns);
+            if let Some(resolved_ns) = resolved {
+                if KNOWN_FRAMEWORKS.iter().any(|f| *f == resolved_ns) {
+                    if framework_methods_only {
+                        let method_base = method.split('.').next().unwrap_or(method);
+                        return self.is_spark_method(method_base);
+                    }
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     #[cfg(test)]
@@ -218,11 +318,57 @@ mod tests {
     }
 
     #[test]
-    fn test_alias_import() {
+    fn test_extract_call_parts() {
+        let tracker = NamespaceTracker::new();
+        assert_eq!(
+            tracker.extract_call_parts("spark.read.parquet('path')"),
+            Some(("spark", "read.parquet"))
+        );
+        assert_eq!(
+            tracker.extract_call_parts("my_spark.read.csv('f')"),
+            Some(("my_spark", "read.csv"))
+        );
+        assert_eq!(
+            tracker.extract_call_parts("df.select('x')"),
+            Some(("df", "select"))
+        );
+        assert_eq!(
+            tracker.extract_call_parts("spark.readStream.format('kafka')"),
+            Some(("spark", "readStream.format"))
+        );
+        assert_eq!(tracker.extract_call_parts("no_dot()"), None);
+        assert_eq!(tracker.extract_call_parts(".method()"), None);
+        assert_eq!(tracker.extract_call_parts("ns."), None);
+    }
+
+    #[test]
+    fn test_resolve_call_namespace() {
         let mut tracker = NamespaceTracker::new();
-        tracker.aliases.insert("x".to_string(), "dlt".to_string());
-        assert_eq!(tracker.resolve("x"), Some("dlt"));
-        assert!(tracker.is_dlt_namespace("x"));
+        tracker.add_alias("my_spark", "spark");
+        assert_eq!(
+            tracker.resolve_call_namespace("my_spark.read.parquet('x')"),
+            Some("my_spark")
+        );
+        assert_eq!(
+            tracker.resolve_call_namespace("spark.read.parquet('x')"),
+            Some("spark")
+        );
+        assert_eq!(
+            tracker.resolve_call_namespace("unknown.read.parquet('x')"),
+            Some("unknown")
+        );
+    }
+
+    #[test]
+    fn test_is_namespace_match() {
+        let mut tracker = NamespaceTracker::new();
+        tracker.add_alias("my_spark", "spark");
+        tracker.add_alias("s", "sdp");
+        assert!(tracker.is_namespace_match("my_spark.read.parquet('x')", false));
+        assert!(tracker.is_namespace_match("spark.read.parquet('x')", false));
+        assert!(tracker.is_namespace_match("my_spark.select('x')", false));
+        assert!(!tracker.is_namespace_match("sdp.read.parquet('x')", false));
+        assert!(!tracker.is_namespace_match("pandas.read.csv('x')", false));
     }
 
     #[test]
