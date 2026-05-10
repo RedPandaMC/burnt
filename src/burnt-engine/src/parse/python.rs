@@ -1,3 +1,4 @@
+use crate::parse::namespace::{build_namespace_tracker, NamespaceTracker};
 use crate::types::{Finding, Provenance, PythonParseResult, SdpSignal, SqlFragment};
 use tree_sitter::Parser;
 
@@ -16,14 +17,17 @@ pub fn parse_python(source: &str) -> PythonParseResult {
     let mut sdp_signals = Vec::new();
     let mut findings = Vec::new();
 
+    let ns_tracker = build_namespace_tracker(source, root);
+
     extract_sql_fragments(source, root, &mut sql_fragments, &mut findings);
-    extract_sdp_signals(source, root, &mut sdp_signals);
+    extract_dlt_signals(source, root, &ns_tracker, &mut sdp_signals, &mut findings);
     extract_syntax_errors(&tree, source, &mut findings);
 
     PythonParseResult {
         sql_fragments,
         sdp_signals,
         findings,
+        dlt_namespace: ns_tracker.dlt_namespace().map(String::from),
     }
 }
 
@@ -171,46 +175,61 @@ impl<'a> FragmentVisitor<'a> {
     }
 }
 
-fn extract_sdp_signals(source: &str, root: tree_sitter::Node, sdp_signals: &mut Vec<SdpSignal>) {
-    let mut visitor = SdpSignalVisitor {
+fn extract_dlt_signals(
+    source: &str,
+    root: tree_sitter::Node,
+    ns: &NamespaceTracker,
+    signals: &mut Vec<SdpSignal>,
+    findings: &mut Vec<Finding>,
+) {
+    let mut visitor = DltSignalVisitor {
         source,
-        signals: sdp_signals,
+        ns,
+        signals,
+        findings,
     };
     visitor.visit(&root);
 }
 
-struct SdpSignalVisitor<'a> {
+struct DltSignalVisitor<'a> {
     source: &'a str,
+    ns: &'a NamespaceTracker,
     signals: &'a mut Vec<SdpSignal>,
+    findings: &'a mut Vec<Finding>,
 }
 
-impl<'a> SdpSignalVisitor<'a> {
+impl<'a> DltSignalVisitor<'a> {
     fn visit(&mut self, node: &tree_sitter::Node) {
         match node.kind() {
-            "import_statement" => {
+            "import_statement" | "import_from_statement" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("import sdp") || text.contains("import dp") {
+                if self.ns.dlt_namespace().is_some() {
                     self.signals.push(SdpSignal::Import);
                 }
-            }
-            "import_from_statement" => {
-                let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("from sdp import") || text.contains("from dp import") {
-                    self.signals.push(SdpSignal::Import);
+                if text.contains("import dlt") || text.contains("from dlt import") {
+                    let start = node.start_position();
+                    if self.ns.resolve("dlt").is_none() {
+                        self.findings.push(Finding {
+                            rule_id: "BNT".to_string(),
+                            code: "BN001".to_string(),
+                            severity: crate::types::Severity::Error,
+                            message: "Syntax error: `import dlt` used without DLT namespace alias"
+                                .to_string(),
+                            suggestion: None,
+                            line_number: Some(start.row as u32 + 1),
+                            column: Some(start.column as u32),
+                            confidence: crate::types::Confidence::High,
+                        });
+                    }
                 }
             }
             "decorator" => {
                 let text = node.utf8_text(self.source.as_bytes()).unwrap_or("");
-                if text.contains("@sdp.table")
-                    || text.contains("@dp.table")
-                    || text.contains("@dp.materialized_view")
-                {
-                    if text.contains("materialized_view") {
-                        self.signals
-                            .push(SdpSignal::Decorator("materialized_view".to_string()));
-                    } else if text.contains("table") {
-                        self.signals.push(SdpSignal::Decorator("table".to_string()));
-                    }
+                let Some((ns_part, dec)) = extract_decorator_ns_and_kind(text) else {
+                    return;
+                };
+                if self.ns.is_dlt_namespace(ns_part) {
+                    self.signals.push(SdpSignal::Decorator(dec.to_string()));
                 }
             }
             _ => {}
@@ -221,6 +240,25 @@ impl<'a> SdpSignalVisitor<'a> {
             self.visit(&child);
         }
     }
+}
+
+fn extract_decorator_ns_and_kind(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim();
+    let at_pos = text.find('@')?;
+    let dec = text[at_pos + 1..].trim();
+    if dec.starts_with("dp.") || dec.starts_with("sdp.") || dec.starts_with("dlt.") {
+        if let Some((ns, rest)) = dec.split_once('.') {
+            let kind = if rest.starts_with("materialized_view") {
+                "materialized_view"
+            } else if rest.starts_with("table") {
+                "table"
+            } else {
+                return None;
+            };
+            return Some((ns, kind));
+        }
+    }
+    None
 }
 
 fn extract_syntax_errors(tree: &tree_sitter::Tree, source: &str, findings: &mut Vec<Finding>) {
@@ -268,9 +306,17 @@ mod tests {
     }
 
     #[test]
-    fn test_dlt_import_detection() {
-        let result = parse_python("import dlt\n@dlt.table\ndef my_table(): pass");
+    fn test_sdp_import_detection() {
+        let result = parse_python("import sdp\n@sdp.table\ndef my_table(): pass");
         assert!(!result.sdp_signals.is_empty());
+        assert_eq!(result.dlt_namespace, Some("sdp".to_string()));
+    }
+
+    #[test]
+    fn test_dlt_alias_import_detection() {
+        let result = parse_python("import dlt as dl\n@dl.table\ndef my_table(): pass");
+        assert!(!result.sdp_signals.is_empty());
+        assert_eq!(result.dlt_namespace, Some("dlt".to_string()));
     }
 
     #[test]
@@ -285,5 +331,29 @@ mod tests {
         let result = parse_python("spark.sql(f'SELECT * FROM {table}')");
         assert!(!result.findings.is_empty());
         assert_eq!(result.findings[0].code, "BN002");
+    }
+
+    #[test]
+    fn test_dp_table_alias() {
+        let result = parse_python("import dp as d\n@d.table\ndef t(): pass");
+        assert!(!result.sdp_signals.is_empty());
+        assert_eq!(result.dlt_namespace, Some("dp".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_aliases() {
+        let result = parse_python(
+            "import sdp as sp\nimport dlt as dl\n@sp.table\ndef t1(): pass\n@dl.table\ndef t2(): pass",
+        );
+        assert_eq!(result.sdp_signals.len(), 2);
+        assert!(result.dlt_namespace.is_some());
+    }
+
+    #[test]
+    fn test_namespace_resolve_read_call() {
+        let mut ns = NamespaceTracker::new();
+        ns.add_alias("x", "dlt");
+        assert!(ns.is_read_call("x"));
+        assert!(!ns.is_read_call("y"));
     }
 }
