@@ -1,4 +1,4 @@
-use crate::parse::namespace::{build_namespace_tracker, NamespaceTracker};
+use crate::parse::import_map::ImportMap;
 use crate::types::AnalysisMode;
 use tree_sitter::Parser;
 
@@ -45,7 +45,7 @@ pub fn detect_mode_from_source(source: &str) -> AnalysisMode {
         None => return AnalysisMode::Python,
     };
 
-    let ns = build_namespace_tracker(source, tree.root_node());
+    let ns = ImportMap::build(source, tree.root_node());
 
     let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
@@ -64,25 +64,14 @@ pub fn detect_mode_from_source(source: &str) -> AnalysisMode {
     AnalysisMode::Python
 }
 
-fn is_dlt_decorator(text: &str, ns: &NamespaceTracker) -> bool {
+fn is_dlt_decorator(text: &str, ns: &ImportMap) -> bool {
     let text = text.trim();
     let at_pos = text.find('@').unwrap_or(usize::MAX);
     let after_at = text[at_pos + 1..].trim();
 
     if let Some(dot_pos) = after_at.find('.') {
         let ns_part = &after_at[..dot_pos];
-        if ns.is_dlt_namespace(ns_part) {
-            return true;
-        }
-    }
-
-    if after_at.starts_with("@") {
-        let bare = &after_at[1..];
-        let name_end = bare
-            .find(|c: char| !c.is_alphanumeric() && c != '_')
-            .unwrap_or(bare.len());
-        let name = &bare[..name_end];
-        if ns.is_dlt_namespace(name) {
+        if ns.is_pipeline_ns(ns_part) {
             return true;
         }
     }
