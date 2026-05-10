@@ -31,7 +31,6 @@ def mock_client() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetNodeTypes:
     """Tests for get_node_types."""
 
@@ -68,7 +67,6 @@ class TestGetNodeTypes:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetClusterConfig:
     """Tests for get_cluster_config."""
 
@@ -168,7 +166,6 @@ class TestGetClusterConfig:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetNodeTimeline:
     """Tests for get_node_timeline."""
 
@@ -216,7 +213,6 @@ class TestGetNodeTimeline:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestParseInt:
     """Tests for the _parse_int helper."""
 
