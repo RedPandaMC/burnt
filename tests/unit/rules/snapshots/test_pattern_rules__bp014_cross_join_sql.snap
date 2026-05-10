@@ -1,5 +1,5 @@
 ---
-source: "../../tests/unit/rules/test_tier1_rules.rs"
+source: "../../tests/unit/rules/test_pattern_rules.rs"
 expression: snapshot_data
 ---
 findings: []

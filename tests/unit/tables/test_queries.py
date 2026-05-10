@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from burnt.core.models import QueryRecord
 from burnt.tables.queries import (
     _row_to_record,
@@ -51,7 +49,6 @@ def _make_row(**overrides: object) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestNormalizeSql:
     def test_strips_line_comments(self) -> None:
         sql = "SELECT id -- this is a comment\nFROM t"
@@ -111,7 +108,6 @@ class TestNormalizeSql:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestFingerprintSql:
     def test_same_sql_same_fingerprint(self) -> None:
         sql = "SELECT id FROM users WHERE id = 1"
@@ -144,7 +140,6 @@ class TestFingerprintSql:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestRowToRecord:
     def test_int_fields_coerced(self) -> None:
         row = _make_row(execution_duration_ms="750", read_bytes="2048")
@@ -186,7 +181,6 @@ class TestRowToRecord:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetQueryHistory:
     def test_returns_list_of_query_records(self) -> None:
         client = MagicMock()
@@ -237,7 +231,6 @@ class TestGetQueryHistory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestFindSimilarQueries:
     def _make_client_with_rows(self, rows: list[dict]) -> MagicMock:
         client = MagicMock()

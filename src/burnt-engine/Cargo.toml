@@ -34,8 +34,16 @@ pyo3-build-config = "0.22"
 toml = "0.8"
 
 [[test]]
-name = "test_tier1_rules"
-path = "../../tests/unit/rules/test_tier1_rules.rs"
+name = "test_pattern_rules"
+path = "../../tests/unit/rules/test_pattern_rules.rs"
+
+[[test]]
+name = "test_context_rules"
+path = "../../tests/unit/rules/test_context_rules.rs"
+
+[[test]]
+name = "test_dataflow_rules"
+path = "../../tests/unit/rules/test_dataflow_rules.rs"
 
 [profile.release]
 opt-level = 3

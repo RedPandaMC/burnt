@@ -1,4 +1,4 @@
-//! Tests for Tier 1 rules (simple tree-sitter pattern matching)
+//! Tests for pattern rules (Tier 1 — TOML-defined tree-sitter pattern matching)
 
 use _engine::rules::{run, RulePipeline};
 use insta::assert_yaml_snapshot;
@@ -13,7 +13,6 @@ print(result)
 
     let findings = run(source, "python").unwrap();
 
-    // Create snapshot of findings
     let snapshot_data = serde_json::json!({
         "rule_count": findings.len(),
         "findings": findings.iter().map(|f| {
@@ -123,12 +122,10 @@ fn test_bq001_not_in_with_nulls() {
 
 #[test]
 fn test_rule_pipeline_structure() {
-    let pipeline = RulePipeline::new();
+    let _pipeline = RulePipeline::new();
 
-    // Test that we have rules loaded
     let findings = run("df.collect()", "python").unwrap();
 
-    // Verify the rule pipeline can execute and find findings
     assert!(
         findings.len() >= 0,
         "Rule pipeline should execute without error"

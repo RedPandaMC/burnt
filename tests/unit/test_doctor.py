@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from burnt.cli.main import app
@@ -26,7 +25,6 @@ def _invoke(*args: str) -> object:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_exit_code_zero():
     result = _invoke()
     assert result.exit_code == 0
@@ -37,7 +35,6 @@ def test_doctor_exit_code_zero():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_no_credentials(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in (
@@ -62,7 +59,6 @@ def test_doctor_no_credentials(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_connection_ok(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -79,7 +75,6 @@ def test_doctor_connection_ok(tmp_path, monkeypatch):
     assert "workspace reachable" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_connection_timeout(tmp_path, monkeypatch):
     import requests as req_mod
 
@@ -94,7 +89,6 @@ def test_doctor_connection_timeout(tmp_path, monkeypatch):
     assert "TIMEOUT" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_connection_auth_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -116,7 +110,6 @@ def test_doctor_connection_auth_error(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_token_redacted(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -138,7 +131,6 @@ def test_doctor_token_redacted(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_missing_dependency(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -165,7 +157,6 @@ def test_doctor_missing_dependency(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_with_burnt_toml(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -184,7 +175,6 @@ def test_doctor_with_burnt_toml(tmp_path, monkeypatch):
     assert "300s" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_no_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -202,7 +192,6 @@ def test_doctor_no_config(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_also_found_pyproject(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -221,7 +210,6 @@ def test_doctor_also_found_pyproject(tmp_path, monkeypatch):
     assert "lower priority" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_also_found_burnt_toml(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -246,7 +234,6 @@ def test_doctor_also_found_burnt_toml(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_cache_present(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -263,7 +250,6 @@ def test_doctor_cache_present(tmp_path, monkeypatch):
     assert "2 files" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_cache_absent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for var in ("DATABRICKS_HOST", "DATABRICKS_TOKEN"):
@@ -280,7 +266,6 @@ def test_doctor_cache_absent(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_system_tables_skip_no_warehouse(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -303,7 +288,6 @@ def test_doctor_system_tables_skip_no_warehouse(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_system_tables_ok(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -326,7 +310,6 @@ def test_doctor_system_tables_ok(tmp_path, monkeypatch):
     assert "system.billing.usage" in result.output
 
 
-@pytest.mark.unit
 def test_doctor_system_table_no_access(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABRICKS_HOST", "https://adb-test.azuredatabricks.net")
@@ -360,7 +343,6 @@ def test_doctor_system_table_no_access(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 def test_doctor_shows_python_version(tmp_path, monkeypatch):
     import sys
 
