@@ -1,3 +1,4 @@
+use crate::parse::namespace::NamespaceTracker;
 use crate::types::Finding;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -136,21 +137,35 @@ impl SemanticModel {
         }
     }
 
-    pub fn classify_rhs(&self, source: &str) -> SourceKind {
+    pub fn classify_rhs(&self, source: &str, tracker: &NamespaceTracker) -> SourceKind {
         let source = source.trim();
 
-        if source.starts_with("sdp.read") || source.starts_with("dlt.read_") {
-            return SourceKind::SdpRead;
+        if let Some((ns, method)) = tracker.extract_call_parts(source) {
+            let resolved = tracker.resolve(ns);
+            let method_base = method.split('.').next().unwrap_or(method);
+            if let Some(resolved_ns) = resolved {
+                match resolved_ns {
+                    "sdp" | "dlt" | "dp" => {
+                        if method_base == "read" || method_base.starts_with("read_") {
+                            if resolved_ns == "dp" {
+                                return SourceKind::DpRead;
+                            }
+                            return SourceKind::SdpRead;
+                        }
+                    }
+                    "pyspark" | "spark" | "databricks" => {
+                        if method_base == "readStream" {
+                            return SourceKind::SparkReadStream;
+                        }
+                        if method_base == "read" || method_base.starts_with("read_") {
+                            return SourceKind::SparkRead;
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
-        if source.starts_with("dp.read") || source.starts_with("dp.read_") {
-            return SourceKind::DpRead;
-        }
-        if source.starts_with("spark.readStream") {
-            return SourceKind::SparkReadStream;
-        }
-        if source.starts_with("spark.read") {
-            return SourceKind::SparkRead;
-        }
+
         if source.starts_with("udf.") || source.ends_with("_udf") {
             return SourceKind::Udf;
         }
@@ -212,21 +227,43 @@ mod tests {
     #[test]
     fn test_classify_sdp_read() {
         let model = SemanticModel::new();
+        let mut tracker = NamespaceTracker::new();
+        tracker.add_simple_import("sdp");
+        tracker.add_simple_import("dp");
+        tracker.add_simple_import("spark");
+
         assert!(matches!(
-            model.classify_rhs("sdp.read('table')"),
+            model.classify_rhs("sdp.read('table')", &tracker),
             SourceKind::SdpRead
         ));
         assert!(matches!(
-            model.classify_rhs("dp.read_csv('file')"),
+            model.classify_rhs("dp.read_csv('file')", &tracker),
             SourceKind::DpRead
         ));
         assert!(matches!(
-            model.classify_rhs("spark.read.parquet('path')"),
+            model.classify_rhs("spark.read.parquet('path')", &tracker),
             SourceKind::SparkRead
         ));
         assert!(matches!(
-            model.classify_rhs("spark.readStream.format('kafka')"),
+            model.classify_rhs("spark.readStream.format('kafka')", &tracker),
             SourceKind::SparkReadStream
+        ));
+    }
+
+    #[test]
+    fn test_classify_with_alias() {
+        let model = SemanticModel::new();
+        let mut tracker = NamespaceTracker::new();
+        tracker.add_alias("my_spark", "spark");
+        tracker.add_alias("dl", "dlt");
+
+        assert!(matches!(
+            model.classify_rhs("my_spark.read.parquet('path')", &tracker),
+            SourceKind::SparkRead
+        ));
+        assert!(matches!(
+            model.classify_rhs("dl.read('table')", &tracker),
+            SourceKind::SdpRead
         ));
     }
 
