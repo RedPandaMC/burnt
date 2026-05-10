@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::graph::python::PythonGraphBuilder;
+use crate::parse::namespace::{build_namespace_tracker, NamespaceTracker};
 use crate::types::{CostEdge, PipelineTable, SdpSourceType, SdpTableKind};
 use tree_sitter::{Node, Parser};
 
@@ -13,6 +14,7 @@ pub struct SdpGraphBuilder {
     python_builder: PythonGraphBuilder,
     table_references: HashMap<String, String>,
     parser: Mutex<Parser>,
+    ns_tracker: NamespaceTracker,
 }
 
 impl SdpGraphBuilder {
@@ -25,6 +27,7 @@ impl SdpGraphBuilder {
             python_builder: PythonGraphBuilder::new(),
             table_references: HashMap::new(),
             parser: Mutex::new(Parser::new()),
+            ns_tracker: NamespaceTracker::new(),
         }
     }
 
@@ -41,6 +44,8 @@ impl SdpGraphBuilder {
         };
         let root = tree.root_node();
 
+        self.ns_tracker = build_namespace_tracker(source, root);
+
         self.visit_node(&root, source);
 
         // Also check for SQL DLT definitions
@@ -52,7 +57,10 @@ impl SdpGraphBuilder {
     fn visit_node(&mut self, node: &Node, source: &str) {
         match node.kind() {
             "decorator" => self.handle_decorator(node, source),
-            "function_definition" => self.handle_function_definition(node, source),
+            "function_definition" => {
+                self.handle_function_definition(node, source);
+                return;
+            }
             "call" => self.handle_sdp_call(node, source),
             _ => {}
         }
@@ -64,53 +72,66 @@ impl SdpGraphBuilder {
     }
 
     fn handle_decorator(&mut self, node: &Node, source: &str) {
-        let decorator_text = node
-            .utf8_text(source.as_bytes())
-            .unwrap_or("")
-            .to_lowercase();
+        let decorator_text = node.utf8_text(source.as_bytes()).unwrap_or("");
 
-        if decorator_text.contains("@sdp.table") || decorator_text.contains("@dp.table") {
-            self.start_table(SdpTableKind::StreamingTable, None);
-        } else if decorator_text.contains("@dp.materialized_view") {
-            self.start_table(SdpTableKind::MaterializedView, None);
+        if let Some((ns_part, kind)) = self.extract_decorator_ns_and_kind(decorator_text) {
+            if self.ns_tracker.is_dlt_namespace(ns_part) {
+                let table_kind = if kind == "materialized_view" {
+                    SdpTableKind::MaterializedView
+                } else {
+                    SdpTableKind::StreamingTable
+                };
+                self.start_table(table_kind, None);
+            }
         }
 
-        // Extract expectations from decorator
-        if decorator_text.contains("expect") || decorator_text.contains("constraint") {
+        let lower = decorator_text.to_lowercase();
+        if lower.contains("expect") || lower.contains("constraint") {
             if let Some(table) = &mut self.current_table {
-                if decorator_text.contains("expect_or_drop") {
+                if lower.contains("expect_or_drop") {
                     table.expectations.push("expect_or_drop".to_string());
-                } else if decorator_text.contains("expect_or_fail") {
+                } else if lower.contains("expect_or_fail") {
                     table.expectations.push("expect_or_fail".to_string());
                 }
             }
         }
     }
 
+    fn extract_decorator_ns_and_kind<'a>(
+        &self,
+        decorator_text: &'a str,
+    ) -> Option<(&'a str, &'a str)> {
+        let trimmed = decorator_text.trim();
+        let at_pos = trimmed.find('@')?;
+        let after_at = trimmed[at_pos + 1..].trim();
+
+        if let Some(dot_pos) = after_at.find('.') {
+            let ns_part = &after_at[..dot_pos];
+            let kind = &after_at[dot_pos + 1..];
+            return Some((ns_part, kind));
+        }
+
+        None
+    }
+
     fn handle_function_definition(&mut self, node: &Node, source: &str) {
         if self.current_table.is_some() {
-            // Extract function name as table name
             let mut cursor = node.walk();
             let children: Vec<Node> = node.children(&mut cursor).collect();
 
-            if let Some(name_node) = children.first() {
-                if name_node.kind() == "identifier" {
-                    let table_name = name_node
-                        .utf8_text(source.as_bytes())
-                        .unwrap_or("")
-                        .to_string();
+            let table_name = children
+                .iter()
+                .find(|n| n.kind() == "identifier")
+                .and_then(|n| n.utf8_text(source.as_bytes()).ok().map(String::from));
 
-                    if let Some(table) = &mut self.current_table {
-                        table.name = table_name.clone();
-                        table.id = format!("sdp_table_{}", self.table_counter);
-
-                        // Record table reference
-                        self.table_references.insert(table_name, table.id.clone());
-                    }
+            if let Some(name) = table_name {
+                if let Some(table) = &mut self.current_table {
+                    table.name = name.clone();
+                    table.id = format!("sdp_table_{}", self.table_counter);
+                    self.table_references.insert(name, table.id.clone());
                 }
             }
 
-            // Process function body for inner nodes
             for child in &children {
                 if child.kind() == "block" {
                     let body_source = child.utf8_text(source.as_bytes()).unwrap_or("");
@@ -119,10 +140,14 @@ impl SdpGraphBuilder {
                     if let Some(table) = &mut self.current_table {
                         table.inner_nodes = inner_nodes;
                     }
+
+                    let mut block_cursor = child.walk();
+                    for block_child in child.children(&mut block_cursor) {
+                        self.visit_node(&block_child, source);
+                    }
                 }
             }
 
-            // Finish the table
             if let Some(table) = self.current_table.take() {
                 self.tables.push(table);
             }
@@ -132,12 +157,42 @@ impl SdpGraphBuilder {
     fn handle_sdp_call(&mut self, node: &Node, source: &str) {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
-        if call_text.starts_with("sdp.read") {
-            self.handle_sdp_read(node, source);
-        } else if call_text.starts_with("dp.read") {
-            self.handle_dp_read(node, source);
-        } else if call_text.contains("LIVE.") {
+        if call_text.contains("LIVE.") {
             self.handle_live_ref(node, source);
+            return;
+        }
+
+        if let Some((ns_part, method)) = self.extract_call_ns_and_method(&call_text) {
+            if self.ns_tracker.is_dlt_namespace(ns_part) {
+                if method == "read" || method.starts_with("read_") {
+                    if self.ns_tracker.resolve(ns_part) == Some("dp") || ns_part == "dp" {
+                        self.handle_dp_read(node, source);
+                    } else {
+                        self.handle_sdp_read(node, source);
+                    }
+                }
+            }
+        }
+    }
+
+    fn extract_call_ns_and_method<'a>(&self, call_text: &'a str) -> Option<(&'a str, &'a str)> {
+        let mut search_from = 0;
+        loop {
+            if let Some(dot_pos) = call_text[search_from..].find('.') {
+                let actual_pos = search_from + dot_pos;
+                let ns_part = &call_text[..actual_pos];
+                if ns_part.is_empty() || !self.ns_tracker.is_dlt_namespace(ns_part) {
+                    search_from = actual_pos + 1;
+                    continue;
+                }
+                let method = &call_text[actual_pos + 1..];
+                let method_end = method
+                    .find(|c: char| !c.is_alphanumeric() && c != '_')
+                    .unwrap_or(method.len());
+                let method = &method[..method_end];
+                return Some((ns_part, method));
+            }
+            return None;
         }
     }
 
@@ -347,9 +402,77 @@ def processed_users():
         let (tables, _edges) = builder.build_from_source(source);
 
         assert!(!tables.is_empty());
-        // Note: source_type detection needs improvement
-        // assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
-        // For now, just check that we have a table
+        assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
+    }
+
+    #[test]
+    fn test_build_dlt_table_with_alias() {
+        let source = r#"
+import dlt as dl
+
+@dl.table
+def my_table():
+    return spark.read.parquet("s3://data")
+"#;
+
+        let mut builder = SdpGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
+
+        assert!(!tables.is_empty());
+        assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
+        assert_eq!(tables[0].name, "my_table");
+    }
+
+    #[test]
+    fn test_build_from_import_alias() {
+        let source = r#"
+from dlt import table as t
+
+@t.table
+def my_table():
+    return spark.read.parquet("s3://data")
+"#;
+
+        let mut builder = SdpGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
+
+        assert!(!tables.is_empty());
+        assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
+        assert_eq!(tables[0].name, "my_table");
+    }
+
+    #[test]
+    fn test_build_dlt_read_with_alias() {
+        let source = r#"
+import dlt as dl
+
+@dl.table
+def processed():
+    return dl.read("raw").select("id", "name")
+"#;
+
+        let mut builder = SdpGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
+
+        assert!(!tables.is_empty());
+        assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
+    }
+
+    #[test]
+    fn test_build_dp_read_with_alias() {
+        let source = r#"
+import dp as d
+
+@d.table
+def my_table():
+    return d.read_csv("data.csv")
+"#;
+
+        let mut builder = SdpGraphBuilder::new();
+        let (tables, _edges) = builder.build_from_source(source);
+
+        assert!(!tables.is_empty());
+        assert_eq!(tables[0].source_type, SdpSourceType::DpRead);
     }
 }
