@@ -141,3 +141,66 @@ pub struct ExecutorSummary {
     #[serde(default)]
     pub max_memory: i64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_stage_metrics() {
+        let json = r#"{"stageId": 1, "name": "hashAgg", "status": "COMPLETE", "numActiveTasks": 0, "numCompleteTasks": 8, "numFailedTasks": 0, "executorRunTime": 1234, "executorCpuTime": 1100, "inputBytes": 1048576, "outputBytes": 524288}"#;
+        let stage: StageMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(stage.stage_id, 1);
+        assert_eq!(stage.name, "hashAgg");
+        assert_eq!(stage.status, "COMPLETE");
+        assert_eq!(stage.input_bytes, 1048576);
+    }
+
+    #[test]
+    fn test_deserialize_stage_metrics_minimal() {
+        let json = r#"{"stageId": 0, "name": "minimal"}"#;
+        let stage: StageMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(stage.stage_id, 0);
+        assert_eq!(stage.status, "");
+        assert_eq!(stage.num_active_tasks, 0);
+        assert_eq!(stage.input_bytes, 0);
+    }
+
+    #[test]
+    fn test_deserialize_job_summary() {
+        let json = r#"{"jobId": 5, "name": "collect at <stdin>:1", "status": "SUCCEEDED", "numStages": 1, "numCompletedStages": 1, "numTasks": 2, "numCompletedTasks": 2}"#;
+        let job: JobSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(job.job_id, 5);
+        assert_eq!(job.status, "SUCCEEDED");
+        assert_eq!(job.num_completed_stages, 1);
+    }
+
+    #[test]
+    fn test_deserialize_sql_execution() {
+        let json = r#"{"id": 42, "description": "SELECT * FROM t", "status": "COMPLETED", "submissionTime": 1700000000000, "duration": 5000, "runningJobs": [], "successJobs": [1, 2], "failedJobs": []}"#;
+        let sql: SqlExecution = serde_json::from_str(json).unwrap();
+        assert_eq!(sql.id, 42);
+        assert_eq!(sql.duration, Some(5000));
+        assert_eq!(sql.success_jobs, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_deserialize_executor_summary() {
+        let json = r#"{"id": "driver", "hostPort": "10.0.0.1:4040", "isActive": true, "rddBlocks": 0, "memoryUsed": 268435456, "diskUsed": 0, "totalCores": 4, "maxTasks": 4, "activeTasks": 0, "failedTasks": 0, "completedTasks": 0, "totalTasks": 0, "totalDuration": 0, "totalGcTime": 0, "totalInputBytes": 0, "totalShuffleRead": 0, "totalShuffleWrite": 0, "maxMemory": 536870912}"#;
+        let exec: ExecutorSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(exec.id, "driver");
+        assert!(exec.is_active);
+        assert_eq!(exec.total_cores, 4);
+        assert_eq!(exec.memory_used, 268435456);
+    }
+
+    #[test]
+    fn test_deserialize_executor_summary_inactive() {
+        let json = r#"{"id": "1", "hostPort": "10.0.0.2:4041", "isActive": false}"#;
+        let exec: ExecutorSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(exec.id, "1");
+        assert!(!exec.is_active);
+        assert_eq!(exec.total_cores, 0);
+        assert_eq!(exec.memory_used, 0);
+    }
+}
