@@ -24,7 +24,7 @@ impl SqlGraphBuilder {
         }
     }
 
-    pub fn build_from_source(&mut self, source: &str) -> (Vec<CostNode>, Vec<CostEdge>) {
+    pub fn build_from_source(mut self, source: &str) -> (Vec<CostNode>, Vec<CostEdge>) {
         let statements = match Parser::parse_sql(&DatabricksDialect {}, source) {
             Ok(stmts) => stmts,
             Err(_) => return (Vec::new(), Vec::new()),
@@ -37,7 +37,7 @@ impl SqlGraphBuilder {
         // Create edges between table definitions and references
         self.create_table_edges();
 
-        (self.nodes.clone(), self.edges.clone())
+        (self.nodes, self.edges)
     }
 
     fn process_statement(&mut self, stmt: &Statement, statement_index: u32) {
@@ -357,8 +357,7 @@ mod tests {
     fn test_build_select_with_group_by() {
         let source = "SELECT user_id, COUNT(*) FROM orders GROUP BY user_id";
 
-        let mut builder = SqlGraphBuilder::new();
-        let (nodes, _edges) = builder.build_from_source(source);
+        let (nodes, _edges) = SqlGraphBuilder::new().build_from_source(source);
 
         assert!(!nodes.is_empty());
 
@@ -374,8 +373,7 @@ mod tests {
         let source =
             "CREATE TABLE results AS SELECT * FROM users JOIN orders ON users.id = orders.user_id";
 
-        let mut builder = SqlGraphBuilder::new();
-        let (nodes, _edges) = builder.build_from_source(source);
+        let (nodes, _edges) = SqlGraphBuilder::new().build_from_source(source);
 
         assert!(!nodes.is_empty());
 

@@ -24,8 +24,7 @@ pub struct CostGraph {
 
 impl CostGraph {
     pub fn from_python(source: &str) -> Result<Self, PyErr> {
-        let mut builder = PythonGraphBuilder::new();
-        let (nodes, edges, findings) = builder.build_from_source(source);
+        let (nodes, edges, findings) = PythonGraphBuilder::new().build_from_source(source);
 
         Ok(CostGraph {
             nodes,
@@ -37,8 +36,7 @@ impl CostGraph {
     }
 
     pub fn from_sql(source: &str) -> Result<Self, PyErr> {
-        let mut builder = SqlGraphBuilder::new();
-        let (nodes, edges) = builder.build_from_source(source);
+        let (nodes, edges) = SqlGraphBuilder::new().build_from_source(source);
 
         Ok(CostGraph {
             nodes,
