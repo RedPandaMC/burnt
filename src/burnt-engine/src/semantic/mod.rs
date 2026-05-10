@@ -1,4 +1,3 @@
-
 use crate::types::Finding;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,43 +27,8 @@ pub enum BindingKind {
 }
 
 #[derive(Debug, Clone)]
-pub enum SourceKind {
-    SdpRead,
-    DpRead,
-    SparkRead,
-    SparkReadStream,
-    TableRef,
-    Constant,
-    Udf,
-    Unknown,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainContext {
-    pub actions: Vec<ChainAction>,
-    pub has_limit: bool,
-    pub has_select: bool,
-    pub has_filter: bool,
-    pub is_streaming: bool,
-    pub source_tables: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ChainAction {
-    Read,
-    ReadStream,
-    Write,
-    Transform,
-    Collect,
-    Show,
-    Limit,
-    Filter,
-    Select,
-}
-
-#[derive(Debug, Clone)]
 pub struct SemanticModel {
-    scopes: Vec<Scope>,
+    pub(crate) scopes: Vec<Scope>,
     bindings: HashMap<String, Binding>,
     findings: Vec<Finding>,
 }
@@ -82,6 +46,7 @@ impl SemanticModel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn push_scope(&mut self, name: String) {
         let parent = self.scopes.last().map(|s| s.name.clone());
         self.scopes.push(Scope {
@@ -91,6 +56,7 @@ impl SemanticModel {
         });
     }
 
+    #[allow(dead_code)]
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
@@ -131,45 +97,7 @@ impl SemanticModel {
         }
     }
 
-    pub fn record_use(&mut self, name: &str, line: u32) {
-        if let Some(binding) = self.bindings.get_mut(name) {
-            binding.used_at_lines.push(line);
-        }
-    }
-
-    pub fn classify_rhs(&self, source: &str) -> SourceKind {
-        let source = source.trim();
-
-        if source.starts_with("sdp.read") || source.starts_with("dlt.read_") {
-            return SourceKind::SdpRead;
-        }
-        if source.starts_with("dp.read") || source.starts_with("dp.read_") {
-            return SourceKind::DpRead;
-        }
-        if source.starts_with("spark.readStream") {
-            return SourceKind::SparkReadStream;
-        }
-        if source.starts_with("spark.read") {
-            return SourceKind::SparkRead;
-        }
-        if source.starts_with("udf.") || source.ends_with("_udf") {
-            return SourceKind::Udf;
-        }
-
-        SourceKind::Unknown
-    }
-
-    pub fn build_chain_context(&self, actions: Vec<ChainAction>) -> ChainContext {
-        ChainContext {
-            has_limit: actions.contains(&ChainAction::Limit),
-            has_select: actions.contains(&ChainAction::Select),
-            has_filter: actions.contains(&ChainAction::Filter),
-            is_streaming: actions.contains(&ChainAction::ReadStream),
-            actions,
-            source_tables: Vec::new(),
-        }
-    }
-
+    #[allow(dead_code)]
     pub fn get_bindings(&self) -> &HashMap<String, Binding> {
         &self.bindings
     }
@@ -185,17 +113,6 @@ impl Default for SemanticModel {
     }
 }
 
-pub fn analyze_bindings(source: &str) -> Vec<Binding> {
-    let model = SemanticModel::new();
-    crate::parse::python::parse_python(source);
-    model.get_bindings().values().cloned().collect()
-}
-
-pub fn analyze_scope(source: &str) -> Vec<Scope> {
-    let _ = source;
-    Vec::new()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,43 +125,6 @@ mod tests {
 
         assert!(!model.get_findings().is_empty());
         assert_eq!(model.get_findings()[0].code, "BN003");
-    }
-
-    #[test]
-    fn test_classify_dlt_read() {
-        let model = SemanticModel::new();
-        assert!(matches!(
-            model.classify_rhs("dlt.read('table')"),
-            SourceKind::SdpRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("dp.read_csv('file')"),
-            SourceKind::DpRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("spark.read.parquet('path')"),
-            SourceKind::SparkRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("spark.readStream.format('kafka')"),
-            SourceKind::SparkReadStream
-        ));
-    }
-
-    #[test]
-    fn test_chain_context() {
-        let model = SemanticModel::new();
-        let ctx = model.build_chain_context(vec![
-            ChainAction::Read,
-            ChainAction::Filter,
-            ChainAction::Select,
-            ChainAction::Limit,
-        ]);
-
-        assert!(ctx.has_limit);
-        assert!(ctx.has_select);
-        assert!(ctx.has_filter);
-        assert!(!ctx.is_streaming);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .export import to_json, to_markdown
-from .terminal import to_table
+from .terminal import to_table, to_table_multi
 
 
 def auto_render(result) -> None:
@@ -16,4 +16,5 @@ __all__ = [
     "to_json",
     "to_markdown",
     "to_table",
+    "to_table_multi",
 ]

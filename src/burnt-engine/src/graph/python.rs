@@ -24,20 +24,22 @@ impl PythonGraphBuilder {
     /// Returns `(nodes, edges, semantic_findings)`. Semantic findings include
     /// shadow-variable warnings (BN003) accumulated during AST traversal.
     pub fn build_from_source(
-        &mut self,
+        mut self,
         source: &str,
     ) -> (Vec<CostNode>, Vec<CostEdge>, Vec<Finding>) {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
             .expect("tree-sitter-python grammar failed to load");
-        let tree = parser.parse(source, None).expect("tree-sitter failed to parse");
+        let tree = parser
+            .parse(source, None)
+            .expect("tree-sitter failed to parse");
         let root = tree.root_node();
 
         self.visit_node(&root, source);
 
         let findings = self.semantic_model.get_findings().to_vec();
-        (self.nodes.clone(), self.edges.clone(), findings)
+        (self.nodes, self.edges, findings)
     }
 
     fn visit_node(&mut self, node: &Node, source: &str) {
@@ -196,6 +198,12 @@ impl PythonGraphBuilder {
     }
 }
 
+impl Default for PythonGraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,8 +212,7 @@ mod tests {
     fn test_build_spark_read() {
         let source = r#"df = spark.read.parquet("s3://bucket/data")"#;
 
-        let mut builder = PythonGraphBuilder::new();
-        let (nodes, _edges, _findings) = builder.build_from_source(source);
+        let (nodes, _edges, _findings) = PythonGraphBuilder::new().build_from_source(source);
 
         let read_nodes: Vec<&CostNode> = nodes
             .iter()
@@ -226,8 +233,7 @@ df2 = df.select("col1", "col2").filter("col1 > 0")
 df2.write.mode("overwrite").parquet("output.parquet")
 "#;
 
-        let mut builder = PythonGraphBuilder::new();
-        let (nodes, _edges, _findings) = builder.build_from_source(source);
+        let (nodes, _edges, _findings) = PythonGraphBuilder::new().build_from_source(source);
 
         assert!(!nodes.is_empty());
 
@@ -235,9 +241,7 @@ df2.write.mode("overwrite").parquet("output.parquet")
         assert!(nodes
             .iter()
             .any(|n| matches!(n.kind, OperationKind::Transform)));
-        assert!(nodes
-            .iter()
-            .any(|n| matches!(n.kind, OperationKind::Write)));
+        assert!(nodes.iter().any(|n| matches!(n.kind, OperationKind::Write)));
     }
 
     #[test]
@@ -246,8 +250,7 @@ df2.write.mode("overwrite").parquet("output.parquet")
 x = spark.read.parquet("path")
 x = spark.read.csv("other")
 "#;
-        let mut builder = PythonGraphBuilder::new();
-        let (_nodes, _edges, findings) = builder.build_from_source(source);
+        let (_nodes, _edges, findings) = PythonGraphBuilder::new().build_from_source(source);
         // BN003 should fire for the shadow of `x`
         assert!(
             findings.iter().any(|f| f.code == "BN003"),

@@ -10,7 +10,7 @@ findings:
     severity: Error
   - code: BNT-N01
     line: 2
-    message: "Variable named 'df' is too generic — hinders readability"
-    rule_id: BNT-N01
+    message: Variable named df/df1-df9 is too generic — hinders readability
+    rule_id: generic_dataframe_variable_name
     severity: Info
 rule_count: 2

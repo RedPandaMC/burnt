@@ -1,8 +1,12 @@
+use crate::parse::import_map::ImportMap;
 use crate::types::{CompiledRule, Confidence, Finding as TypesFinding, RuleEntry};
 use pyo3::prelude::*;
 use std::sync::OnceLock;
+use tree_sitter::Parser;
 
+pub mod rule;
 mod context;
+pub(crate) mod context_structs;
 mod dataflow;
 pub(crate) mod finding;
 mod notebook_queries;
@@ -17,10 +21,12 @@ mod generated_tests {
 
 pub use notebook_queries::NotebookQueryEngine;
 pub use query::{QueryEngine, QueryError};
+pub use rule::{AnalysisCtx, LanguageFilter, Rule, RuleMeta};
 
-#[pyclass]
+/// PyO3-exposed rule descriptor. Exposed to Python as `Rule`.
+#[pyclass(name = "Rule")]
 #[derive(Clone)]
-pub struct Rule {
+pub struct PyRuleInfo {
     #[pyo3(get)]
     pub id: String,
     #[pyo3(get)]
@@ -56,7 +62,19 @@ impl RulePipeline {
         let mut pattern_findings = self.execute_pattern_rules(source, language);
         findings.append(&mut pattern_findings);
 
-        let mut context_findings = self.execute_context_rules(source, language);
+        let tracker = if language == "python" || language == "sdp" {
+            let mut parser = Parser::new();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .ok();
+            parser
+                .parse(source, None)
+                .map(|tree| ImportMap::build(source, tree.root_node()))
+        } else {
+            None
+        };
+
+        let mut context_findings = self.execute_context_rules(source, language, tracker.as_ref());
         findings.append(&mut context_findings);
 
         let mut dataflow_findings = self.execute_dataflow_rules(source, language);
@@ -88,12 +106,19 @@ impl RulePipeline {
         findings
     }
 
-    fn execute_context_rules(&self, source: &str, language: &str) -> Vec<TypesFinding> {
+    fn execute_context_rules(
+        &self,
+        source: &str,
+        language: &str,
+        tracker: Option<&ImportMap>,
+    ) -> Vec<TypesFinding> {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
             if rule.has_context && lang_matches(&rule.language, language) {
-                findings.extend(context::analyze_context_for_rule(&rule.code, source));
+                findings.extend(context::analyze_context_for_rule(
+                    &rule.code, source, tracker,
+                ));
             }
         }
 
@@ -184,6 +209,65 @@ static PIPELINE: OnceLock<RulePipeline> = OnceLock::new();
 pub fn run(source: &str, language: &str) -> Result<Vec<TypesFinding>, String> {
     let pipeline = PIPELINE.get_or_init(RulePipeline::new);
     Ok(pipeline.execute(source, language))
+}
+
+// ── RuleEngine — trait-based extensible engine ───────────────────────────────
+
+/// A trait-object–based rule engine. Register rules via [`RuleEngine::add`].
+/// Coexists with [`RulePipeline`] during the migration period; rules migrated
+/// to the [`Rule`] trait are registered here and run in addition to the
+/// data-driven pipeline.
+pub struct RuleEngine {
+    rules: Vec<Box<dyn Rule>>,
+}
+
+impl RuleEngine {
+    pub fn new() -> Self {
+        Self {
+            rules: Vec::new(),
+        }
+    }
+
+    /// Register a rule implementation.
+    pub fn add<R: Rule + 'static>(&mut self, rule: R) {
+        self.rules.push(Box::new(rule));
+    }
+
+    /// Run all registered rules against `source` in `language`.
+    pub fn run(&self, source: &str, language: &str) -> Vec<TypesFinding> {
+        if self.rules.is_empty() {
+            return Vec::new();
+        }
+
+        let mut parser = Parser::new();
+        let tree = if language == "python" || language == "sdp" {
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .ok();
+            parser.parse(source, None)
+        } else {
+            None
+        };
+
+        let import_map = tree
+            .as_ref()
+            .map(|t| ImportMap::build(source, t.root_node()))
+            .unwrap_or_default();
+
+        let ctx = AnalysisCtx::new(source, language, &import_map, tree.as_ref());
+
+        self.rules
+            .iter()
+            .filter(|r| r.language().matches(language))
+            .flat_map(|r| r.check(&ctx))
+            .collect()
+    }
+}
+
+impl Default for RuleEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub fn list_all() -> Vec<RuleEntry> {

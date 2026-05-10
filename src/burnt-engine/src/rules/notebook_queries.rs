@@ -1,11 +1,8 @@
-use crate::rules::query::QueryEngine;
 use crate::types::{CellKind, Confidence, Finding, Severity};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-pub struct NotebookQueryEngine {
-    query_engine: QueryEngine,
-}
+pub struct NotebookQueryEngine {}
 
 #[derive(Debug, Clone)]
 pub struct MagicCell {
@@ -23,9 +20,7 @@ pub struct RunDirective {
 
 impl NotebookQueryEngine {
     pub fn new() -> Self {
-        Self {
-            query_engine: QueryEngine::new(),
-        }
+        Self {}
     }
 
     pub fn detect_magic_cells(&self, source: &str) -> Vec<MagicCell> {
@@ -119,7 +114,7 @@ impl NotebookQueryEngine {
 
     pub fn detect_circular_runs(
         &self,
-        entry_path: &PathBuf,
+        entry_path: &Path,
         visited: &mut HashSet<PathBuf>,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
@@ -138,7 +133,7 @@ impl NotebookQueryEngine {
         }
 
         if let Ok(content) = std::fs::read_to_string(entry_path) {
-            visited.insert(entry_path.clone());
+            visited.insert(entry_path.to_path_buf());
             let directives = self.find_run_directives(&content);
 
             for directive in directives {
@@ -159,7 +154,7 @@ impl NotebookQueryEngine {
         findings
     }
 
-    pub fn check_missing_run_targets(&self, source: &str, base_path: &PathBuf) -> Vec<Finding> {
+    pub fn check_missing_run_targets(&self, source: &str, base_path: &Path) -> Vec<Finding> {
         let mut findings = Vec::new();
         let directives = self.find_run_directives(source);
 

@@ -53,6 +53,11 @@ def parse_suppressions(
     return frozenset(file_suppressed), line_suppressed, frozenset(standalone_lines)
 
 
+def _rule_id(f: object) -> str:
+    """Extract rule ID from a finding-like object."""
+    return getattr(f, "rule_id", getattr(f, "name", ""))
+
+
 def apply_suppressions(
     findings: list,
     file_suppressed: frozenset[str],
@@ -62,15 +67,18 @@ def apply_suppressions(
     """Filter out findings that are suppressed by comments."""
     result = []
     for f in findings:
-        if f.name in file_suppressed:
+        rid = _rule_id(f)
+        if rid in file_suppressed:
             continue
-        ln = f.line_number
+        ln = getattr(f, "line_number", None)
         if ln is not None:
-            if f.name in line_suppressed.get(ln, frozenset()):
+            if rid in line_suppressed.get(ln, frozenset()):
                 continue
             # standalone comment on the previous line suppresses this line
             prev = ln - 1
-            if prev in standalone_lines and f.name in line_suppressed.get(prev, frozenset()):
+            if prev in standalone_lines and rid in line_suppressed.get(
+                prev, frozenset()
+            ):
                 continue
         result.append(f)
     return result

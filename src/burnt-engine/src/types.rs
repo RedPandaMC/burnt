@@ -27,6 +27,7 @@ pub struct PythonParseResult {
     pub sql_fragments: Vec<SqlFragment>,
     pub sdp_signals: Vec<SdpSignal>,
     pub findings: Vec<Finding>,
+    pub dlt_namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Display, Serialize, Deserialize, PartialEq, Eq)]
@@ -204,7 +205,6 @@ pub struct RuleEntry {
     #[pyo3(get)]
     pub tags: Vec<String>,
 }
-
 
 // Types for enhanced rule system with tree-sitter queries
 #[derive(Debug, Clone, Serialize, Deserialize)]

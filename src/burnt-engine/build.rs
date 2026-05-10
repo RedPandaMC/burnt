@@ -233,7 +233,6 @@ fn generate_registry_code(rules: &[String]) -> String {
     )
 }
 
-
 fn generate_tests_code(tests: &[(String, String, Vec<String>, Vec<String>)]) -> String {
     let mut test_fns = String::new();
 

@@ -1,13 +1,15 @@
 use pyo3::prelude::*;
 
-use crate::types::{CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable};
+use crate::types::{
+    CostEdge, CostNode, Finding, PipelineTable, PyCostEdge, PyCostNode, PyPipelineTable,
+};
 
-pub mod sdp;
 pub mod python;
+pub mod sdp;
 pub mod sql;
 
-use sdp::SdpGraphBuilder;
 use python::PythonGraphBuilder;
+use sdp::SdpGraphBuilder;
 use sql::SqlGraphBuilder;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -22,8 +24,7 @@ pub struct CostGraph {
 
 impl CostGraph {
     pub fn from_python(source: &str) -> Result<Self, PyErr> {
-        let mut builder = PythonGraphBuilder::new();
-        let (nodes, edges, findings) = builder.build_from_source(source);
+        let (nodes, edges, findings) = PythonGraphBuilder::new().build_from_source(source);
 
         Ok(CostGraph {
             nodes,
@@ -35,8 +36,7 @@ impl CostGraph {
     }
 
     pub fn from_sql(source: &str) -> Result<Self, PyErr> {
-        let mut builder = SqlGraphBuilder::new();
-        let (nodes, edges) = builder.build_from_source(source);
+        let (nodes, edges) = SqlGraphBuilder::new().build_from_source(source);
 
         Ok(CostGraph {
             nodes,
@@ -57,8 +57,7 @@ pub struct PipelineGraph {
 
 impl PipelineGraph {
     pub fn from_sdp(source: &str) -> Self {
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         PipelineGraph {
             tables,

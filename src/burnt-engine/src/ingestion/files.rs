@@ -35,8 +35,7 @@ pub fn ingest_file(path: &str) -> Result<SourceFile, String> {
 
     let cells: Vec<Cell> = raw_cells
         .into_iter()
-        .enumerate()
-        .map(|(_, (kind, source, line_offset))| Cell {
+        .map(|(kind, source, line_offset)| Cell {
             kind,
             source,
             byte_offset: 0,
@@ -177,5 +176,48 @@ mod tests {
         assert_eq!(nb.path, "test.ipynb");
         assert_eq!(nb.cells.len(), 1);
         assert_eq!(nb.cells[0].source, "print('hello')\nprint('world')");
+    }
+
+    #[test]
+    fn test_parse_ipynb_empty_notebook() {
+        let content = r###"{"cells": []}"###;
+        let result = parse_ipynb(content, "empty.ipynb");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().cells.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_ipynb_markdown_only() {
+        let content = r###"{
+            "cells": [
+                {"cell_type": "markdown", "source": ["## No code here"]},
+                {"cell_type": "raw", "source": ["raw content"]}
+            ]
+        }"###;
+        let result = parse_ipynb(content, "docs.ipynb");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().cells.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_ipynb_string_source() {
+        let content = r###"{
+            "cells": [
+                {"cell_type": "code", "source": "print('single string')"},
+                {"cell_type": "code", "source": "x = 1\ny = 2"}
+            ]
+        }"###;
+        let result = parse_ipynb(content, "strings.ipynb");
+        assert!(result.is_ok());
+        let nb = result.unwrap();
+        assert_eq!(nb.cells.len(), 2);
+        assert_eq!(nb.cells[0].source, "print('single string')");
+        assert_eq!(nb.cells[1].source, "x = 1\ny = 2");
+    }
+
+    #[test]
+    fn test_parse_ipynb_malformed_json() {
+        let result = parse_ipynb("not json at all", "bad.ipynb");
+        assert!(result.is_err());
     }
 }
