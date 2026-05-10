@@ -1,0 +1,6 @@
+---
+source: "../../tests/unit/rules/test_tier1_rules.rs"
+expression: snapshot_data
+---
+findings: []
+rule_count: 0
