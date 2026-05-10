@@ -35,8 +35,7 @@ pub fn ingest_file(path: &str) -> Result<SourceFile, String> {
 
     let cells: Vec<Cell> = raw_cells
         .into_iter()
-        .enumerate()
-        .map(|(_, (kind, source, line_offset))| Cell {
+        .map(|(kind, source, line_offset)| Cell {
             kind,
             source,
             byte_offset: 0,

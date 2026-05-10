@@ -222,7 +222,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCostEdge>()?;
     m.add_class::<PyPipelineTable>()?;
     m.add_class::<types::Finding>()?;
-    m.add_class::<rules::Rule>()?;
+    m.add_class::<rules::PyRuleInfo>()?;
     m.add_class::<Cell>()?;
     m.add_class::<CellKind>()?;
     m.add_class::<AnalysisMode>()?;
