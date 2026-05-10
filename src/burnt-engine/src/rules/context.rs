@@ -1,10 +1,12 @@
+use crate::parse::namespace::NamespaceTracker;
 use crate::types::{Confidence, Finding, Severity};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use super::context_structs::RuleContext;
 use super::finding::make_finding;
 
-type ContextFn = fn(&str) -> Vec<Finding>;
+type ContextFn = fn(&str, &RuleContext) -> Vec<Finding>;
 
 static DISPATCH: OnceLock<HashMap<&'static str, ContextFn>> = OnceLock::new();
 
@@ -18,7 +20,6 @@ fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
         m.insert("BP023", check_window_without_partition);
         m.insert("BQ004", check_correlated_subquery);
         m.insert("SDP006", check_materialized_view_incremental);
-        // Phase 3 — Tier 2 rules
         m.insert("BD010", check_overwrite_without_replace_where);
         m.insert("BD013", check_csv_json_analytical_write);
         m.insert("BD020", check_optimize_without_where);
@@ -32,7 +33,6 @@ fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
         m.insert("BS003", check_event_time_no_watermark);
         m.insert("BS004", check_foreach_batch_no_idempotency);
         m.insert("BU001", check_two_part_table_name);
-        // Phase 3 — remaining Tier 2 rules
         m.insert("BD014", check_parquet_write_databricks);
         m.insert("BS002", check_readstream_no_trigger);
         m.insert("BS006", check_stream_static_join_non_delta);
@@ -52,14 +52,21 @@ fn get_dispatch() -> &'static HashMap<&'static str, ContextFn> {
     })
 }
 
-pub fn analyze_context_for_rule(rule_code: &str, source: &str) -> Vec<Finding> {
+pub fn analyze_context_for_rule(
+    rule_code: &str,
+    source: &str,
+    tracker: Option<&NamespaceTracker>,
+) -> Vec<Finding> {
+    let default_tracker = NamespaceTracker::new();
+    let tracker = tracker.unwrap_or(&default_tracker);
+    let ctx = RuleContext::new(source, tracker);
     get_dispatch()
         .get(rule_code)
-        .map(|f| f(source))
+        .map(|f| f(source, &ctx))
         .unwrap_or_default()
 }
 
-fn check_jdbc_partition(source: &str) -> Vec<Finding> {
+fn check_jdbc_partition(source: &str, ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     let has_jdbc = source.contains("jdbc");
@@ -68,9 +75,22 @@ fn check_jdbc_partition(source: &str) -> Vec<Finding> {
         || source.contains("lowerBound")
         || source.contains("upperBound");
 
+    let has_spark_read = source.split('\n').any(|line| {
+        let trimmed = line.trim();
+        if let Some((ns, method)) = ctx.tracker.extract_call_parts(trimmed) {
+            if ctx.tracker.is_spark_namespace(ns) {
+                let method_base = method.split('.').next().unwrap_or(method);
+                if method_base == "read" || method_base.starts_with("read_") {
+                    return true;
+                }
+            }
+        }
+        false
+    });
+
     if has_jdbc
         && !has_partition_options
-        && (source.contains(".read(") || source.contains("spark.read"))
+        && (source.contains(".read(") || source.contains(".jdbc(") || has_spark_read)
     {
         findings.push(make_finding(
             "BP021",
@@ -85,29 +105,40 @@ fn check_jdbc_partition(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
+fn check_sdp_prohibited_ops(source: &str, ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
     let prohibited = ["write", "collect", "show", "display"];
+
+    let is_in_sdp_context = ctx.is_sdp_context();
 
     let lines: Vec<&str> = source.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        if trimmed.contains("@sdp.") || trimmed.contains("sdp.") {
-            for op in &prohibited {
-                if trimmed.contains(&format!(".{}(", op)) {
-                    findings.push(make_finding(
-                        "BP022",
-                        Severity::Error,
-                        &format!(
-                            "Prohibited operation (.{}()) inside Spark Declarative Pipeline function",
-                            op
-                        ),
-                        "Remove this operation from SDP pipeline code",
-                        (i + 1) as u32,
-                        Confidence::High,
-                    ));
-                }
+        let contains_sdp_ref = trimmed.contains("@sdp.")
+            || trimmed.contains("sdp.")
+            || trimmed.contains("@dlt.")
+            || trimmed.contains("dlt.")
+            || trimmed.contains("@dp.")
+            || trimmed.contains("dp.");
+
+        if !is_in_sdp_context && !contains_sdp_ref {
+            continue;
+        }
+
+        for op in &prohibited {
+            if trimmed.contains(&format!(".{}(", op)) {
+                findings.push(make_finding(
+                    "BP022",
+                    Severity::Error,
+                    &format!(
+                        "Prohibited operation (.{}()) inside Spark Declarative Pipeline function",
+                        op
+                    ),
+                    "Remove this operation from SDP pipeline code",
+                    (i + 1) as u32,
+                    Confidence::High,
+                ));
             }
         }
     }
@@ -115,7 +146,7 @@ fn check_sdp_prohibited_ops(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_window_without_partition(source: &str) -> Vec<Finding> {
+fn check_window_without_partition(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     let has_window_order = source.contains("Window.orderBy") || source.contains("Window.order_by");
@@ -135,10 +166,27 @@ fn check_window_without_partition(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_materialized_view_incremental(source: &str) -> Vec<Finding> {
+fn check_materialized_view_incremental(source: &str, ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let has_dlt_table = source.contains("@sdp.table") || source.contains("sdp.table");
+    let has_dlt_table = source.split('\n').any(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with('@') {
+            let dec_part = trimmed.trim_start_matches('@');
+            let parts: Vec<&str> = dec_part.split('.').collect();
+            if parts.len() >= 1 {
+                let ns = parts[0];
+                if ctx.tracker.is_dlt_namespace(ns) {
+                    return true;
+                }
+                if ns == "sdp" || ns == "dlt" || ns == "dp" {
+                    return true;
+                }
+            }
+        }
+        false
+    });
+
     let has_incremental = source.contains("incremental") || source.contains("stream");
 
     if has_dlt_table && !has_incremental {
@@ -155,7 +203,7 @@ fn check_materialized_view_incremental(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_cell_no_comment(source: &str) -> Vec<Finding> {
+fn check_cell_no_comment(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
 
@@ -196,7 +244,7 @@ fn check_cell_no_comment(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_long_line(source: &str) -> Vec<Finding> {
+fn check_long_line(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let mut findings = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
     let max_line_length = 120;
@@ -219,7 +267,7 @@ fn check_long_line(source: &str) -> Vec<Finding> {
     findings
 }
 
-fn check_correlated_subquery(source: &str) -> Vec<Finding> {
+fn check_correlated_subquery(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
 
     // Must have NOT IN with a SELECT subquery
@@ -260,7 +308,7 @@ fn check_correlated_subquery(source: &str) -> Vec<Finding> {
     vec![]
 }
 
-fn check_overwrite_without_replace_where(source: &str) -> Vec<Finding> {
+fn check_overwrite_without_replace_where(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_overwrite =
         source.contains(".mode(\"overwrite\")") || source.contains(".mode('overwrite')");
     let has_delta = source.contains("\"delta\"") || source.contains("'delta'");
@@ -280,7 +328,7 @@ fn check_overwrite_without_replace_where(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_csv_json_analytical_write(source: &str) -> Vec<Finding> {
+fn check_csv_json_analytical_write(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_csv_json_write = (source.contains(".format(\"csv\")")
         || source.contains(".format('csv')")
         || source.contains(".format(\"json\")")
@@ -304,7 +352,7 @@ fn check_csv_json_analytical_write(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_optimize_without_where(source: &str) -> Vec<Finding> {
+fn check_optimize_without_where(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     if !upper.contains("OPTIMIZE ") {
         return vec![];
@@ -324,7 +372,7 @@ fn check_optimize_without_where(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_merge_without_partition_predicate(source: &str) -> Vec<Finding> {
+fn check_merge_without_partition_predicate(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     if !upper.contains("MERGE INTO") {
         return vec![];
@@ -363,7 +411,7 @@ fn check_merge_without_partition_predicate(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_merge_update_star_no_filter(source: &str) -> Vec<Finding> {
+fn check_merge_update_star_no_filter(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     if !upper.contains("MERGE INTO") {
         return vec![];
@@ -391,7 +439,7 @@ fn check_merge_update_star_no_filter(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_convert_to_delta_no_optimize(source: &str) -> Vec<Finding> {
+fn check_convert_to_delta_no_optimize(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     if !upper.contains("CONVERT TO DELTA") {
         return vec![];
@@ -409,7 +457,7 @@ fn check_convert_to_delta_no_optimize(source: &str) -> Vec<Finding> {
     )]
 }
 
-fn check_too_many_cluster_keys(source: &str) -> Vec<Finding> {
+fn check_too_many_cluster_keys(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     let cluster_kw = match upper.find("CLUSTER BY") {
         Some(i) => i,
@@ -441,7 +489,7 @@ fn check_too_many_cluster_keys(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_pandas_pyspark_mix(source: &str) -> Vec<Finding> {
+fn check_pandas_pyspark_mix(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_ps = source.contains("pyspark.pandas") || source.contains("import ps");
     let has_pd = source.contains("import pandas")
         || (source.contains("import pd") && !source.contains("pyspark"));
@@ -459,7 +507,7 @@ fn check_pandas_pyspark_mix(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_pandas_roundtrip(source: &str) -> Vec<Finding> {
+fn check_pandas_roundtrip(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_to_pandas = source.contains(".toPandas()") || source.contains(".to_pandas()");
     let has_to_spark = source.contains(".to_spark()");
     if has_to_pandas && has_to_spark {
@@ -476,7 +524,7 @@ fn check_pandas_roundtrip(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_writestream_no_checkpoint(source: &str) -> Vec<Finding> {
+fn check_writestream_no_checkpoint(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     if !source.contains("writeStream") && !source.contains("write_stream") {
         return vec![];
     }
@@ -496,7 +544,7 @@ fn check_writestream_no_checkpoint(source: &str) -> Vec<Finding> {
     )]
 }
 
-fn check_event_time_no_watermark(source: &str) -> Vec<Finding> {
+fn check_event_time_no_watermark(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_window_group =
         source.contains("groupBy(window(") || source.contains("groupBy( window(");
     let has_watermark = source.contains("withWatermark(") || source.contains("with_watermark(");
@@ -514,7 +562,7 @@ fn check_event_time_no_watermark(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_foreach_batch_no_idempotency(source: &str) -> Vec<Finding> {
+fn check_foreach_batch_no_idempotency(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     if !source.contains("foreachBatch(") && !source.contains("foreach_batch(") {
         return vec![];
     }
@@ -533,7 +581,7 @@ fn check_foreach_batch_no_idempotency(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_two_part_table_name(source: &str) -> Vec<Finding> {
+fn check_two_part_table_name(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let upper = source.to_uppercase();
     // Look for FROM/JOIN/INTO/TABLE <word>.<word> without a third part
     for keyword in &["FROM ", "JOIN ", "INTO ", "TABLE "] {
@@ -566,7 +614,7 @@ fn check_two_part_table_name(source: &str) -> Vec<Finding> {
     vec![]
 }
 
-fn check_parquet_write_databricks(source: &str) -> Vec<Finding> {
+fn check_parquet_write_databricks(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_parquet_write =
         source.contains(".format(\"parquet\")") || source.contains(".format('parquet')");
     let has_write = source.contains(".write") || source.contains(".saveAsTable(");
@@ -584,7 +632,7 @@ fn check_parquet_write_databricks(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_readstream_no_trigger(source: &str) -> Vec<Finding> {
+fn check_readstream_no_trigger(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_readstream = source.contains("readStream") || source.contains("read_stream");
     let has_start = source.contains(".start(");
     let has_trigger = source.contains(".trigger(");
@@ -602,25 +650,53 @@ fn check_readstream_no_trigger(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_stream_static_join_non_delta(source: &str) -> Vec<Finding> {
+fn check_stream_static_join_non_delta(source: &str, ctx: &RuleContext) -> Vec<Finding> {
     let has_readstream = source.contains("readStream") || source.contains("read_stream");
     let has_join = source.contains(".join(");
     if !has_readstream || !has_join {
         return vec![];
     }
-    // Look for spark.read (static side) using a non-Delta format.
-    // The readStream side may legitimately use delta; we only care about spark.read.
-    let static_read_parquet = source.contains("spark.read.format(\"parquet\")")
-        || source.contains("spark.read.format('parquet')");
-    let static_read_csv = source.contains("spark.read.format(\"csv\")")
-        || source.contains("spark.read.format('csv')")
-        || source.contains("spark.read.csv(");
-    let static_read_json = source.contains("spark.read.format(\"json\")")
-        || source.contains("spark.read.format('json')")
-        || source.contains("spark.read.json(");
-    let static_read_orc = source.contains("spark.read.format(\"orc\")")
-        || source.contains("spark.read.format('orc')");
-    if static_read_parquet || static_read_csv || static_read_json || static_read_orc {
+
+    let has_static_non_delta = source.split('\n').any(|line| {
+        let trimmed = line.trim();
+        if let Some((ns, method)) = ctx.tracker.extract_call_parts(trimmed) {
+            if ctx.tracker.is_spark_namespace(ns) {
+                let method_base = method.split('.').next().unwrap_or(method);
+                if method_base == "read" || method_base.starts_with("read_") {
+                    return trimmed.contains(".format(\"parquet\")")
+                        || trimmed.contains(".format('parquet')")
+                        || trimmed.contains(".format(\"csv\")")
+                        || trimmed.contains(".format('csv')")
+                        || trimmed.contains(".format(\"json\")")
+                        || trimmed.contains(".format('json')")
+                        || trimmed.contains(".format(\"orc\")")
+                        || trimmed.contains(".format('orc')")
+                        || trimmed.contains(".csv(")
+                        || trimmed.contains(".json(");
+                }
+            }
+        }
+        let has_spark_read_call =
+            trimmed.contains("spark.read.") || trimmed.contains("my_spark.read.");
+        if has_spark_read_call {
+            let has_non_delta_format = trimmed.contains(".format(\"parquet\")")
+                || trimmed.contains(".format('parquet')")
+                || trimmed.contains(".format(\"csv\")")
+                || trimmed.contains(".format('csv')")
+                || trimmed.contains(".format(\"json\")")
+                || trimmed.contains(".format('json')")
+                || trimmed.contains(".format(\"orc\")")
+                || trimmed.contains(".format('orc')")
+                || trimmed.contains(".csv(")
+                || trimmed.contains(".json(");
+            if has_non_delta_format {
+                return true;
+            }
+        }
+        false
+    });
+
+    if has_static_non_delta {
         vec![make_finding(
             "BS006",
             Severity::Warning,
@@ -634,7 +710,7 @@ fn check_stream_static_join_non_delta(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_self_join_no_alias(source: &str) -> Vec<Finding> {
+fn check_self_join_no_alias(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     if !source.contains(".join(") {
         return vec![];
     }
@@ -667,7 +743,7 @@ fn check_self_join_no_alias(source: &str) -> Vec<Finding> {
     vec![]
 }
 
-fn check_readstream_no_schema(source: &str) -> Vec<Finding> {
+fn check_readstream_no_schema(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_readstream = source.contains("readStream") || source.contains("read_stream");
     if !has_readstream {
         return vec![];
@@ -693,7 +769,7 @@ fn check_readstream_no_schema(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_groupby_agg_filter(source: &str) -> Vec<Finding> {
+fn check_groupby_agg_filter(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     // Detect .agg(...).filter( or .agg(...).where(
     let has_agg = source.contains(".agg(");
     let has_post_agg_filter = source.contains(".agg(")
@@ -713,7 +789,7 @@ fn check_groupby_agg_filter(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_orderby_before_shuffle(source: &str) -> Vec<Finding> {
+fn check_orderby_before_shuffle(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let orderby_pos = source
         .find(".orderBy(")
         .or_else(|| source.find(".order_by("));
@@ -736,7 +812,7 @@ fn check_orderby_before_shuffle(source: &str) -> Vec<Finding> {
     vec![]
 }
 
-fn check_single_withcolumn(source: &str) -> Vec<Finding> {
+fn check_single_withcolumn(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     // Count occurrences of .withColumn( — fire if 3 or more in the same chain
     let count = source.matches(".withColumn(").count();
     if count >= 3 {
@@ -753,7 +829,7 @@ fn check_single_withcolumn(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_monotonically_increasing_id_join(source: &str) -> Vec<Finding> {
+fn check_monotonically_increasing_id_join(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_mono_id = source.contains("monotonically_increasing_id");
     let has_join = source.contains(".join(");
     if has_mono_id && has_join {
@@ -770,7 +846,7 @@ fn check_monotonically_increasing_id_join(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_current_timestamp_in_cache(source: &str) -> Vec<Finding> {
+fn check_current_timestamp_in_cache(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_timestamp = source.contains("current_timestamp()")
         || source.contains("F.now()")
         || source.contains("functions.now()");
@@ -789,7 +865,7 @@ fn check_current_timestamp_in_cache(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_input_file_name_as_key(source: &str) -> Vec<Finding> {
+fn check_input_file_name_as_key(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_input_file = source.contains("input_file_name");
     let used_as_key = source.contains(".join(") || source.contains(".partitionBy(");
     if has_input_file && used_as_key {
@@ -806,7 +882,7 @@ fn check_input_file_name_as_key(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_python_udf_photon(source: &str) -> Vec<Finding> {
+fn check_python_udf_photon(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     // Detect Python UDFs (not pandas_udf which is Arrow-based and more Photon compatible)
     let has_plain_udf = source.contains("@udf(")
         || source.contains("@udf\n")
@@ -827,7 +903,7 @@ fn check_python_udf_photon(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_photon_incompatible_expr(source: &str) -> Vec<Finding> {
+fn check_photon_incompatible_expr(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     if source.contains("from_xml(") || source.contains("to_xml(") {
         vec![make_finding(
             "BP102",
@@ -842,7 +918,7 @@ fn check_photon_incompatible_expr(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_broadcast_streaming(source: &str) -> Vec<Finding> {
+fn check_broadcast_streaming(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     let has_broadcast = source.contains("broadcast(");
     let has_readstream = source.contains("readStream") || source.contains("read_stream");
     if !has_broadcast || !has_readstream {
@@ -874,7 +950,7 @@ fn check_broadcast_streaming(source: &str) -> Vec<Finding> {
     }
 }
 
-fn check_tojson_collect(source: &str) -> Vec<Finding> {
+fn check_tojson_collect(source: &str, _ctx: &RuleContext) -> Vec<Finding> {
     if source.contains(".toJSON().collect()") || source.contains(".toJSON().\ncollect()") {
         vec![make_finding(
             "BP112",
@@ -896,7 +972,9 @@ mod tests {
     #[test]
     fn test_long_line() {
         let source = "This is a very long line that exceeds the maximum line length of 120 characters and should trigger a finding for BP002 because it is longer than 120 characters";
-        let findings = check_long_line(source);
+        let tracker = NamespaceTracker::new();
+        let ctx = RuleContext::new(source, &tracker);
+        let findings = check_long_line(source, &ctx);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].code, "BP002");
     }
@@ -904,30 +982,29 @@ mod tests {
     #[test]
     fn test_long_line_ok() {
         let source = "Short line";
-        let findings = check_long_line(source);
+        let tracker = NamespaceTracker::new();
+        let ctx = RuleContext::new(source, &tracker);
+        let findings = check_long_line(source, &ctx);
         assert!(findings.is_empty());
     }
 
     #[test]
     fn test_bp001_dispatched() {
-        let findings = analyze_context_for_rule("BP001", "# cell\nsome_code()\n");
-        // BP001 fires when a cell has no comment — "some_code()" is not a comment
-        // The check needs two cells to trigger (it reports on close of a comment-less cell)
-        // Just verify dispatch doesn't panic and returns a Vec
+        let findings = analyze_context_for_rule("BP001", "# cell\nsome_code()\n", None);
         let _ = findings;
     }
 
     #[test]
     fn test_bp002_dispatched() {
         let long_line = "x".repeat(130);
-        let findings = analyze_context_for_rule("BP002", &long_line);
+        let findings = analyze_context_for_rule("BP002", &long_line, None);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].code, "BP002");
     }
 
     #[test]
     fn test_unknown_rule_returns_empty() {
-        let findings = analyze_context_for_rule("UNKNOWN999", "some source");
+        let findings = analyze_context_for_rule("UNKNOWN999", "some source", None);
         assert!(findings.is_empty());
     }
 }
