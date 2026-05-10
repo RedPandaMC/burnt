@@ -198,6 +198,12 @@ impl PythonGraphBuilder {
     }
 }
 
+impl Default for PythonGraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

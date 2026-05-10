@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use crate::graph::python::PythonGraphBuilder;
-use crate::parse::namespace::{build_namespace_tracker, NamespaceTracker};
+use crate::parse::import_map::ImportMap;
 use crate::types::{CostEdge, PipelineTable, SdpSourceType, SdpTableKind};
 use tree_sitter::{Node, Parser};
 
@@ -11,10 +10,9 @@ pub struct SdpGraphBuilder {
     edges: Vec<CostEdge>,
     table_counter: u32,
     current_table: Option<PipelineTable>,
-    python_builder: PythonGraphBuilder,
     table_references: HashMap<String, String>,
-    parser: Mutex<Parser>,
-    ns_tracker: NamespaceTracker,
+    parser: Parser,
+    ns_tracker: ImportMap,
 }
 
 impl SdpGraphBuilder {
@@ -24,34 +22,30 @@ impl SdpGraphBuilder {
             edges: Vec::new(),
             table_counter: 0,
             current_table: None,
-            python_builder: PythonGraphBuilder::new(),
             table_references: HashMap::new(),
-            parser: Mutex::new(Parser::new()),
-            ns_tracker: NamespaceTracker::new(),
+            parser: Parser::new(),
+            ns_tracker: ImportMap::new(),
         }
     }
 
-    pub fn build_from_source(&mut self, source: &str) -> (Vec<PipelineTable>, Vec<CostEdge>) {
-        let tree = {
-            let mut parser = self.parser.lock().unwrap();
-            parser.reset();
-            parser
-                .set_language(&tree_sitter_python::LANGUAGE.into())
-                .expect("tree-sitter-python grammar failed to load");
-            parser
-                .parse(source, None)
-                .expect("tree-sitter failed to parse")
-        };
+    pub fn build_from_source(mut self, source: &str) -> (Vec<PipelineTable>, Vec<CostEdge>) {
+        self.parser.reset();
+        self.parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .expect("tree-sitter-python grammar failed to load");
+        let tree = self.parser
+            .parse(source, None)
+            .expect("tree-sitter failed to parse");
         let root = tree.root_node();
 
-        self.ns_tracker = build_namespace_tracker(source, root);
+        self.ns_tracker = ImportMap::build(source, root);
 
         self.visit_node(&root, source);
 
         // Also check for SQL DLT definitions
         self.check_sql_sdp_definitions(source);
 
-        (self.tables.clone(), self.edges.clone())
+        (self.tables, self.edges)
     }
 
     fn visit_node(&mut self, node: &Node, source: &str) {
@@ -75,7 +69,7 @@ impl SdpGraphBuilder {
         let decorator_text = node.utf8_text(source.as_bytes()).unwrap_or("");
 
         if let Some((ns_part, kind)) = self.extract_decorator_ns_and_kind(decorator_text) {
-            if self.ns_tracker.is_dlt_namespace(ns_part) {
+            if self.ns_tracker.is_pipeline_ns(ns_part) {
                 let table_kind = if kind == "materialized_view" {
                     SdpTableKind::MaterializedView
                 } else {
@@ -135,7 +129,7 @@ impl SdpGraphBuilder {
             for child in &children {
                 if child.kind() == "block" {
                     let body_source = child.utf8_text(source.as_bytes()).unwrap_or("");
-                    let (inner_nodes, _, _) = self.python_builder.build_from_source(body_source);
+                    let (inner_nodes, _, _) = PythonGraphBuilder::new().build_from_source(body_source);
 
                     if let Some(table) = &mut self.current_table {
                         table.inner_nodes = inner_nodes;
@@ -163,13 +157,11 @@ impl SdpGraphBuilder {
         }
 
         if let Some((ns_part, method)) = self.extract_call_ns_and_method(&call_text) {
-            if self.ns_tracker.is_dlt_namespace(ns_part) {
-                if method == "read" || method.starts_with("read_") {
-                    if self.ns_tracker.resolve(ns_part) == Some("dp") || ns_part == "dp" {
-                        self.handle_dp_read(node, source);
-                    } else {
-                        self.handle_sdp_read(node, source);
-                    }
+            if self.ns_tracker.is_pipeline_ns(ns_part) && (method == "read" || method.starts_with("read_")) {
+                if self.ns_tracker.resolve(ns_part) == Some("dp") || ns_part == "dp" {
+                    self.handle_dp_read(node, source);
+                } else {
+                    self.handle_sdp_read(node, source);
                 }
             }
         }
@@ -181,7 +173,7 @@ impl SdpGraphBuilder {
             if let Some(dot_pos) = call_text[search_from..].find('.') {
                 let actual_pos = search_from + dot_pos;
                 let ns_part = &call_text[..actual_pos];
-                if ns_part.is_empty() || !self.ns_tracker.is_dlt_namespace(ns_part) {
+                if ns_part.is_empty() || !self.ns_tracker.is_pipeline_ns(ns_part) {
                     search_from = actual_pos + 1;
                     continue;
                 }
@@ -347,6 +339,12 @@ impl SdpGraphBuilder {
     }
 }
 
+impl Default for SdpGraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,8 +359,7 @@ def users():
     return spark.read.parquet("s3://bucket/users")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
@@ -380,8 +377,7 @@ def user_summary():
     return spark.sql("SELECT user_id, COUNT(*) FROM LIVE.users GROUP BY user_id")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].kind, SdpTableKind::MaterializedView);
@@ -398,8 +394,7 @@ def processed_users():
     return sdp.read("raw_users").select("id", "name")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
@@ -416,8 +411,7 @@ def my_table():
     return spark.read.parquet("s3://data")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
@@ -434,8 +428,7 @@ def my_table():
     return spark.read.parquet("s3://data")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
@@ -452,8 +445,7 @@ def processed():
     return dl.read("raw").select("id", "name")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
@@ -469,8 +461,7 @@ def my_table():
     return d.read_csv("data.csv")
 "#;
 
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].source_type, SdpSourceType::DpRead);

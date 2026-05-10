@@ -349,6 +349,12 @@ impl SqlGraphBuilder {
     }
 }
 
+impl Default for SqlGraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
