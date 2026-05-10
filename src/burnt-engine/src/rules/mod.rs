@@ -1,8 +1,11 @@
+use crate::parse::namespace::build_namespace_tracker;
 use crate::types::{CompiledRule, Confidence, Finding as TypesFinding, RuleEntry};
 use pyo3::prelude::*;
 use std::sync::OnceLock;
+use tree_sitter::Parser;
 
 mod context;
+mod context_structs;
 mod dataflow;
 pub(crate) mod finding;
 mod notebook_queries;
@@ -56,7 +59,19 @@ impl RulePipeline {
         let mut pattern_findings = self.execute_pattern_rules(source, language);
         findings.append(&mut pattern_findings);
 
-        let mut context_findings = self.execute_context_rules(source, language);
+        let tracker = if language == "python" || language == "sdp" {
+            let mut parser = Parser::new();
+            parser
+                .set_language(&tree_sitter_python::LANGUAGE.into())
+                .ok();
+            parser
+                .parse(source, None)
+                .map(|tree| build_namespace_tracker(source, tree.root_node()))
+        } else {
+            None
+        };
+
+        let mut context_findings = self.execute_context_rules(source, language, tracker.as_ref());
         findings.append(&mut context_findings);
 
         let mut dataflow_findings = self.execute_dataflow_rules(source, language);
@@ -88,12 +103,19 @@ impl RulePipeline {
         findings
     }
 
-    fn execute_context_rules(&self, source: &str, language: &str) -> Vec<TypesFinding> {
+    fn execute_context_rules(
+        &self,
+        source: &str,
+        language: &str,
+        tracker: Option<&crate::parse::namespace::NamespaceTracker>,
+    ) -> Vec<TypesFinding> {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
             if rule.has_context && lang_matches(&rule.language, language) {
-                findings.extend(context::analyze_context_for_rule(&rule.code, source));
+                findings.extend(context::analyze_context_for_rule(
+                    &rule.code, source, tracker,
+                ));
             }
         }
 
