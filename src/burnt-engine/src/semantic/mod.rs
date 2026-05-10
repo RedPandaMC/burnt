@@ -1,4 +1,3 @@
-use crate::parse::namespace::NamespaceTracker;
 use crate::types::Finding;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,43 +27,8 @@ pub enum BindingKind {
 }
 
 #[derive(Debug, Clone)]
-pub enum SourceKind {
-    SdpRead,
-    DpRead,
-    SparkRead,
-    SparkReadStream,
-    TableRef,
-    Constant,
-    Udf,
-    Unknown,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainContext {
-    pub actions: Vec<ChainAction>,
-    pub has_limit: bool,
-    pub has_select: bool,
-    pub has_filter: bool,
-    pub is_streaming: bool,
-    pub source_tables: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ChainAction {
-    Read,
-    ReadStream,
-    Write,
-    Transform,
-    Collect,
-    Show,
-    Limit,
-    Filter,
-    Select,
-}
-
-#[derive(Debug, Clone)]
 pub struct SemanticModel {
-    scopes: Vec<Scope>,
+    pub(crate) scopes: Vec<Scope>,
     bindings: HashMap<String, Binding>,
     findings: Vec<Finding>,
 }
@@ -82,6 +46,7 @@ impl SemanticModel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn push_scope(&mut self, name: String) {
         let parent = self.scopes.last().map(|s| s.name.clone());
         self.scopes.push(Scope {
@@ -91,6 +56,7 @@ impl SemanticModel {
         });
     }
 
+    #[allow(dead_code)]
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
@@ -131,59 +97,7 @@ impl SemanticModel {
         }
     }
 
-    pub fn record_use(&mut self, name: &str, line: u32) {
-        if let Some(binding) = self.bindings.get_mut(name) {
-            binding.used_at_lines.push(line);
-        }
-    }
-
-    pub fn classify_rhs(&self, source: &str, tracker: &NamespaceTracker) -> SourceKind {
-        let source = source.trim();
-
-        if let Some((ns, method)) = tracker.extract_call_parts(source) {
-            let resolved = tracker.resolve(ns);
-            let method_base = method.split('.').next().unwrap_or(method);
-            if let Some(resolved_ns) = resolved {
-                match resolved_ns {
-                    "sdp" | "dlt" | "dp" => {
-                        if method_base == "read" || method_base.starts_with("read_") {
-                            if resolved_ns == "dp" {
-                                return SourceKind::DpRead;
-                            }
-                            return SourceKind::SdpRead;
-                        }
-                    }
-                    "pyspark" | "spark" | "databricks" => {
-                        if method_base == "readStream" {
-                            return SourceKind::SparkReadStream;
-                        }
-                        if method_base == "read" || method_base.starts_with("read_") {
-                            return SourceKind::SparkRead;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if source.starts_with("udf.") || source.ends_with("_udf") {
-            return SourceKind::Udf;
-        }
-
-        SourceKind::Unknown
-    }
-
-    pub fn build_chain_context(&self, actions: Vec<ChainAction>) -> ChainContext {
-        ChainContext {
-            has_limit: actions.contains(&ChainAction::Limit),
-            has_select: actions.contains(&ChainAction::Select),
-            has_filter: actions.contains(&ChainAction::Filter),
-            is_streaming: actions.contains(&ChainAction::ReadStream),
-            actions,
-            source_tables: Vec::new(),
-        }
-    }
-
+    #[allow(dead_code)]
     pub fn get_bindings(&self) -> &HashMap<String, Binding> {
         &self.bindings
     }
@@ -199,17 +113,6 @@ impl Default for SemanticModel {
     }
 }
 
-pub fn analyze_bindings(source: &str) -> Vec<Binding> {
-    let model = SemanticModel::new();
-    let _ = crate::parse::python::parse_python(source);
-    model.get_bindings().values().cloned().collect()
-}
-
-pub fn analyze_scope(source: &str) -> Vec<Scope> {
-    let _ = source;
-    Vec::new()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,65 +125,6 @@ mod tests {
 
         assert!(!model.get_findings().is_empty());
         assert_eq!(model.get_findings()[0].code, "BN003");
-    }
-
-    #[test]
-    fn test_classify_sdp_read() {
-        let model = SemanticModel::new();
-        let mut tracker = NamespaceTracker::new();
-        tracker.add_simple_import("sdp");
-        tracker.add_simple_import("dp");
-        tracker.add_simple_import("spark");
-
-        assert!(matches!(
-            model.classify_rhs("sdp.read('table')", &tracker),
-            SourceKind::SdpRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("dp.read_csv('file')", &tracker),
-            SourceKind::DpRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("spark.read.parquet('path')", &tracker),
-            SourceKind::SparkRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("spark.readStream.format('kafka')", &tracker),
-            SourceKind::SparkReadStream
-        ));
-    }
-
-    #[test]
-    fn test_classify_with_alias() {
-        let model = SemanticModel::new();
-        let mut tracker = NamespaceTracker::new();
-        tracker.add_alias("my_spark", "spark");
-        tracker.add_alias("dl", "dlt");
-
-        assert!(matches!(
-            model.classify_rhs("my_spark.read.parquet('path')", &tracker),
-            SourceKind::SparkRead
-        ));
-        assert!(matches!(
-            model.classify_rhs("dl.read('table')", &tracker),
-            SourceKind::SdpRead
-        ));
-    }
-
-    #[test]
-    fn test_chain_context() {
-        let model = SemanticModel::new();
-        let ctx = model.build_chain_context(vec![
-            ChainAction::Read,
-            ChainAction::Filter,
-            ChainAction::Select,
-            ChainAction::Limit,
-        ]);
-
-        assert!(ctx.has_limit);
-        assert!(ctx.has_select);
-        assert!(ctx.has_filter);
-        assert!(!ctx.is_streaming);
     }
 
     #[test]

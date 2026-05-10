@@ -68,6 +68,12 @@ impl SessionStatePy {
     }
 }
 
+impl Default for SessionStatePy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Convert a `serde_json::Value` into an equivalent Python object.
 fn value_to_py(py: Python<'_>, value: &Value) -> PyObject {
     match value {

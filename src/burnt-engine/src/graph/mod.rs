@@ -57,8 +57,7 @@ pub struct PipelineGraph {
 
 impl PipelineGraph {
     pub fn from_sdp(source: &str) -> Self {
-        let mut builder = SdpGraphBuilder::new();
-        let (tables, _edges) = builder.build_from_source(source);
+        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         PipelineGraph {
             tables,
