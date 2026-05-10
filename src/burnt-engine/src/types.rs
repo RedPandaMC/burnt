@@ -27,6 +27,7 @@ pub struct PythonParseResult {
     pub sql_fragments: Vec<SqlFragment>,
     pub sdp_signals: Vec<SdpSignal>,
     pub findings: Vec<Finding>,
+    pub dlt_namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Display, Serialize, Deserialize, PartialEq, Eq)]
