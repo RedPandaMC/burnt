@@ -31,30 +31,44 @@ impl NamespaceTracker {
             .map(|s| s.as_str())
     }
 
+    fn is_known_dlt_namespace(ns: &str) -> bool {
+        ns == "sdp" || ns == "dlt" || ns == "dp"
+    }
+
     pub fn is_dlt_namespace(&self, alias: &str) -> bool {
-        self.resolve(alias)
-            .map(|ns| ns == "sdp" || ns == "dlt" || ns == "dp")
-            .unwrap_or(false)
+        self.resolve(alias).map_or(false, |ns| {
+            Self::is_known_dlt_namespace(ns)
+                || ns.starts_with("sdp.")
+                || ns.starts_with("dlt.")
+                || ns.starts_with("dp.")
+        })
     }
 
     pub fn dlt_namespace(&self) -> Option<&str> {
         for (alias, _) in self.aliases.iter().chain(self.simple_imports.iter()) {
             if self.is_dlt_namespace(alias) {
-                return self.resolve(alias);
+                return self
+                    .resolve(alias)
+                    .filter(|ns| Self::is_known_dlt_namespace(ns));
             }
         }
         for (alias, _) in self.from_imports.iter() {
             if self.is_dlt_namespace(alias) {
-                return self.resolve(alias);
+                return self
+                    .resolve(alias)
+                    .filter(|ns| Self::is_known_dlt_namespace(ns));
             }
         }
         None
     }
 
     pub fn is_table_decorator(&self, decorator_name: &str) -> bool {
-        self.resolve(decorator_name)
-            .map(|ns| ns == "sdp" || ns == "dlt" || ns == "dp")
-            .unwrap_or(false)
+        self.resolve(decorator_name).map_or(false, |ns| {
+            Self::is_known_dlt_namespace(ns)
+                || ns.starts_with("sdp.")
+                || ns.starts_with("dlt.")
+                || ns.starts_with("dp.")
+        })
     }
 
     pub fn is_read_call(&self, namespace: &str) -> bool {
@@ -159,7 +173,7 @@ fn parse_import_from_statement(text: &str) -> Vec<(String, String)> {
             continue;
         }
         if let Some((actual, alias)) = parse_import_target(part) {
-            results.push((format!("{}.{}", ns, actual), alias));
+            results.push((ns.to_string(), alias));
         }
     }
     results
@@ -216,8 +230,9 @@ mod tests {
         let mut tracker = NamespaceTracker::new();
         tracker
             .from_imports
-            .insert("table".to_string(), "sdp.table".to_string());
-        assert_eq!(tracker.resolve("table"), Some("sdp.table"));
+            .insert("table".to_string(), "sdp".to_string());
+        assert_eq!(tracker.resolve("table"), Some("sdp"));
+        assert!(tracker.is_dlt_namespace("table"));
     }
 
     #[test]
@@ -243,12 +258,12 @@ mod tests {
     #[test]
     fn test_parse_import_from_statement() {
         let result = parse_import_from_statement("from sdp import table");
-        assert_eq!(result, vec![("sdp.table".to_string(), "table".to_string())]);
+        assert_eq!(result, vec![("sdp".to_string(), "table".to_string())]);
     }
 
     #[test]
     fn test_parse_import_from_statement_alias() {
         let result = parse_import_from_statement("from dlt import table as t");
-        assert_eq!(result, vec![("dlt.table".to_string(), "t".to_string())]);
+        assert_eq!(result, vec![("dlt".to_string(), "t".to_string())]);
     }
 }
