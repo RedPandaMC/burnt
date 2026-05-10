@@ -297,11 +297,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_dlt_table() {
+    fn test_build_sdp_table() {
         let source = r#"
-import dlt
+import sdp
 
-@dlt.table
+@sdp.table
 def users():
     return spark.read.parquet("s3://bucket/users")
 "#;
@@ -334,13 +334,13 @@ def user_summary():
     }
 
     #[test]
-    fn test_build_dlt_with_read() {
+    fn test_build_sdp_with_read() {
         let source = r#"
-import dlt
+import sdp
 
-@dlt.table
+@sdp.table
 def processed_users():
-    return dlt.read("raw_users").select("id", "name")
+    return sdp.read("raw_users").select("id", "name")
 "#;
 
         let mut builder = SdpGraphBuilder::new();

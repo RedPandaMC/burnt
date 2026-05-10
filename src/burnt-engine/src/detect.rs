@@ -35,8 +35,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_detect_dlt_from_import() {
-        let source = "import dlt\n@dlt.table\ndef my_table(): pass";
+    fn test_detect_sdp_from_import() {
+        let source = "import sdp\n@sdp.table\ndef my_table(): pass";
         assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
     }
 
@@ -61,6 +61,24 @@ mod tests {
     #[test]
     fn test_detect_dlt_create_materialized() {
         let source = "CREATE MATERIALIZED VIEW my_view AS SELECT * FROM source";
+        assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
+    }
+
+    #[test]
+    fn test_detect_mixed_python_with_sql_falls_to_python() {
+        let source = "import pandas as pd\nspark.sql('SELECT 1')";
+        assert_eq!(detect_mode_from_source(source), AnalysisMode::Python);
+    }
+
+    #[test]
+    fn test_detect_empty_source() {
+        assert_eq!(detect_mode_from_source(""), AnalysisMode::Python);
+        assert_eq!(detect_mode_from_source("   "), AnalysisMode::Python);
+    }
+
+    #[test]
+    fn test_detect_sdp_with_live_ref() {
+        let source = "LIVE.ref('other_table')";
         assert_eq!(detect_mode_from_source(source), AnalysisMode::Sdp);
     }
 }

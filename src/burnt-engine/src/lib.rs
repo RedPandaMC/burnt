@@ -1,14 +1,14 @@
 #![allow(clippy::useless_conversion)]
 use pyo3::prelude::*;
 
-mod detect;
-mod graph;
-mod ingestion;
-mod parse;
+pub mod detect;
+pub mod graph;
+pub mod ingestion;
+pub(crate) mod parse;
 pub mod rules;
 mod semantic;
-mod session;
-mod types;
+pub mod session;
+pub mod types;
 
 use detect::detect_mode_from_source;
 use graph::{CostGraph, CostGraphPy, PipelineGraph, PipelineGraphPy};

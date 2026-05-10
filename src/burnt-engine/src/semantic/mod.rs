@@ -186,7 +186,7 @@ impl Default for SemanticModel {
 
 pub fn analyze_bindings(source: &str) -> Vec<Binding> {
     let model = SemanticModel::new();
-    crate::parse::python::parse_python(source);
+    let _ = crate::parse::python::parse_python(source);
     model.get_bindings().values().cloned().collect()
 }
 
@@ -210,10 +210,10 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_dlt_read() {
+    fn test_classify_sdp_read() {
         let model = SemanticModel::new();
         assert!(matches!(
-            model.classify_rhs("dlt.read('table')"),
+            model.classify_rhs("sdp.read('table')"),
             SourceKind::SdpRead
         ));
         assert!(matches!(
