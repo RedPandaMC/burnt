@@ -512,7 +512,7 @@ def init_mock_database(
     # Load schema
     schema_path = Path(__file__).parent / "mock_schema.sql"
     if schema_path.exists():
-        with open(schema_path) as f:
+        with schema_path.open() as f:
             conn.executescript(f.read())
 
     # Load billing data (from xlsx or synthetic)

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
-from .rule_filter import RuleIndex
+if TYPE_CHECKING:
+    from .rule_filter import RuleIndex
 
 # # burnt: ignore  OR  # burnt: ignore[BP008, performance]
 _LINE_RE = re.compile(r"#\s*burnt:\s*ignore(?:\[([^\]]*)\])?", re.IGNORECASE)

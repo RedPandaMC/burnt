@@ -6,7 +6,7 @@ from time import monotonic
 from typing import Any
 
 
-@dataclass
+@dataclass(slots=True)
 class _CacheEntry:
     value: Any
     expires_at: float

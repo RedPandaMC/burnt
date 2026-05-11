@@ -134,11 +134,11 @@ class DatabricksClient:
         schema = data.get("manifest", {}).get("schema", {}).get("columns", [])
         col_names = [col["name"] for col in schema]
 
-        rows: list[dict[str, Any]] = []
         result = data.get("result", {})
-        for row_values in result.get("data_array", []):
-            rows.append(dict(zip(col_names, row_values, strict=False)))
-        return rows
+        return [
+            dict(zip(col_names, row_values, strict=False))
+            for row_values in result.get("data_array", [])
+        ]
 
     def _post_with_retry(self, url: str, payload: dict[str, Any]) -> requests.Response:
         """POST with exponential backoff retry on transient errors."""

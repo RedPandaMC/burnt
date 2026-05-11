@@ -17,7 +17,7 @@ class Backend(Protocol):
     - RestBackend: External execution via Databricks SDK
     """
 
-    def execute_sql(self, sql: str, warehouse_id: str | None = None) -> list[dict]:
+    def execute_sql(self, sql: str, warehouse_id: str | None = None) -> list[dict[str, object]]:
         """Execute a SQL statement and return results as list of dicts.
 
         Args:
@@ -62,7 +62,7 @@ class Backend(Protocol):
         """
         ...
 
-    def get_session_metrics(self) -> dict:
+    def get_session_metrics(self) -> dict[str, object]:
         """Get current session metrics.
 
         Returns:

@@ -26,7 +26,7 @@ def read_delta_log(log_dir: Path) -> DeltaTableInfo:
     files: dict[str, dict] = {}
 
     for json_file in json_files:
-        with open(json_file) as f:
+        with json_file.open() as f:
             for line in f:
                 line = line.strip()
                 if not line:

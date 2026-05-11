@@ -94,18 +94,17 @@ def run(
         raw = analyze_source(source, path=target or None)
 
     # --- Convert Rust findings to Python model ---
-    findings: list[Finding] = []
-    for f in raw.findings:
-        findings.append(
-            Finding(
-                rule_id=getattr(f, "code", getattr(f, "rule_id", "UNKNOWN")),
-                severity=str(getattr(f, "severity", "warning")).lower(),
-                message=getattr(f, "message", getattr(f, "description", "")),
-                suggestion=getattr(f, "suggestion", "") or "",
-                line_number=getattr(f, "line_number", None),
-                file_path=target or None,
-            )
+    findings: list[Finding] = [
+        Finding(
+            rule_id=getattr(f, "code", getattr(f, "rule_id", "UNKNOWN")),
+            severity=str(getattr(f, "severity", "warning")).lower(),
+            message=getattr(f, "message", getattr(f, "description", "")),
+            suggestion=getattr(f, "suggestion", "") or "",
+            line_number=getattr(f, "line_number", None),
+            file_path=target or None,
         )
+        for f in raw.findings
+    ]
 
     result = CheckResult(
         file_path=target or None,
