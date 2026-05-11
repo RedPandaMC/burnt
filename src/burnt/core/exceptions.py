@@ -77,10 +77,10 @@ class CostBudgetExceeded(BurntError):
         self.budget = budget
         self.currency = currency
         self.label = label
-        estimate_cost = estimate.estimated_cost_usd
+        estimate_cost = estimate.cost_in(currency) or estimate.primary_cost or 0
         msg = (
-            f"Estimated cost ${estimate_cost:.2f} exceeds "
-            f"budget {currency} ${budget:.2f}"
+            f"Estimated cost {currency} {estimate_cost:.2f} exceeds "
+            f"budget {currency} {budget:.2f}"
         )
         if label:
             msg += f" ({label})"
