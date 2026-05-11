@@ -6,11 +6,97 @@ from burnt.core.exceptions import PricingError
 from burnt.core.pricing import (
     AZURE_DBU_RATES,
     AZURE_INSTANCE_DBU,
+    CLOUD_REGION_CURRENCIES,
+    SUPPORTED_CURRENCIES,
+    PricingBackend,
     apply_photon,
     compute_cost_usd,
     get_dbu_rate,
     usd_to_eur,
 )
+
+
+class TestPricingBackendProtocol:
+    def test_is_a_protocol(self):
+        import typing
+
+        assert issubclass(PricingBackend, typing.Protocol)
+
+    def test_has_name_annotation(self):
+        import typing
+
+        hints = typing.get_type_hints(PricingBackend)
+        assert "name" in hints
+
+    def test_has_map_method(self):
+        assert callable(getattr(PricingBackend, "map", None))
+
+    def test_structural_conformance(self):
+        from burnt.core.models import CostEstimate
+        from burnt.graph.model import CostGraph
+
+        class FakeBackend:
+            name = "test-backend"
+
+            def map(self, graph: CostGraph) -> CostEstimate:
+                return CostEstimate()
+
+        backend: PricingBackend = FakeBackend()
+        assert backend.name == "test-backend"
+
+
+class TestCloudRegionCurrencies:
+    def test_azure_regions_mapped(self):
+        assert CLOUD_REGION_CURRENCIES["eastus"] == "USD"
+        assert CLOUD_REGION_CURRENCIES["uksouth"] == "GBP"
+        assert CLOUD_REGION_CURRENCIES["japaneast"] == "JPY"
+        assert CLOUD_REGION_CURRENCIES["northeurope"] == "EUR"
+        assert CLOUD_REGION_CURRENCIES["canadacentral"] == "CAD"
+        assert CLOUD_REGION_CURRENCIES["australiaeast"] == "AUD"
+        assert CLOUD_REGION_CURRENCIES["switzerlandnorth"] == "CHF"
+
+    def test_aws_regions_mapped(self):
+        assert CLOUD_REGION_CURRENCIES["us-east-1"] == "USD"
+        assert CLOUD_REGION_CURRENCIES["eu-west-2"] == "GBP"
+        assert CLOUD_REGION_CURRENCIES["ap-northeast-1"] == "JPY"
+        assert CLOUD_REGION_CURRENCIES["ap-southeast-2"] == "AUD"
+        assert CLOUD_REGION_CURRENCIES["ca-central-1"] == "CAD"
+        assert CLOUD_REGION_CURRENCIES["sa-east-1"] == "BRL"
+
+    def test_gcp_regions_mapped(self):
+        assert CLOUD_REGION_CURRENCIES["us-central1"] == "USD"
+        assert CLOUD_REGION_CURRENCIES["europe-west2"] == "GBP"
+        assert CLOUD_REGION_CURRENCIES["europe-west6"] == "CHF"
+        assert CLOUD_REGION_CURRENCIES["asia-northeast1"] == "JPY"
+        assert CLOUD_REGION_CURRENCIES["australia-southeast1"] == "AUD"
+        assert CLOUD_REGION_CURRENCIES["northamerica-northeast1"] == "CAD"
+
+    def test_all_values_are_three_letter_codes(self):
+        for region, code in CLOUD_REGION_CURRENCIES.items():
+            assert len(code) == 3 and code.isupper(), (
+                f"Region {region!r} has invalid currency code {code!r}"
+            )
+
+
+class TestSupportedCurrencies:
+    def test_is_frozenset(self):
+        assert isinstance(SUPPORTED_CURRENCIES, frozenset)
+
+    def test_contains_major_currencies(self):
+        for code in ("USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"):
+            assert code in SUPPORTED_CURRENCIES
+
+    def test_contains_emerging_market_currencies(self):
+        for code in ("BRL", "KRW", "SGD", "INR"):
+            assert code in SUPPORTED_CURRENCIES
+
+    def test_all_codes_are_three_letters(self):
+        for code in SUPPORTED_CURRENCIES:
+            assert len(code) == 3 and code.isupper(), f"Invalid code: {code!r}"
+
+    def test_is_immutable(self):
+        with pytest.raises(AttributeError):
+            SUPPORTED_CURRENCIES.add("XYZ")  # type: ignore[attr-defined]
 
 
 class TestAzureDbuRates:

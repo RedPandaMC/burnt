@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal  # noqa: TC003 — used in pydantic field type
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from burnt.core.exchange import ExchangeRateProvider
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 from tabulate import tabulate
@@ -174,78 +177,139 @@ class PricingInfo(BaseModel):
 
 
 class CostEstimate(BaseModel, _DisplayMixin):
-    """Cost estimate for a query or workload."""
+    """Cost estimate for a query or workload.
+
+    All currency amounts live in ``costs`` — a plain dict keyed by ISO 4217 code.
+    Use ``cost_in`` for a direct lookup (no I/O) and ``convert_to`` for live
+    conversion via an injectable ``ExchangeRateProvider``.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     estimated_dbu: float | None = None
-    estimated_cost_usd: float | None = None
-    estimated_cost_eur: float | None = None
+    costs: dict[str, float] = {}
     confidence: Confidence = Confidence.LOW
     breakdown: dict[str, float] = {}
     warnings: list[str] = []
     _cluster: ClusterConfig | None = PrivateAttr(default=None)
 
-    def raise_if_exceeds(
-        self, budget: float, label: str = "", currency: str | None = None
-    ) -> CostEstimate:
-        """Raise CostBudgetExceeded if cost exceeds budget. Returns self if under budget.
+    # ------------------------------------------------------------------
+    # Currency access
+    # ------------------------------------------------------------------
 
-        Args:
-            budget: Budget amount (in the specified currency).
-            label: Optional label for identifying this check in pipelines.
-            currency: Currency for the budget (USD, EUR, etc.). Uses default currency if not provided.
+    def cost_in(self, currency: str) -> float | None:
+        """Return the pre-computed cost in *currency*, or None if unavailable.
 
-        Returns:
-            self if under budget (chainable).
+        Pure dict lookup — no network calls, no conversion.
+        """
+        return self.costs.get(currency.upper())
+
+    def convert_to(
+        self,
+        currency: str,
+        exchange: ExchangeRateProvider | None = None,
+    ) -> float:
+        """Return cost in *currency*, converting via *exchange* if necessary.
+
+        Falls back to ``FrankfurterProvider`` (live Frankfurter API) when no
+        provider is supplied. Prefers USD as the conversion base; falls back
+        to the first available currency in ``costs``.
 
         Raises:
-            CostBudgetExceeded: If estimated cost exceeds the budget.
+            ValueError: If ``costs`` is empty.
         """
-        import warnings
         from datetime import date
         from decimal import Decimal
 
-        from burnt.core.exceptions import CostBudgetExceeded
         from burnt.core.exchange import FrankfurterProvider
+
+        code = currency.upper()
+        direct = self.cost_in(code)
+        if direct is not None:
+            return direct
+
+        if not self.costs:
+            raise ValueError("No cost data available for conversion")
+
+        provider = exchange if exchange is not None else FrankfurterProvider()
+        base = "USD" if "USD" in self.costs else next(iter(self.costs))
+        converted = provider.get_rate_for_amount(
+            Decimal(str(self.costs[base])),
+            date.today(),
+            from_curr=base,
+            to_curr=code,
+        )
+        return float(converted)
+
+    @property
+    def primary_cost(self) -> float | None:
+        """Best available cost amount, preferring major currencies in priority order."""
+        for code in ("USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"):
+            if code in self.costs:
+                return self.costs[code]
+        return next(iter(self.costs.values()), None)
+
+    @property
+    def primary_currency(self) -> str | None:
+        """ISO 4217 code matching ``primary_cost``, or None if ``costs`` is empty."""
+        for code in ("USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"):
+            if code in self.costs:
+                return code
+        return next(iter(self.costs), None)
+
+    # ------------------------------------------------------------------
+    # Budget guard
+    # ------------------------------------------------------------------
+
+    def raise_if_exceeds(
+        self, budget: float, label: str = "", currency: str | None = None
+    ) -> CostEstimate:
+        """Raise ``CostBudgetExceeded`` if cost exceeds *budget*; return self otherwise.
+
+        Args:
+            budget: Budget amount in *currency*.
+            label: Optional identifier surfaced in the exception message.
+            currency: ISO 4217 code (defaults to ``"USD"``).
+
+        Returns:
+            self — chainable.
+
+        Raises:
+            CostBudgetExceeded: When the estimated cost exceeds *budget*.
+        """
+        import warnings as _warnings
+
+        from burnt.core.exceptions import CostBudgetExceeded
 
         if currency is None:
             currency = "USD"
 
-        if self.estimated_cost_usd is None:
-            warnings.warn(
-                "Cannot check budget: estimated_cost_usd is None"
+        if not self.costs:
+            _warnings.warn(
+                "Cannot check budget: no cost data available"
                 + (f" for {label!r}" if label else ""),
                 stacklevel=2,
             )
             return self
 
-        estimate_currency = "USD"
-        if self.estimated_cost_eur is not None:
-            estimate_currency = "EUR"
-
-        if currency != estimate_currency:
-            exchange = FrankfurterProvider()
-            converted = exchange.get_rate_for_amount(
-                Decimal(str(budget)),
-                date.today(),
-                from_curr=currency,
-                to_curr=estimate_currency,
+        try:
+            estimate_cost = self.convert_to(currency)
+        except Exception:
+            _warnings.warn(
+                "Cannot check budget: currency conversion failed"
+                + (f" for {label!r}" if label else ""),
+                stacklevel=2,
             )
-            compare_budget = float(converted)
-        else:
-            compare_budget = budget
+            return self
 
-        estimate_cost = (
-            self.estimated_cost_eur
-            if estimate_currency == "EUR"
-            else self.estimated_cost_usd
-        )
-
-        if estimate_cost is not None and estimate_cost > compare_budget:
+        if estimate_cost > budget:
             raise CostBudgetExceeded(self, budget, label, currency=currency)
 
         return self
+
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
 
     def comparison_table(self) -> str:
         """Generate ASCII comparison table."""
@@ -256,8 +320,8 @@ class CostEstimate(BaseModel, _DisplayMixin):
         ]
         if self.estimated_dbu is not None:
             lines.append(f"{'Estimated DBU':<20} {self.estimated_dbu:<30.2f}")
-        if self.estimated_cost_usd is not None:
-            lines.append(f"{'Estimated Cost':<20} ${self.estimated_cost_usd:<29.2f}")
+        for code, amount in self.costs.items():
+            lines.append(f"{'Cost (' + code + ')':<20} {amount:<30.2f}")
         lines.append(f"{'Confidence':<20} {self.confidence:<30}")
 
         if self.breakdown:
@@ -278,8 +342,8 @@ class CostEstimate(BaseModel, _DisplayMixin):
         rows = []
         if self.estimated_dbu is not None:
             rows.append(["Estimated DBU", f"{self.estimated_dbu:.2f}"])
-        if self.estimated_cost_usd is not None:
-            rows.append(["Estimated Cost", f"${self.estimated_cost_usd:.2f}"])
+        for code, amount in self.costs.items():
+            rows.append([f"Cost ({code})", f"{amount:.2f}"])
         rows.append(["Confidence", self.confidence])
 
         md = tabulate(rows, headers=["Field", "Value"], tablefmt="github")
@@ -302,10 +366,11 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
     def __repr__(self) -> str:
         """Return developer representation."""
-        cost = self.estimated_cost_usd or 0
+        cost = self.primary_cost or 0
+        currency = self.primary_currency or "USD"
         dbu = f"{self.estimated_dbu:.2f}" if self.estimated_dbu is not None else "N/A"
         return (
-            f"CostEstimate(dbu={dbu}, cost=${cost:.2f}, confidence={self.confidence})"
+            f"CostEstimate(dbu={dbu}, cost={currency} {cost:.2f}, confidence={self.confidence})"
         )
 
 
@@ -516,24 +581,26 @@ class SimulationResult(BaseModel, _DisplayMixin):
 
     def summary(self) -> str:
         """One-line summary description."""
-        original_cost = self.original.estimated_cost_usd or 0
-        projected_cost = self.projected.estimated_cost_usd or 0
+        original_cost = self.original.primary_cost or 0
+        projected_cost = self.projected.primary_cost or 0
+        currency = self.original.primary_currency or "USD"
         return (
             f"{', '.join(m.name for m in self.modifications)}: "
-            f"${original_cost:.2f} → ${projected_cost:.2f} ({self.total_savings_pct:+.1f}%)"
+            f"{currency} {original_cost:.2f} → {currency} {projected_cost:.2f} ({self.total_savings_pct:+.1f}%)"
         )
 
     def comparison_table(self) -> str:
         """Generate ASCII comparison table."""
-        original_cost = self.original.estimated_cost_usd or 0
-        projected_cost = self.projected.estimated_cost_usd or 0
+        original_cost = self.original.primary_cost or 0
+        projected_cost = self.projected.primary_cost or 0
+        currency = self.original.primary_currency or "USD"
 
         lines = [
             "Simulation Comparison",
             f"{'Metric':<20} {'Original':<15} {'Projected':<15} {'Δ':<10}",
             "-" * 60,
             f"{'DBU':<20} {self.original.estimated_dbu:<15.2f} {self.projected.estimated_dbu:<15.2f} {self.total_savings_pct:<10.1f}%",
-            f"{'Cost (USD)':<20} ${original_cost:<14.2f} ${projected_cost:<14.2f} {self.total_savings_pct:<10.1f}%",
+            f"{'Cost (' + currency + ')':<20} {original_cost:<15.2f} {projected_cost:<15.2f} {self.total_savings_pct:<10.1f}%",
             "",
             "Modifications:",
         ]
@@ -547,14 +614,15 @@ class SimulationResult(BaseModel, _DisplayMixin):
 
     def to_markdown(self) -> str:
         """Return a GFM markdown table using tabulate."""
-        original_cost = self.original.estimated_cost_usd or 0
-        projected_cost = self.projected.estimated_cost_usd or 0
+        original_cost = self.original.primary_cost or 0
+        projected_cost = self.projected.primary_cost or 0
+        currency = self.original.primary_currency or "USD"
 
         rows = [
             [
-                "Cost (USD)",
-                f"${original_cost:.2f}",
-                f"${projected_cost:.2f}",
+                f"Cost ({currency})",
+                f"{original_cost:.2f}",
+                f"{projected_cost:.2f}",
                 f"{self.total_savings_pct:.1f}%",
             ],
             [
@@ -617,12 +685,9 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
 
         def sort_key(item: tuple[str, SimulationResult]) -> tuple[float, int]:
             _name, result = item
-            cost = result.projected.estimated_cost_usd or float("inf")
+            cost = result.projected.primary_cost or float("inf")
             confidence_score = confidence_order.get(result.projected.confidence, 0)
-            return (
-                cost,
-                -confidence_score,
-            )  # Negative so higher confidence comes first
+            return (cost, -confidence_score)  # negative so higher confidence sorts first
 
         return min(self.scenarios, key=sort_key)
 
@@ -631,14 +696,15 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
         if not self.scenarios:
             return "No scenarios to compare."
 
+        first_currency = self.scenarios[0][1].projected.primary_currency or "USD"
         lines = [
             "Scenario Comparison",
-            f"{'Scenario':<20} {'Cost (USD)':<15} {'vs Baseline':<15} {'Modifications':<30}",
+            f"{'Scenario':<20} {'Cost (' + first_currency + ')':<15} {'vs Baseline':<15} {'Modifications':<30}",
             "-" * 80,
         ]
 
         for name, result in self.scenarios:
-            cost = result.projected.estimated_cost_usd or 0
+            cost = result.projected.primary_cost or 0
             vs_baseline = (
                 "—"
                 if name == self.scenarios[0][0]
@@ -649,7 +715,7 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
                 if result.modifications
                 else "—"
             )
-            lines.append(f"{name:<20} ${cost:<14.2f} {vs_baseline:<15} {mods:<30}")
+            lines.append(f"{name:<20} {cost:<15.2f} {vs_baseline:<15} {mods:<30}")
 
         return "\n".join(lines)
 
@@ -658,9 +724,10 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
         if not self.scenarios:
             return "No scenarios to compare."
 
+        first_currency = self.scenarios[0][1].projected.primary_currency or "USD"
         rows = []
         for name, result in self.scenarios:
-            cost = result.projected.estimated_cost_usd or 0
+            cost = result.projected.primary_cost or 0
             vs_baseline = (
                 "—"
                 if name == self.scenarios[0][0]
@@ -671,11 +738,11 @@ class MultiSimulationResult(BaseModel, _DisplayMixin):
                 if result.modifications
                 else "—"
             )
-            rows.append([name, f"${cost:.2f}", vs_baseline, mods])
+            rows.append([name, f"{cost:.2f}", vs_baseline, mods])
 
         return tabulate(
             rows,
-            headers=["Scenario", "Cost (USD)", "vs Baseline", "Modifications"],
+            headers=["Scenario", f"Cost ({first_currency})", "vs Baseline", "Modifications"],
             tablefmt="github",
         )
 

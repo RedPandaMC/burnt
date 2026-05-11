@@ -14,7 +14,7 @@ class CostEstimate(BaseModel):
     """Estimated cost for a workload."""
 
     estimated_dbu: float | None = None
-    estimated_cost_usd: float | None = None
+    costs: dict[str, float] = {}
     confidence: Literal["low", "medium", "high"] = "low"
     breakdown: dict[str, float] = {}
     warnings: list[str] = []

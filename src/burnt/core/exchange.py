@@ -3,8 +3,21 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
+from typing import Protocol
 
 from .exceptions import PricingError
+
+
+class ExchangeRateProvider(Protocol):
+    """Protocol for injectable exchange rate providers."""
+
+    def get_rate_for_amount(
+        self,
+        amount: Decimal,
+        target_date: date,
+        from_curr: str = "USD",
+        to_curr: str = "EUR",
+    ) -> Decimal: ...
 
 
 class FrankfurterProvider:
@@ -62,3 +75,13 @@ class FixedRateProvider:
         if from_curr == to_curr:
             return Decimal("1")
         return self._rate
+
+    def get_rate_for_amount(
+        self,
+        amount: Decimal,
+        target_date: date,
+        from_curr: str = "USD",
+        to_curr: str = "EUR",
+    ) -> Decimal:
+        """Convert amount at the fixed rate."""
+        return amount * self.get_rate(target_date, from_curr, to_curr)
