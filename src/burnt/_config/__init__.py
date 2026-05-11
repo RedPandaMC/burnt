@@ -7,7 +7,7 @@ from typing import Any
 _settings: dict[str, Any] = {}
 
 
-def set(
+def configure(
     warehouse_id: str | None = None,
     billing_table: str | None = None,
     skip: list[str] | None = None,
@@ -40,4 +40,4 @@ def clear() -> None:
     _settings = {}
 
 
-__all__ = ["clear", "get", "set"]
+__all__ = ["clear", "configure", "get"]

@@ -18,7 +18,7 @@ class NotebookCell:
 
 def parse_notebook(path: Path) -> list[NotebookCell]:
     """Parse a Jupyter notebook (.ipynb) file."""
-    with open(path) as f:
+    with path.open() as f:
         nb = json.load(f)
 
     cells = []

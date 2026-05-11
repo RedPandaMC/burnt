@@ -208,30 +208,27 @@ class SQLiteBackend:
 
         rows = self.execute_sql(sql)
 
-        records = []
-        for row in rows:
-            records.append(
-                QueryRecord(
-                    statement_id=row.get("statement_id", ""),
-                    statement_text=row.get("statement_text", ""),
-                    statement_type=row.get("statement_type"),
-                    start_time=row.get("start_time", ""),
-                    end_time=row.get("end_time"),
-                    execution_duration_ms=row.get("execution_duration_ms"),
-                    compilation_duration_ms=row.get("compilation_duration_ms"),
-                    read_bytes=row.get("read_bytes"),
-                    read_rows=row.get("read_rows"),
-                    produced_rows=row.get("produced_rows"),
-                    written_bytes=row.get("written_bytes"),
-                    total_task_duration_ms=row.get("total_task_duration_ms"),
-                    warehouse_id=row.get("warehouse_id"),
-                    cluster_id=row.get("cluster_id"),
-                    status=row.get("status", ""),
-                    error_message=row.get("error_message"),
-                )
+        return [
+            QueryRecord(
+                statement_id=row.get("statement_id", ""),
+                statement_text=row.get("statement_text", ""),
+                statement_type=row.get("statement_type"),
+                start_time=row.get("start_time", ""),
+                end_time=row.get("end_time"),
+                execution_duration_ms=row.get("execution_duration_ms"),
+                compilation_duration_ms=row.get("compilation_duration_ms"),
+                read_bytes=row.get("read_bytes"),
+                read_rows=row.get("read_rows"),
+                produced_rows=row.get("produced_rows"),
+                written_bytes=row.get("written_bytes"),
+                total_task_duration_ms=row.get("total_task_duration_ms"),
+                warehouse_id=row.get("warehouse_id"),
+                cluster_id=row.get("cluster_id"),
+                status=row.get("status", ""),
+                error_message=row.get("error_message"),
             )
-
-        return records
+            for row in rows
+        ]
 
     def describe_table(self, table_name: str) -> DeltaTableInfo:
         """Get Delta table metadata.

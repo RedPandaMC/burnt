@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal  # noqa: TC003 — used in pydantic field type
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 from tabulate import tabulate
 
 from ._display import _DisplayMixin
+from .enums import CloudProvider, Confidence, Sku, SpotPolicy, SqlDialect
+
+logger = logging.getLogger(__name__)
 
 
 class OperationInfo(BaseModel):
@@ -23,24 +27,10 @@ class QueryProfile(BaseModel):
     """Profile of a SQL query with complexity analysis."""
 
     sql: str
-    dialect: str = "databricks"
+    dialect: SqlDialect = SqlDialect.DATABRICKS
     operations: list[OperationInfo] = []
     tables: list[str] = []
     complexity_score: float = 0.0
-
-
-VALID_SKUS = {
-    "ALL_PURPOSE",
-    "JOBS_COMPUTE",
-    "SERVERLESS_JOBS",
-    "SERVERLESS_NOTEBOOKS",
-    "SQL_CLASSIC",
-    "SQL_PRO",
-    "SQL_SERVERLESS",
-    "DLT_CORE",
-    "DLT_PRO",
-    "DLT_ADVANCED",
-}
 
 
 class ClusterConfig(BaseModel):
@@ -51,31 +41,20 @@ class ClusterConfig(BaseModel):
     num_workers: int = 2
     dbu_per_hour: float = 0.75
     photon_enabled: bool = False
-    sku: str = "ALL_PURPOSE"
-    spot_policy: Literal["ON_DEMAND", "SPOT_WITH_ON_DEMAND_FALLBACK", "SPOT"] = (
-        "ON_DEMAND"
-    )
+    sku: Sku = Sku.ALL_PURPOSE
+    spot_policy: SpotPolicy = SpotPolicy.ON_DEMAND
     autoscale_min_workers: int | None = None
     autoscale_max_workers: int | None = None
 
-    @field_validator("sku")
-    @classmethod
-    def validate_sku(cls, v: str) -> str:
-        if v not in VALID_SKUS:
-            raise ValueError(f"Invalid SKU: {v}. Must be one of: {VALID_SKUS}")
-        return v
-
     @classmethod
     def _lookup_dbu_rate(cls, node_type: str) -> float:
-        import logging
-
         from burnt.core.instances import (
             AZURE_INSTANCE_CATALOG,  # lazy — avoids circular import
         )
 
         if node_type in AZURE_INSTANCE_CATALOG:
             return AZURE_INSTANCE_CATALOG[node_type].dbu_rate
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "Unknown instance type %r; falling back to default DBU rate 0.75", node_type
         )
         return 0.75
@@ -87,15 +66,11 @@ class ClusterConfig(BaseModel):
         node_type = cluster.get("node_type_id", "Standard_DS3_v2")
         dbu = cls._lookup_dbu_rate(node_type)
         spot_raw = cluster.get("azure_attributes", {}).get("availability", "ON_DEMAND")
-        spot_map: dict[str, str] = {
-            "ON_DEMAND": "ON_DEMAND",
-            "SPOT_WITH_ON_DEMAND_FALLBACK": "SPOT_WITH_ON_DEMAND_FALLBACK",
-            "SPOT": "SPOT",
-        }
         autoscale = cluster.get("autoscale", {})
-        spot_policy_value: Literal[
-            "ON_DEMAND", "SPOT_WITH_ON_DEMAND_FALLBACK", "SPOT"
-        ] = spot_map.get(spot_raw, "ON_DEMAND")  # type: ignore[assignment]
+        try:
+            spot_policy_value = SpotPolicy(spot_raw)
+        except ValueError:
+            spot_policy_value = SpotPolicy.ON_DEMAND
         return cls(
             instance_type=node_type,
             num_workers=cluster.get("num_workers", autoscale.get("max_workers", 2)),
@@ -170,7 +145,7 @@ class ClusterProfile(BaseModel):
     cluster_tags: dict[str, str] = {}
     instance_pool_id: str | None = None
     instance_pool_max_capacity: int | None = None
-    cloud_provider: Literal["AZURE", "AWS", "GCP"] = "AZURE"
+    cloud_provider: CloudProvider = CloudProvider.AZURE
 
     @classmethod
     def from_databricks_json(cls, payload: dict) -> ClusterProfile:
@@ -206,7 +181,7 @@ class CostEstimate(BaseModel, _DisplayMixin):
     estimated_dbu: float | None = None
     estimated_cost_usd: float | None = None
     estimated_cost_eur: float | None = None
-    confidence: Literal["low", "medium", "high", "none"] = "low"
+    confidence: Confidence = Confidence.LOW
     breakdown: dict[str, float] = {}
     warnings: list[str] = []
     _cluster: ClusterConfig | None = PrivateAttr(default=None)
@@ -287,13 +262,11 @@ class CostEstimate(BaseModel, _DisplayMixin):
 
         if self.breakdown:
             lines.extend(["", "Breakdown:"])
-            for key, value in self.breakdown.items():
-                lines.append(f"  {key}: {value:.2f}")
+            lines.extend(f"  {key}: {value:.2f}" for key, value in self.breakdown.items())
 
         if self.warnings:
             lines.extend(["", "Warnings:"])
-            for warning in self.warnings:
-                lines.append(f"  ⚠ {warning}")
+            lines.extend(f"  ⚠ {warning}" for warning in self.warnings)
 
         if self.confidence == "none":
             lines.append("\nConnect to a workspace for cost estimates: burnt doctor")

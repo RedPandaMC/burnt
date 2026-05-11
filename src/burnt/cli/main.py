@@ -127,9 +127,10 @@ def check(
         files_to_check.append(target)
     else:
         for ext in ("*.sql", "*.py"):
-            for f in sorted(target.rglob(ext)):
-                if not _is_excluded(f, settings.lint.exclude, target):
-                    files_to_check.append(f)
+            files_to_check.extend(
+                f for f in sorted(target.rglob(ext))
+                if not _is_excluded(f, settings.lint.exclude, target)
+            )
 
     if not files_to_check:
         console.print("[yellow]No .sql or .py files found to check.[/yellow]")
@@ -338,7 +339,7 @@ def init() -> None:
             try:
                 import tomllib
 
-                with open(target, "rb") as f:
+                with target.open("rb") as f:
                     data = tomllib.load(f)
                 if data.get("tool", {}).get("burnt") and not typer.confirm(
                     "[tool.burnt] already exists. Overwrite?", default=False
@@ -349,7 +350,7 @@ def init() -> None:
                 pass
 
             if target:
-                with open(target, "a") as f:
+                with target.open("a") as f:
                     f.write(_PYPROJECT_BURNT_SECTION)
                 console.print(f"[green]✓[/green] Added [tool.burnt] to {target}")
         else:
@@ -373,7 +374,7 @@ def init() -> None:
     if gitignore.exists():
         content = gitignore.read_text()
         if cache_entry not in content:
-            with open(gitignore, "a") as f:
+            with gitignore.open("a") as f:
                 f.write(f"\n# burnt cache\n{cache_entry}\n")
             console.print(f"[green]✓[/green] Added {cache_entry} to .gitignore")
     else:
@@ -502,7 +503,7 @@ def rules() -> None:
                     changed = True
                 else:
                     console.print(f"  [yellow]Invalid number: {token}[/yellow]")
-            except ValueError:
+            except ValueError:  # noqa: PERF203
                 console.print(f"  [yellow]Not a number: {token}[/yellow]")
 
         if changed:
@@ -661,7 +662,7 @@ def doctor(
         try:
             ver = importlib.metadata.version(import_name)
             console.print(f"  {pkg_name:<22} {ver:<14} [green]OK[/green]")
-        except importlib.metadata.PackageNotFoundError:
+        except importlib.metadata.PackageNotFoundError:  # noqa: PERF203
             console.print(f"  {pkg_name:<22} {'':14} [red]MISSING[/red]")
 
     console.print(SEP)

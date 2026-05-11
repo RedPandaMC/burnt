@@ -8,10 +8,12 @@ default system tables.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(config=ConfigDict(frozen=True, slots=True))
 class TableRegistry:
     """Registry of Databricks system table paths.
 
@@ -61,7 +63,7 @@ class TableRegistry:
     predictive_optimization: str = (
         "system.storage.predictive_optimization_operations_history"
     )
-    column_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    column_overrides: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> TableRegistry:

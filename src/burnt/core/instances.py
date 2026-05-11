@@ -431,7 +431,7 @@ def get_fresh_pricing(
         return pricing
     except Exception as e:
         logger.warning(
-            f"Failed to fetch Azure pricing API: {e}. Falling back to embedded pricing."
+            "Failed to fetch Azure pricing API: %s. Falling back to embedded pricing.", e
         )
         return {}
 

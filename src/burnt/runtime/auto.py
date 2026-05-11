@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -52,6 +53,7 @@ def _create_rest_backend() -> Backend:
     """Create RestBackend using Databricks SDK with unified auth."""
     try:
         from databricks.sdk import WorkspaceClient
+
         from .rest_backend import RestBackend
     except ImportError as err:
         raise ImportError(
@@ -146,6 +148,6 @@ def _get_script_path() -> str | None:
     for frame_info in inspect.stack():
         filename = frame_info.filename
         if filename and filename != "<stdin>" and filename.endswith(".py"):
-            return os.path.abspath(filename)
+            return str(Path(filename).resolve())
 
     return None

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from ..core.exceptions import ParseError
 from ..core.models import ExplainPlan, OperationInfo
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Unit conversion tables
@@ -85,13 +88,10 @@ _OP_TABLE: dict[str, tuple[str, int]] = {
 
 def _size_to_bytes(val: str, unit: str) -> int:
     """Convert a size string and unit to bytes."""
-    import logging
-
-    logger = logging.getLogger(__name__)
     multiplier = _SIZE_MULTIPLIERS.get(unit)
     if multiplier is None:
         logger.warning(
-            f"Unknown size unit '{unit}', defaulting to bytes. This may cause incorrect size calculations."
+            "Unknown size unit %r, defaulting to bytes. This may cause incorrect size calculations.", unit
         )
         return int(float(val))
     return int(float(val) * multiplier)

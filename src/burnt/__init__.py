@@ -13,8 +13,10 @@ Three modes (auto-detected):
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import logging
+from typing import TYPE_CHECKING, Any
 
+from .core.enums import Severity
 from .core.exceptions import (
     BurntError,
     ConfigError,
@@ -25,6 +27,11 @@ from .core.exceptions import (
     PricingError,
 )
 from .core.models import CostEstimate
+
+if TYPE_CHECKING:
+    from ._session import SessionState
+
+logging.getLogger("burnt").addHandler(logging.NullHandler())
 
 __version__ = "0.2.0"
 
@@ -48,7 +55,9 @@ __all__ = [
 # Session
 # ---------------------------------------------------------------------------
 
-_SESSION: Any = None
+# Single-writer (main thread via start_session()), read-only from check().
+# Safe for sequential notebook use; not designed for concurrent check() calls.
+_SESSION: SessionState | None = None
 
 
 def start_session() -> None:
@@ -79,7 +88,7 @@ def check(
     path: str | None = None,
     *,
     max_cost: float | None = None,
-    severity: Literal["error", "warning", "info"] = "warning",
+    severity: Severity = Severity.WARNING,
     skip: list[str] | None = None,
     only: list[str] | None = None,
     cluster: str | None = None,
@@ -149,7 +158,7 @@ def config(
     """
     from . import _config
 
-    _config.set(
+    _config.configure(
         warehouse_id=warehouse_id,
         billing_table=billing_table,
         skip=skip,

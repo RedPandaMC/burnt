@@ -7,6 +7,8 @@ from pathlib import Path
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .enums import Severity
+
 
 class LintSettings(BaseModel):
     """Settings for the lint / check subsystem."""
@@ -15,7 +17,7 @@ class LintSettings(BaseModel):
     extend_select: list[str] = []
     ignore: list[str] = []
     extend_ignore: list[str] = []
-    fail_on: str = "error"  # info | warning | error
+    fail_on: Severity = Severity.ERROR
     exclude: list[str] = []
     per_file_ignores: dict[str, list[str]] = {}
 
@@ -75,7 +77,7 @@ class Settings(BaseSettings):
         """
         import tomllib
 
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             data = tomllib.load(f)
 
         # pyproject.toml: look under [tool.burnt]
@@ -160,7 +162,7 @@ class Settings(BaseSettings):
         try:
             import tomllib
 
-            with open(path, "rb") as f:
+            with path.open("rb") as f:
                 data = tomllib.load(f)
             return bool(data.get("tool", {}).get("burnt"))
         except Exception:

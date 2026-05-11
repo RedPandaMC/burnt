@@ -14,7 +14,7 @@ class RuleIndex:
     all_codes: frozenset[str]
 
     @classmethod
-    def build(cls) -> "RuleIndex":
+    def build(cls) -> RuleIndex:
         from burnt._engine import list_rules
 
         rules = list_rules()

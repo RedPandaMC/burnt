@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass
 
-from pydantic import BaseModel, Field
+from burnt.core.enums import Confidence, EdgeType, GraphMode, NodeKind, ScalingType
+
+_frozen_slots = ConfigDict(frozen=True, slots=True)
+_mutable_slots = ConfigDict(slots=True)
 
 
-class CostNode(BaseModel):
+@dataclass(config=_frozen_slots)
+class CostNode:
     """A single operation in a cost graph."""
 
     id: str
-    kind: Literal[
-        "read", "transform", "shuffle", "action", "write", "udf_call", "maintenance"
-    ]
-    scaling_type: Literal[
-        "linear", "linear_with_cliff", "quadratic", "step_failure", "maintenance"
-    ]
+    kind: NodeKind
+    scaling_type: ScalingType
     photon_eligible: bool = False
     shuffle_required: bool = False
     driver_bound: bool = False
@@ -27,21 +28,23 @@ class CostNode(BaseModel):
     source_code: str | None = None
 
 
-class CostEdge(BaseModel):
+@dataclass(config=_frozen_slots)
+class CostEdge:
     """An edge between cost nodes."""
 
     source: str
     target: str
-    edge_type: Literal["dataflow", "control", "dependency"] = "dataflow"
+    edge_type: EdgeType = EdgeType.DATAFLOW
 
 
-class CostGraph(BaseModel):
+@dataclass(config=_mutable_slots)
+class CostGraph:
     """Graph of cost operations for Python/SQL workloads."""
 
     nodes: list[CostNode] = Field(default_factory=list)
     edges: list[CostEdge] = Field(default_factory=list)
-    mode: Literal["python", "sql", "dlt"] = "python"
-    confidence: Literal["low", "medium", "high"] = "low"
+    mode: GraphMode = GraphMode.PYTHON
+    confidence: Confidence = Confidence.LOW
 
     def add_node(self, node: CostNode) -> None:
         """Add a node to the graph."""
@@ -59,24 +62,26 @@ class CostGraph(BaseModel):
         return None
 
 
-class PipelineTable(BaseModel):
+@dataclass(config=_frozen_slots)
+class PipelineTable:
     """A table in a DLT pipeline."""
 
     id: str
     name: str
-    kind: Literal["streaming", "materialized_view", "temporary_view"]
-    source_type: Literal["cloud_files", "kafka", "dlt_read", "live_ref"] = "cloud_files"
+    kind: str
+    source_type: str = "cloud_files"
     inner_nodes: list[CostNode] = Field(default_factory=list)
     expectations: list[str] = Field(default_factory=list)
     is_incremental: bool = True
 
 
-class PipelineGraph(BaseModel):
+@dataclass(config=_mutable_slots)
+class PipelineGraph:
     """Graph of DLT pipeline tables."""
 
     tables: list[PipelineTable] = Field(default_factory=list)
-    mode: Literal["dlt"] = "dlt"
-    confidence: Literal["low", "medium", "high"] = "low"
+    mode: GraphMode = GraphMode.DLT
+    confidence: Confidence = Confidence.LOW
 
     def add_table(self, table: PipelineTable) -> None:
         """Add a table to the pipeline."""

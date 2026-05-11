@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..core.exceptions import NotAvailableError
 from ..core.models import ClusterConfig, DeltaTableInfo, QueryRecord
@@ -38,7 +38,7 @@ class RestBackend:
                     "Install with: pip install databricks-sdk"
                 ) from err
 
-    def execute_sql(self, sql: str, warehouse_id: str | None = None) -> list[dict]:
+    def execute_sql(self, sql: str, warehouse_id: str | None = None) -> list[dict[str, object]]:
         """Execute a SQL statement via Statement Execution API.
 
         Args:
@@ -66,14 +66,14 @@ class RestBackend:
 
         response = self._client.statements.execute_statement(request)
 
-        rows: list[dict[str, Any]] = []
         if response.result and response.result.data_array:
             schema = response.manifest.schema if response.manifest else None
             col_names = [col.name for col in schema.columns] if schema else []
-            for row_values in response.result.data_array:
-                rows.append(dict(zip(col_names, row_values, strict=False)))
-
-        return rows
+            return [
+                dict(zip(col_names, row_values, strict=False))
+                for row_values in response.result.data_array
+            ]
+        return []
 
     def get_cluster_config(self, cluster_id: str) -> ClusterConfig:
         """Get cluster configuration via Clusters API.
@@ -113,30 +113,27 @@ class RestBackend:
         """
         queries = self._client.queries.list(max_results=limit)
 
-        records: list[QueryRecord] = []
-        for q in queries:
-            records.append(
-                QueryRecord(
-                    statement_id=q.statement_id or "",
-                    statement_text=q.statement_text or "",
-                    statement_type=q.statement_type,
-                    start_time=q.start_time or "",
-                    end_time=q.end_time,
-                    execution_duration_ms=q.execution_duration_ms,
-                    compilation_duration_ms=q.compilation_duration_ms,
-                    read_bytes=q.read_bytes,
-                    read_rows=q.read_rows,
-                    produced_rows=q.produced_rows,
-                    written_bytes=q.written_bytes,
-                    total_task_duration_ms=q.total_task_duration_ms,
-                    warehouse_id=q.warehouse_id,
-                    cluster_id=q.cluster_id,
-                    status=q.status or "",
-                    error_message=q.error_message,
-                )
+        return [
+            QueryRecord(
+                statement_id=q.statement_id or "",
+                statement_text=q.statement_text or "",
+                statement_type=q.statement_type,
+                start_time=q.start_time or "",
+                end_time=q.end_time,
+                execution_duration_ms=q.execution_duration_ms,
+                compilation_duration_ms=q.compilation_duration_ms,
+                read_bytes=q.read_bytes,
+                read_rows=q.read_rows,
+                produced_rows=q.produced_rows,
+                written_bytes=q.written_bytes,
+                total_task_duration_ms=q.total_task_duration_ms,
+                warehouse_id=q.warehouse_id,
+                cluster_id=q.cluster_id,
+                status=q.status or "",
+                error_message=q.error_message,
             )
-
-        return records
+            for q in queries
+        ]
 
     def describe_table(self, table_name: str) -> DeltaTableInfo:
         """Get Delta table metadata using DESCRIBE DETAIL.
@@ -162,7 +159,7 @@ class RestBackend:
             else [],
         )
 
-    def get_session_metrics(self) -> dict:
+    def get_session_metrics(self) -> dict[str, object]:
         """Get session metrics (not available in REST context).
 
         Raises:
