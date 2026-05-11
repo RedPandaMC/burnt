@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .enums import Severity
@@ -49,11 +49,68 @@ class AlertSettings(BaseModel):
     delta_table: str | None = None
 
 
+class PricingSettings(BaseModel):
+    """Settings for the pricing backend selection."""
+
+    backend: str | None = None
+
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _validate_backend(cls, v: str | None) -> str | None:
+        valid = {
+            "azure-databricks",
+            "aws-databricks",
+            "gcp-databricks",
+            "onprem-spark",
+        }
+        if v is not None and v not in valid:
+            from burnt.core.exceptions import ConfigError
+
+            raise ConfigError(
+                f"Unknown pricing backend {v!r}. Valid: {', '.join(sorted(valid))}"
+            )
+        return v
+
+
+class SystemTablesSettings(BaseModel):
+    """System table paths for Databricks."""
+
+    enabled: bool = True
+    query_history: str = "system.query.history"
+    billing_usage: str = "system.billing.usage"
+    list_prices: str = "system.billing.list_prices"
+    information_schema_tables: str = "system.information_schema.tables"
+    compute_clusters: str = "system.compute.clusters"
+    node_timeline: str = "system.compute.node_timeline"
+
+
+class DatabricksSettings(BaseModel):
+    """Settings for Databricks-specific configuration."""
+
+    system_tables: SystemTablesSettings = SystemTablesSettings()
+
+
+class OnPremSparkSettings(BaseModel):
+    """Settings for the onprem-spark pricing backend."""
+
+    cost_per_vcpu_hour: float | None = None
+    cost_per_gb_hour: float | None = None
+    cost_per_gb_shuffle: float | None = None
+
+
+class AzureSettings(BaseModel):
+    """Settings for Azure Databricks backend."""
+
+    region: str = "eastus"
+    subscription_id: str | None = None
+
+
 class Settings(BaseSettings):
     """Application settings — loaded from env vars, then TOML config files."""
 
     model_config = SettingsConfigDict(
         env_prefix="BURNT_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -64,10 +121,27 @@ class Settings(BaseSettings):
     warehouse_id: str | None = None
     target_currency: str = "USD"
     pricing_source: str = "api"
+
+    # Single-underscore env alias for pricing.backend (BURNT_PRICING_BACKEND)
+    pricing_backend: str | None = None
+
     lint: LintSettings = LintSettings()
     cache: CacheSettings = CacheSettings()
     watch: WatchSettings = WatchSettings()
     alert: AlertSettings = AlertSettings()
+    pricing: PricingSettings = PricingSettings()
+    databricks: DatabricksSettings = DatabricksSettings()
+    onprem_spark: OnPremSparkSettings = OnPremSparkSettings()
+    azure_databricks: AzureSettings = AzureSettings()
+
+    @model_validator(mode="after")
+    def _sync_pricing_backend(self) -> Settings:
+        """Propagate BURNT_PRICING_BACKEND (single _) into pricing.backend."""
+        if self.pricing_backend is not None and self.pricing.backend is None:
+            self.pricing = self.pricing.model_copy(
+                update={"backend": self.pricing_backend}
+            )
+        return self
 
     @classmethod
     def from_toml(cls, path: Path) -> Settings:
@@ -90,26 +164,78 @@ class Settings(BaseSettings):
         top_level = {
             k: v
             for k, v in section.items()
-            if k not in ("lint", "cache", "watch", "alert")
+            if k
+            not in (
+                "lint",
+                "cache",
+                "watch",
+                "alert",
+                "pricing",
+                "databricks",
+                "onprem_spark",
+                "azure_databricks",
+            )
         }
         lint_data = section.get("lint", {})
         cache_data = section.get("cache", {})
         watch_data = section.get("watch", {})
         alert_data = section.get("alert", {})
+        pricing_data = section.get("pricing", {})
+        onprem_spark_data = section.get("onprem_spark", {})
+        databricks_data = section.get("databricks", {})
+        system_tables_data = databricks_data.get("system_tables", {})
+        azure_databricks_data = section.get("azure_databricks", {})
 
         # TOML uses kebab-case; map to snake_case for pydantic
         lint_data = {k.replace("-", "_"): v for k, v in lint_data.items()}
         cache_data = {k.replace("-", "_"): v for k, v in cache_data.items()}
         watch_data = {k.replace("-", "_"): v for k, v in watch_data.items()}
         alert_data = {k.replace("-", "_"): v for k, v in alert_data.items()}
+        pricing_data = {k.replace("-", "_"): v for k, v in pricing_data.items()}
+        onprem_spark_data = {
+            k.replace("-", "_"): v for k, v in onprem_spark_data.items()
+        }
+        system_tables_data = {
+            k.replace("-", "_"): v for k, v in system_tables_data.items()
+        }
+        azure_databricks_data = {
+            k.replace("-", "_"): v for k, v in azure_databricks_data.items()
+        }
         top_level = {k.replace("-", "_"): v for k, v in top_level.items()}
 
         lint = LintSettings(**lint_data) if lint_data else LintSettings()
         cache = CacheSettings(**cache_data) if cache_data else CacheSettings()
         watch = WatchSettings(**watch_data) if watch_data else WatchSettings()
         alert = AlertSettings(**alert_data) if alert_data else AlertSettings()
+        pricing = PricingSettings(**pricing_data) if pricing_data else PricingSettings()
+        system_tables = (
+            SystemTablesSettings(**system_tables_data)
+            if system_tables_data
+            else SystemTablesSettings()
+        )
+        databricks = DatabricksSettings(system_tables=system_tables)
+        onprem_spark = (
+            OnPremSparkSettings(**onprem_spark_data)
+            if onprem_spark_data
+            else OnPremSparkSettings()
+        )
+        azure_databricks = (
+            AzureSettings(**azure_databricks_data)
+            if azure_databricks_data
+            else AzureSettings()
+        )
 
-        return cls(lint=lint, cache=cache, watch=watch, alert=alert, **top_level)
+        return cls(
+            lint=lint,
+            cache=cache,
+            watch=watch,
+            alert=alert,
+            pricing=pricing,
+            databricks=databricks,
+            onprem_spark=onprem_spark,
+            azure_databricks=azure_databricks,
+            **top_level,
+        )
 
     @classmethod
     def discover(
@@ -198,10 +324,24 @@ class Settings(BaseSettings):
         cache_merged = _merge_model(CacheSettings, [s.cache for s in settings])
         watch_merged = _merge_model(WatchSettings, [s.watch for s in settings])
         alert_merged = _merge_model(AlertSettings, [s.alert for s in settings])
+        pricing_merged = _merge_model(PricingSettings, [s.pricing for s in settings])
+        databricks_merged = _merge_model(
+            DatabricksSettings, [s.databricks for s in settings]
+        )
+        onprem_spark_merged = _merge_model(
+            OnPremSparkSettings, [s.onprem_spark for s in settings]
+        )
+        azure_databricks_merged = _merge_model(
+            AzureSettings, [s.azure_databricks for s in settings]
+        )
         merged["lint"] = lint_merged
         merged["cache"] = cache_merged
         merged["watch"] = watch_merged
         merged["alert"] = alert_merged
+        merged["pricing"] = pricing_merged
+        merged["databricks"] = databricks_merged
+        merged["onprem_spark"] = onprem_spark_merged
+        merged["azure_databricks"] = azure_databricks_merged
 
         return cls(**merged)
 

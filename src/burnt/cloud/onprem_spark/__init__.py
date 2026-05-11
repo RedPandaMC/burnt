@@ -1,1 +1,5 @@
-"""On-premises Spark PricingBackend (stub — implementation ships with burnt[onprem-spark])."""
+"""On-premises Spark PricingBackend."""
+
+from .backend import OnPremSparkBackend
+
+__all__ = ["OnPremSparkBackend"]

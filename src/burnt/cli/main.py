@@ -300,6 +300,22 @@ exclude = []
 [cache]
 enabled = true
 ttl-seconds = 3600
+
+# [pricing]
+# backend = "azure-databricks"   # azure-databricks | aws-databricks | gcp-databricks | onprem-spark
+
+# [onprem_spark]
+# cost_per_vcpu_hour  = 0.048    # $/vCPU-hour (required for onprem-spark backend)
+# cost_per_gb_hour    = 0.006    # $/GB-hour memory
+# cost_per_gb_shuffle = 0.001    # $/GB shuffled
+
+# [databricks.system_tables]
+# enabled = true
+# list_prices = "system.billing.list_prices"
+
+# [azure_databricks]
+# region = "eastus"
+# subscription_id = ""
 """
 
 _PYPROJECT_BURNT_SECTION = """
@@ -315,6 +331,22 @@ exclude = []
 [tool.burnt.cache]
 enabled = true
 ttl-seconds = 3600
+
+# [tool.burnt.pricing]
+# backend = "azure-databricks"   # azure-databricks | aws-databricks | gcp-databricks | onprem-spark
+
+# [tool.burnt.onprem_spark]
+# cost_per_vcpu_hour  = 0.048    # $/vCPU-hour (required for onprem-spark backend)
+# cost_per_gb_hour    = 0.006    # $/GB-hour memory
+# cost_per_gb_shuffle = 0.001    # $/GB shuffled
+
+# [tool.burnt.databricks.system_tables]
+# enabled = true
+# list_prices = "system.billing.list_prices"
+
+# [tool.burnt.azure_databricks]
+# region = "eastus"
+# subscription_id = ""
 """
 
 
@@ -802,6 +834,36 @@ def doctor(
             rules_str = f"{selected} rules selected, {ignored_count} ignored"
         console.print(f"    {'lint.select':<16} {rules_str}")
         console.print(f"    {'cache.ttl':<16} {int(settings.cache.ttl_seconds)}s")
+
+        # Pricing config row
+        pricing_backend = settings.pricing.backend or "not configured"
+        console.print(f"    {'pricing.backend':<16} {pricing_backend}")
+        if settings.pricing.backend == "onprem-spark":
+            osp = settings.onprem_spark
+            vcpu = osp.cost_per_vcpu_hour
+            gb_h = osp.cost_per_gb_hour
+            shuffle = osp.cost_per_gb_shuffle
+            console.print(
+                f"    {'  vcpu/hour':<16} "
+                f"{f'${vcpu:.4f}' if vcpu is not None else '[yellow]NOT SET[/yellow]'}"
+            )
+            console.print(
+                f"    {'  gb/hour':<16} "
+                f"{f'${gb_h:.4f}' if gb_h is not None else 'not set'}"
+            )
+            console.print(
+                f"    {'  gb/shuffle':<16} "
+                f"{f'${shuffle:.4f}' if shuffle is not None else 'not set'}"
+            )
+        elif settings.pricing.backend == "azure-databricks":
+            az = settings.azure_databricks
+            console.print(f"    {'  region':<16} {az.region}")
+            sub = az.subscription_id
+            if sub:
+                masked = sub[:8] + "..." if len(sub) > 8 else sub
+                console.print(f"    {'  subscription':<16} {masked}")
+            else:
+                console.print(f"    {'  subscription':<16} not set")
 
         # Check for secondary config in the same directory
         parent = config_path.parent
