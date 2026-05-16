@@ -141,7 +141,7 @@ def test_doctor_missing_dependency(tmp_path, monkeypatch):
     original_version = __import__("importlib.metadata", fromlist=["version"]).version
 
     def patched_version(name: str) -> str:
-        if name == "sqlglot":
+        if name == "pydantic":
             raise PackageNotFoundError(name)
         return original_version(name)
 

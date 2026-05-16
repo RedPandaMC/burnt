@@ -1,106 +1,12 @@
-from decimal import Decimal
+"""Tests for the pricing utilities and provider backends."""
 
 import pytest
-
-from burnt.core.exceptions import PricingError
-from burnt.core.pricing import (
-    AZURE_DBU_RATES,
-    AZURE_INSTANCE_DBU,
-    CLOUD_REGION_CURRENCIES,
-    SUPPORTED_CURRENCIES,
-    PricingBackend,
-    apply_photon,
-    compute_cost_usd,
-    get_dbu_rate,
-    usd_to_eur,
-)
-
-
-class TestPricingBackendProtocol:
-    def test_is_a_protocol(self):
-        import typing
-
-        assert issubclass(PricingBackend, typing.Protocol)
-
-    def test_has_name_annotation(self):
-        import typing
-
-        hints = typing.get_type_hints(PricingBackend)
-        assert "name" in hints
-
-    def test_has_map_method(self):
-        assert callable(getattr(PricingBackend, "map", None))
-
-    def test_structural_conformance(self):
-        from burnt.core.models import CostEstimate
-        from burnt.graph.model import CostGraph
-
-        class FakeBackend:
-            name = "test-backend"
-
-            def map(self, graph: CostGraph) -> CostEstimate:
-                return CostEstimate()
-
-        backend: PricingBackend = FakeBackend()
-        assert backend.name == "test-backend"
-
-
-class TestCloudRegionCurrencies:
-    def test_azure_regions_mapped(self):
-        assert CLOUD_REGION_CURRENCIES["eastus"] == "USD"
-        assert CLOUD_REGION_CURRENCIES["uksouth"] == "GBP"
-        assert CLOUD_REGION_CURRENCIES["japaneast"] == "JPY"
-        assert CLOUD_REGION_CURRENCIES["northeurope"] == "EUR"
-        assert CLOUD_REGION_CURRENCIES["canadacentral"] == "CAD"
-        assert CLOUD_REGION_CURRENCIES["australiaeast"] == "AUD"
-        assert CLOUD_REGION_CURRENCIES["switzerlandnorth"] == "CHF"
-
-    def test_aws_regions_mapped(self):
-        assert CLOUD_REGION_CURRENCIES["us-east-1"] == "USD"
-        assert CLOUD_REGION_CURRENCIES["eu-west-2"] == "GBP"
-        assert CLOUD_REGION_CURRENCIES["ap-northeast-1"] == "JPY"
-        assert CLOUD_REGION_CURRENCIES["ap-southeast-2"] == "AUD"
-        assert CLOUD_REGION_CURRENCIES["ca-central-1"] == "CAD"
-        assert CLOUD_REGION_CURRENCIES["sa-east-1"] == "BRL"
-
-    def test_gcp_regions_mapped(self):
-        assert CLOUD_REGION_CURRENCIES["us-central1"] == "USD"
-        assert CLOUD_REGION_CURRENCIES["europe-west2"] == "GBP"
-        assert CLOUD_REGION_CURRENCIES["europe-west6"] == "CHF"
-        assert CLOUD_REGION_CURRENCIES["asia-northeast1"] == "JPY"
-        assert CLOUD_REGION_CURRENCIES["australia-southeast1"] == "AUD"
-        assert CLOUD_REGION_CURRENCIES["northamerica-northeast1"] == "CAD"
-
-    def test_all_values_are_three_letter_codes(self):
-        for region, code in CLOUD_REGION_CURRENCIES.items():
-            assert len(code) == 3 and code.isupper(), (
-                f"Region {region!r} has invalid currency code {code!r}"
-            )
-
-
-class TestSupportedCurrencies:
-    def test_is_frozenset(self):
-        assert isinstance(SUPPORTED_CURRENCIES, frozenset)
-
-    def test_contains_major_currencies(self):
-        for code in ("USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"):
-            assert code in SUPPORTED_CURRENCIES
-
-    def test_contains_emerging_market_currencies(self):
-        for code in ("BRL", "KRW", "SGD", "INR"):
-            assert code in SUPPORTED_CURRENCIES
-
-    def test_all_codes_are_three_letters(self):
-        for code in SUPPORTED_CURRENCIES:
-            assert len(code) == 3 and code.isupper(), f"Invalid code: {code!r}"
-
-    def test_is_immutable(self):
-        with pytest.raises(AttributeError):
-            SUPPORTED_CURRENCIES.add("XYZ")  # type: ignore[attr-defined]
 
 
 class TestAzureDbuRates:
     def test_azure_dbu_rates_contains_expected_skus(self):
+        from burnt.providers.azure_databricks.rates import DBU_RATES
+
         expected_skus = [
             "JOBS_COMPUTE",
             "ALL_PURPOSE",
@@ -114,83 +20,148 @@ class TestAzureDbuRates:
             "DLT_ADVANCED",
         ]
         for sku in expected_skus:
-            assert sku in AZURE_DBU_RATES
+            assert sku in DBU_RATES
 
-    def test_azure_dbu_rates_are_decimals(self):
-        for rate in AZURE_DBU_RATES.values():
-            assert isinstance(rate, Decimal)
+    def test_azure_dbu_rates_are_floats(self):
+        from burnt.providers.azure_databricks.rates import DBU_RATES
 
-
-class TestAzureInstanceDbu:
-    def test_azure_instance_dbu_contains_expected_types(self):
-        expected_types = [
-            "Standard_DS3_v2",
-            "Standard_DS4_v2",
-            "Standard_D8s_v3",
-            "Standard_D16s_v3",
-            "Standard_D32s_v3",
-            "Standard_D64s_v3",
-        ]
-        for inst_type in expected_types:
-            assert inst_type in AZURE_INSTANCE_DBU
-
-    def test_azure_instance_dbu_values(self):
-        assert AZURE_INSTANCE_DBU["Standard_DS3_v2"] == 0.75
-        assert AZURE_INSTANCE_DBU["Standard_DS4_v2"] == 1.50
-        assert AZURE_INSTANCE_DBU["Standard_D8s_v3"] == 2.00
+        for rate in DBU_RATES.values():
+            assert isinstance(rate, (float, int))
 
 
-class TestGetDbuRate:
-    def test_get_dbu_rate_valid_sku(self):
-        rate = get_dbu_rate("ALL_PURPOSE")
-        assert rate == Decimal("0.55")
+class TestComputeUnits:
+    def test_compute_components_vcpu_hours(self):
+        from burnt.providers.base import InstanceSpec
+        from burnt.providers.compute_units import ComputeComponents
 
-    def test_get_dbu_rate_case_insensitive(self):
-        rate = get_dbu_rate("all_purpose")
-        assert rate == Decimal("0.55")
+        spec = InstanceSpec(instance_type="test", vcpus=4, memory_gb=16.0)
+        components = ComputeComponents.from_raw(
+            compute_seconds=3600.0,
+            instance_spec=spec,
+            num_workers=2,
+            shuffle_bytes=0,
+        )
+        assert components.vcpu_hours() == pytest.approx(8.0)
+        assert components.memory_gb_hours() == pytest.approx(32.0)
 
-        rate = get_dbu_rate("jobs_compute")
-        assert rate == Decimal("0.30")
+    def test_compute_components_executor_hours(self):
+        from burnt.providers.base import InstanceSpec
+        from burnt.providers.compute_units import ComputeComponents
 
-    def test_get_dbu_rate_invalid_sku(self):
-        with pytest.raises(PricingError) as exc_info:
-            get_dbu_rate("INVALID_SKU")
-        assert "Unknown SKU" in str(exc_info.value)
-
-
-class TestComputeCostUsd:
-    def test_compute_cost_usd(self):
-        cost = compute_cost_usd(100, "ALL_PURPOSE")
-        assert cost == Decimal("55.00")
-
-    def test_compute_cost_usd_with_different_sku(self):
-        cost = compute_cost_usd(100, "JOBS_COMPUTE")
-        assert cost == Decimal("30.00")
-
-    def test_compute_cost_usd_invalid_sku(self):
-        with pytest.raises(PricingError):
-            compute_cost_usd(100, "INVALID")
+        spec = InstanceSpec(instance_type="test", vcpus=4, memory_gb=16.0)
+        components = ComputeComponents.from_raw(
+            compute_seconds=3600.0,
+            instance_spec=spec,
+            num_workers=2,
+            shuffle_bytes=0,
+        )
+        assert components.executor_hours() == pytest.approx(2.0)
 
 
-class TestApplyPhoton:
-    def test_apply_photon_disabled(self):
-        result = apply_photon(Decimal("100"), False)
-        assert result == Decimal("100")
+class TestOnPremSparkBackend:
+    def test_onprem_estimate(self):
+        from burnt.providers.onprem_spark import OnPremSparkBackend
 
-    def test_apply_photon_enabled(self):
-        result = apply_photon(Decimal("100"), True)
-        assert result == Decimal("250")
+        backend = OnPremSparkBackend(total_vcpus=8, total_memory_gb=32.0)
+        result = backend.estimate(3600.0, num_workers=2, currency="USD")
+        assert result.cost_in("USD") is not None
+        assert result.cost_in("USD") > 0
+
+    def test_onprem_estimate_with_custom_config(self):
+        from burnt.providers.onprem_spark import OnPremConfig, OnPremSparkBackend
+
+        cfg = OnPremConfig(cost_per_vcpu_hour=0.10, datacenter_overhead_pct=0.0)
+        backend = OnPremSparkBackend(total_vcpus=4, total_memory_gb=16.0, config=cfg)
+        result = backend.estimate(3600.0, num_workers=1)
+        # 4 vCPUs * 1h * $0.10 + 16 GB * 1h * $0.006 = $0.4 + $0.096 = $0.496
+        assert result.cost_in("USD") == pytest.approx(0.496, rel=0.01)
 
 
-class TestUsdToEur:
-    def test_usd_to_eur_default_rate(self):
-        result = usd_to_eur(Decimal("100"))
-        assert result == Decimal("92.00")
+class TestAzureDatabricksBackend:
+    def test_azure_estimate(self):
+        from burnt.providers.azure_databricks import AzureDatabricksBackend
 
-    def test_usd_to_eur_custom_rate(self):
-        result = usd_to_eur(Decimal("100"), Decimal("0.85"))
-        assert result == Decimal("85.00")
+        backend = AzureDatabricksBackend()
+        result = backend.estimate(
+            3600.0,
+            instance_type="Standard_DS3_v2",
+            num_workers=2,
+            sku="ALL_PURPOSE",
+            currency="USD",
+        )
+        assert result.cost_in("USD") is not None
+        assert result.cost_in("USD") > 0
 
-    def test_usd_to_eur_zero(self):
-        result = usd_to_eur(Decimal("0"))
-        assert result == Decimal("0")
+    def test_azure_estimate_unknown_instance(self):
+        from burnt.providers.azure_databricks import AzureDatabricksBackend
+
+        backend = AzureDatabricksBackend()
+        result = backend.estimate(
+            3600.0,
+            instance_type="CompletelyUnknownType_XL",
+            num_workers=1,
+        )
+        assert result.cost_in("USD") is None
+        assert "Unknown instance type" in result.warnings[0]
+
+    def test_azure_estimate_photon(self):
+        from burnt.providers.azure_databricks import AzureDatabricksBackend
+
+        backend = AzureDatabricksBackend()
+        normal = backend.estimate(
+            3600.0, instance_type="Standard_DS3_v2", num_workers=1
+        )
+        photon = backend.estimate(
+            3600.0, instance_type="Standard_DS3_v2", num_workers=1, photon_enabled=True
+        )
+        assert normal.estimated_dbu is not None
+        assert photon.estimated_dbu is not None
+        assert photon.estimated_dbu > normal.estimated_dbu
+
+    def test_azure_estimate_with_currency_conversion(self):
+        from burnt.providers.azure_databricks import AzureDatabricksBackend
+
+        backend = AzureDatabricksBackend()
+        result = backend.estimate(
+            3600.0,
+            instance_type="Standard_DS3_v2",
+            num_workers=1,
+            currency="EUR",
+        )
+        assert result.cost_in("USD") is not None
+        assert result.cost_in("EUR") is not None
+        assert result.cost_in("EUR") > 0
+
+    def test_azure_is_available(self):
+        from burnt.providers.azure_databricks import AzureDatabricksBackend
+
+        assert AzureDatabricksBackend().is_available() is True
+
+
+class TestExchangeRateProvider:
+    def test_fixed_rate_provider(self):
+        from decimal import Decimal
+
+        from burnt.providers.exchange import FixedRateProvider
+
+        provider = FixedRateProvider(Decimal("0.85"))
+        rate = provider.get_rate(provider._rate, "USD", "EUR")
+        assert rate == Decimal("0.85")
+
+    def test_same_currency_rate(self):
+        from decimal import Decimal
+
+        from burnt.providers.exchange import FixedRateProvider
+
+        provider = FixedRateProvider(Decimal("1.0"))
+        rate = provider.get_rate(provider._rate, "USD", "USD")
+        assert rate == Decimal("1")
+
+
+class TestInstanceSpec:
+    def test_instance_spec_total_vcpus(self):
+        from burnt.providers.base import InstanceSpec
+
+        spec = InstanceSpec(instance_type="test", vcpus=4, memory_gb=16.0)
+        assert spec.total_vcpus(2) == 8
+        assert spec.total_memory_gb(2) == 32.0

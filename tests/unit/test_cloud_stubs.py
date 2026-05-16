@@ -1,42 +1,67 @@
-"""Verify the cloud stub packages are importable and the PricingBackend is accessible."""
+"""Verify the provider packages are importable and ProviderBackend is accessible."""
+
+import burnt.providers
+import burnt.providers.aws_databricks
+import burnt.providers.azure_databricks
+import burnt.providers.gcp_databricks
+import burnt.providers.onprem_spark  # noqa: F401
 
 
-class TestCloudStubImports:
-    def test_import_cloud_package(self):
-        import burnt.cloud  # noqa: F401
+class TestProviderBackendImportable:
+    def test_provider_backend_importable(self):
+        from burnt.providers.base import ProviderBackend
 
-    def test_import_azure_databricks(self):
-        import burnt.cloud.azure_databricks  # noqa: F401
-
-    def test_import_aws_databricks(self):
-        import burnt.cloud.aws_databricks  # noqa: F401
-
-    def test_import_gcp_databricks(self):
-        import burnt.cloud.gcp_databricks  # noqa: F401
-
-    def test_import_onprem_spark(self):
-        import burnt.cloud.onprem_spark  # noqa: F401
-
-
-class TestPricingBackendImportable:
-    def test_pricing_backend_importable(self):
-        from burnt.core.pricing import PricingBackend
-
-        assert PricingBackend is not None
+        assert ProviderBackend is not None
 
     def test_exchange_rate_provider_importable(self):
-        from burnt.core.exchange import ExchangeRateProvider
+        from burnt.providers.exchange import FrankfurterProvider
 
-        assert ExchangeRateProvider is not None
+        assert FrankfurterProvider is not None
 
-    def test_cloud_region_currencies_importable(self):
-        from burnt.core.pricing import CLOUD_REGION_CURRENCIES
 
-        assert isinstance(CLOUD_REGION_CURRENCIES, dict)
-        assert len(CLOUD_REGION_CURRENCIES) > 0
+class TestProviderRegistry:
+    def test_azure_backend_registered(self):
+        from burnt.providers import get_backend
 
-    def test_supported_currencies_importable(self):
-        from burnt.core.pricing import SUPPORTED_CURRENCIES
+        p = get_backend("azure-databricks")
+        assert p is not None
+        assert p.name == "azure-databricks"
 
-        assert isinstance(SUPPORTED_CURRENCIES, frozenset)
-        assert len(SUPPORTED_CURRENCIES) > 0
+    def test_aws_backend_registered(self):
+        from burnt.providers import get_backend
+
+        p = get_backend("aws-databricks")
+        assert p is not None
+        assert p.name == "aws-databricks"
+
+    def test_gcp_backend_registered(self):
+        from burnt.providers import get_backend
+
+        p = get_backend("gcp-databricks")
+        assert p is not None
+        assert p.name == "gcp-databricks"
+
+    def test_onprem_backend_registered(self):
+        from burnt.providers import get_backend
+
+        p = get_backend("onprem-spark")
+        assert p is not None
+        assert p.name == "onprem-spark"
+
+    def test_list_backends(self):
+        from burnt.providers import list_backends
+
+        backends = list_backends()
+        assert "azure-databricks" in backends
+        assert "aws-databricks" in backends
+        assert "gcp-databricks" in backends
+        assert "onprem-spark" in backends
+
+
+class TestInstanceSpec:
+    def test_instance_spec_total_vcpus(self):
+        from burnt.providers.base import InstanceSpec
+
+        spec = InstanceSpec(instance_type="test", vcpus=4, memory_gb=16.0)
+        assert spec.total_vcpus(2) == 8
+        assert spec.total_memory_gb(2) == 32.0

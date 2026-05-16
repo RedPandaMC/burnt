@@ -27,6 +27,7 @@ class CheckResult(BaseModel):
     mode: str = "python"  # "python" | "sql" | "dlt"
     findings: list[Finding] = Field(default_factory=list)
     compute_seconds: float | None = None
+    cost_estimate: Any = None  # CostEstimate from providers backend
     graph: Any = None  # CostGraphPy or PipelineGraphPy from Rust engine
     raw: Any = None  # Original AnalysisResultPy
 

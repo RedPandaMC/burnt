@@ -14,9 +14,19 @@ if TYPE_CHECKING:
     from burnt.core.models import ClusterConfig, DeltaTableInfo, QueryRecord
 
 from burnt.core.models import ClusterConfig, DeltaTableInfo, QueryRecord
-from burnt.core.table_registry import TableRegistry
 
 from .mock_data import init_mock_database
+
+_SYSTEM_TABLE_SQLITE_NAMES = {
+    "system.billing.usage": "system_billing_usage",
+    "system.billing.list_prices": "system_billing_list_prices",
+    "system.query.history": "system_query_history",
+    "system.compute.node_types": "system_compute_node_types",
+    "system.compute.clusters": "system_compute_clusters",
+    "system.compute.node_timeline": "system_compute_node_timeline",
+    "system.lakeflow.jobs": "system_lakeflow_jobs",
+    "system.lakeflow.job_run_timeline": "system_lakeflow_job_run_timeline",
+}
 
 
 class SQLiteBackend:
@@ -39,7 +49,6 @@ class SQLiteBackend:
         db_path: str = ":memory:",
         xlsx_path: str | None = None,
         scale_factor: int = 10,
-        table_registry: TableRegistry | None = None,
     ):
         """Initialize SQLiteBackend.
 
@@ -47,12 +56,10 @@ class SQLiteBackend:
             db_path: Path to SQLite database (default: :memory:)
             xlsx_path: Path to xlsx file with real billing data
             scale_factor: Multiplier for benchmark table sizes
-            table_registry: TableRegistry for table path mapping
         """
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
-        self._registry = table_registry or TableRegistry()
 
         # Initialize with mock data
         self._stats = init_mock_database(
@@ -72,34 +79,9 @@ class SQLiteBackend:
         Returns:
             SQLite-compatible SQL
         """
-        # Apply table registry mappings
-        sql = self._registry.format_sql(sql)
-
-        # Convert table paths to SQLite-safe names
-        # system.billing.usage -> system_billing_usage
-        for default_path in [
-            "system.billing.usage",
-            "system.billing.list_prices",
-            "system.query.history",
-            "system.compute.node_types",
-            "system.compute.clusters",
-            "system.compute.node_timeline",
-            "system.lakeflow.jobs",
-            "system.lakeflow.job_run_timeline",
-        ]:
-            sqlite_name = default_path.replace(".", "_")
-            sql = sql.replace(default_path, sqlite_name)
-
-        # Also handle registry-configured paths
-        for configured_path in [
-            self._registry.billing_usage,
-            self._registry.billing_list_prices,
-            self._registry.query_history,
-            self._registry.compute_node_types,
-        ]:
-            if "." in configured_path:
-                sqlite_name = configured_path.replace(".", "_")
-                sql = sql.replace(configured_path, sqlite_name)
+        # Convert system table paths to SQLite-safe names
+        for table_path, sqlite_name in _SYSTEM_TABLE_SQLITE_NAMES.items():
+            sql = sql.replace(table_path, sqlite_name)
 
         # Databricks -> SQLite function translations
         translations = {
@@ -324,7 +306,6 @@ class SQLiteBackend:
 def create_mock_backend(
     xlsx_path: str | None = None,
     scale_factor: int = 10,
-    table_registry: TableRegistry | None = None,
 ) -> SQLiteBackend:
     """Create a SQLiteBackend with mock data.
 
@@ -333,7 +314,6 @@ def create_mock_backend(
     Args:
         xlsx_path: Path to xlsx file with real billing data
         scale_factor: Multiplier for benchmark table sizes
-        table_registry: TableRegistry for table path mapping
 
     Returns:
         Initialized SQLiteBackend
@@ -342,5 +322,4 @@ def create_mock_backend(
         db_path=":memory:",
         xlsx_path=xlsx_path,
         scale_factor=scale_factor,
-        table_registry=table_registry,
     )
