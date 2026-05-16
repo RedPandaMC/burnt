@@ -23,8 +23,8 @@ use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode, PyGraph,
-    PyPipeline, PyPipelineTable, RuleEntry,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode,
+    PyPipelineTable, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -90,20 +90,20 @@ pub fn get_registry_count() -> usize {
 fn build_graph_and_pipeline(
     mode: &AnalysisMode,
     source: &str,
-) -> PyResult<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>)> {
+) -> PyResult<(Option<CostGraphPy>, Option<PipelineGraphPy>, Vec<Finding>)> {
     match mode {
         AnalysisMode::Sdp => {
             let pg = PipelineGraph::from_sdp(source);
-            Ok((None, Some(PyPipeline::from_pipeline(pg)), Vec::new()))
+            Ok((None, Some(pg.into()), Vec::new()))
         }
         AnalysisMode::Sql => {
             let cg = CostGraph::from_sql(source)?;
-            Ok((Some(PyGraph::from_cost_graph(cg)), None, Vec::new()))
+            Ok((Some(cg.into()), None, Vec::new()))
         }
         AnalysisMode::Python => {
             let cg = CostGraph::from_python(source)?;
             let sem_findings = cg.findings.clone();
-            Ok((Some(PyGraph::from_cost_graph(cg)), None, sem_findings))
+            Ok((Some(cg.into()), None, sem_findings))
         }
     }
 }
@@ -240,8 +240,6 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::Confidence>()?;
     m.add_class::<RuleEntry>()?;
     m.add_class::<AnalysisResultPy>()?;
-    m.add_class::<PyGraph>()?;
-    m.add_class::<PyPipeline>()?;
 
     Ok(())
 }

@@ -251,48 +251,15 @@ pub struct AnalysisResultPy {
     #[pyo3(get)]
     pub mode: String,
     #[pyo3(get)]
-    pub graph: Option<PyGraph>,
+    pub graph: Option<crate::graph::CostGraphPy>,
     #[pyo3(get)]
-    pub pipeline: Option<PyPipeline>,
+    pub pipeline: Option<crate::graph::PipelineGraphPy>,
     #[pyo3(get)]
     pub findings: Vec<Finding>,
     #[pyo3(get)]
     pub cells: Vec<Cell>,
     #[pyo3(get)]
     pub path: Option<String>,
-}
-
-#[pyclass]
-#[derive(Clone)]
-pub struct PyGraph {
-    #[pyo3(get)]
-    pub nodes: Vec<PyCostNode>,
-    #[pyo3(get)]
-    pub edges: Vec<PyCostEdge>,
-}
-
-impl PyGraph {
-    pub fn from_cost_graph(g: crate::graph::CostGraph) -> Self {
-        PyGraph {
-            nodes: g.nodes.into_iter().map(|n| n.into()).collect(),
-            edges: g.edges.into_iter().map(|e| e.into()).collect(),
-        }
-    }
-}
-
-#[pyclass]
-#[derive(Clone)]
-pub struct PyPipeline {
-    #[pyo3(get)]
-    pub tables: Vec<PyPipelineTable>,
-}
-
-impl PyPipeline {
-    pub fn from_pipeline(g: crate::graph::PipelineGraph) -> Self {
-        PyPipeline {
-            tables: g.tables.into_iter().map(|t| t.into()).collect(),
-        }
-    }
 }
 
 #[pyclass]

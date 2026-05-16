@@ -64,7 +64,8 @@ def test_real_pygraph_does_not_crash_with_session(tmp_path: Path) -> None:
 
     # The Rust graph reached estimate_cost and produced a breakdown.
     assert result.graph is not None
-    assert type(result.graph).__name__ == "PyGraph"
+    assert hasattr(result.graph, "nodes")
+    assert hasattr(result.graph, "edges")
     assert result.cost_estimate is not None
     assert result.compute_seconds is not None
     assert result.compute_seconds >= 0
