@@ -8,7 +8,7 @@ computing scaling-function fallbacks for unmatched nodes.
 
 Returning a sibling map (rather than mutating nodes) avoids two issues:
 
-* The Rust ``PyCostNode`` adapter is a ``#[pyclass]``, not a Python
+* The Rust ``PyNode`` adapter is a ``#[pyclass]``, not a Python
   dataclass — ``dataclasses.replace`` would raise ``TypeError`` on it.
 * The Python ``PyNode`` is frozen-slotted, so in-place mutation is
   also off the table.

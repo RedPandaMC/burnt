@@ -31,9 +31,9 @@ cargo clippy -- -D warnings
 ```
 ingestion/      Read files and notebooks from disk → SourceFile / Cell
 parse/          tree-sitter Python/SQL parsers; notebook cell splitter
-graph/          CostGraph (Python/SQL) and PipelineGraph (DLT) builders
-  python.rs     Walk Python AST → CostNode/CostEdge + SemanticModel findings
-  sql.rs        Walk SQL AST via sqlparser-rs → CostNode/CostEdge
+graph/          PyGraph (Python/SQL) and PipelineGraph (DLT) builders
+  python.rs     Walk Python AST → PyNode/PyEdge + SemanticModel findings
+  sql.rs        Walk SQL AST via sqlparser-rs → PyNode/PyEdge
   dlt.rs        DLT-specific pipeline graph builder
 semantic/       SemanticModel: variable bindings, scope stack, shadow detection
 rules/          Three-tier rule pipeline
@@ -43,7 +43,7 @@ rules/          Three-tier rule pipeline
   finding.rs    Shared make_finding() helper
   registry      Code-generated rule registry (built from TOML files in rules/)
 detect.rs       Auto-detect language mode from source text
-types.rs        Core types: Finding, CostNode, CostEdge, AnalysisResultPy, …
+types.rs        Core types: Finding, PyNode, PyEdge, AnalysisResultPy, …
 lib.rs          PyO3 entry points exposed to Python
 ```
 

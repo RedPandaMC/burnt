@@ -70,7 +70,7 @@ def test_unmatched_stage_window_is_ignored() -> None:
 
 def test_works_with_duck_typed_node_objects() -> None:
     """enrich_graph must not depend on dataclass replace — Rust
-    PyCostNode instances are #[pyclass], not dataclasses."""
+    PyNode instances are #[pyclass], not dataclasses."""
 
     class FakeNode:
         def __init__(self, node_id: str, line: int) -> None:

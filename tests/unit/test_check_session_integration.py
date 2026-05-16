@@ -3,7 +3,7 @@ graph and feeds estimate.
 
 The unit tests in tests/unit/graph/ exercise enrich and estimate against
 the pure-Python PyGraph. This file pins the *real* boundary: the Rust
-``analyze_file`` returns a ``PyGraph`` of ``PyCostNode`` pyclasses, and
+``analyze_file`` returns a ``PyGraph`` of ``PyNode`` pyclasses, and
 the Python runtime-merge layer must handle them without dataclass
 mutation.
 
@@ -59,7 +59,7 @@ def test_real_pygraph_does_not_crash_with_session(tmp_path: Path) -> None:
         ]
     )
 
-    # Before the fix, dataclasses.replace on PyCostNode raised TypeError.
+    # Before the fix, dataclasses.replace on PyNode raised TypeError.
     result = run(path=str(fpath), session=session)
 
     # The Rust graph reached estimate and produced a breakdown.

@@ -130,7 +130,7 @@ def estimate(
 
     Args:
         graph: The static cost graph (``PyGraph`` from Python builder or
-            ``PyGraph`` / ``CostGraphPy`` from the Rust engine).
+            ``PyGraph`` / ``PyGraph`` from the Rust engine).
         session: Optional ``SessionState``-shaped object with ``.stages``
             and ``.plan_bundles`` attributes. May be ``None`` for pure
             static estimation.

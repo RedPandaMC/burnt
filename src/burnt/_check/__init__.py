@@ -28,7 +28,7 @@ class CheckResult(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     compute_seconds: float | None = None
     estimate: Any = None  # PyEstimate from providers backend
-    graph: Any = None  # CostGraphPy or PipelineGraphPy from Rust engine
+    graph: Any = None  # PyGraph or PyPipeline from Rust engine
     raw: Any = None  # Original AnalysisResultPy
 
     def display(self) -> None:

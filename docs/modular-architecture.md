@@ -57,10 +57,10 @@ Decisions recorded here so the next session doesn't re-litigate:
 
 | Component | Path | Role |
 |---|---|---|
-| Rust lint engine + tree-sitter | `src/burnt-engine/` (PyO3 wheel) | 43 rules, CostGraph construction. Always works, no creds. |
+| Rust lint engine + tree-sitter | `src/burnt-engine/` (PyO3 wheel) | 43 rules, PyGraph construction. Always works, no creds. |
 | Check orchestration | `src/burnt/_check/` | `check()` entry, CheckResult model, finding aggregation |
 | Config | `src/burnt/_config/` | `burnt.toml` / `[tool.burnt]` discovery |
-| Data models | `src/burnt/core/` | `Finding`, `CheckResult`, `CostEstimate`, `CostGraph`, `CostNode` |
+| Data models | `src/burnt/core/` | `Finding`, `CheckResult`, `PyEstimate`, `PyGraph`, `PyNode` |
 | CLI | `src/burnt/cli/main.py` | `check`, `rules`, `init`, `doctor`, `cache` |
 | Terminal display | `src/burnt/display/terminal.py` | Rich tables (CLI default) |
 | Export | `src/burnt/display/export.py` | JSON, Markdown, SARIF 2.1.0 |
@@ -74,7 +74,7 @@ Decisions recorded here so the next session doesn't re-litigate:
 - `burnt check --fix` / `burnt check --unsafe-fixes` — autofix via `tree-sitter::InputEdit` inside the Rust engine. No libcst, no separate `[fix]` extra.
 - `burnt check --diff <ref>` — diff-aware lint, only files changed since `<ref>`. Shells out to `git diff --name-only`; no Python git library, no `[git]` extra.
 
-**Core promise:** zero credentials, zero network, zero cloud SDK. `burnt check ./notebook.py` produces all 43 lint findings + a CostGraph in compute-seconds. This is the contract that makes burnt safe to install in any environment.
+**Core promise:** zero credentials, zero network, zero cloud SDK. `burnt check ./notebook.py` produces all 43 lint findings + a PyGraph in compute-seconds. This is the contract that makes burnt safe to install in any environment.
 
 ### 2.2 Existing extras — kept, retasked, or removed
 
@@ -116,7 +116,7 @@ Remaining candidates (explicitly named, design deferred):
 
 | Extra | What it does | Buildable because… | New signal | Pivot-safe? |
 |---|---|---|---|---|
-| `[iceberg]` | Reads Apache Iceberg table metadata (manifest lists, partition specs, snapshot history) directly from object storage to fill `estimated_input_bytes` and partition counts on CostGraph nodes whose `tables_referenced` resolve to Iceberg tables. | `pyiceberg` (Apache project, Python-native, stable) reads metadata without a Spark/Trino runtime. | Ground-truth table size + partition layout for the Iceberg user base — closes the same gap a future `[delta]` would close for Delta. | Yes — descriptive metadata read. |
+| `[iceberg]` | Reads Apache Iceberg table metadata (manifest lists, partition specs, snapshot history) directly from object storage to fill `estimated_input_bytes` and partition counts on PyGraph nodes whose `tables_referenced` resolve to Iceberg tables. | `pyiceberg` (Apache project, Python-native, stable) reads metadata without a Spark/Trino runtime. | Ground-truth table size + partition layout for the Iceberg user base — closes the same gap a future `[delta]` would close for Delta. | Yes — descriptive metadata read. |
 | `[mlflow]` | When an MLflow run is active, attaches CheckResult's compute-seconds and top findings as MLflow tags + metrics on the run, so ML experiments record cost alongside accuracy. Optional: log SARIF as a run artifact. | `mlflow` SDK exposes `log_metric` / `set_tag` / `log_artifact`. CheckResult already serialises. | Surfaces cost to ML platform teams in the tool they're already in. | Yes — passive logging of observed values. |
 
 Anything not on this list (e.g. `[snowflake]`/`[bigquery]` pricing, `[secret-scan]`, hosted server UI, fleet FinOps dashboards, scheduling/budget enforcement, retrospective system-table mining) is **explicitly off-mission** — burnt is Spark-shaped and per-pipeline; those belong in different tools.
@@ -134,11 +134,11 @@ Today's `runtime/` already has a `Backend` protocol, but pricing is co-mingled w
 class PricingBackend(Protocol):
     name: str                                          # "azure-databricks", "aws-databricks",
                                                        # "gcp-databricks", "onprem-spark", ...
-    def map(self, graph: CostGraph) -> CostEstimate:   # compute-seconds → $$
+    def map(self, graph: PyGraph) -> PyEstimate:   # compute-seconds → $$
         ...
 ```
 
-- Core ships nothing pricing-shaped by default — without an extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported. (`[onprem-spark]` is a tiny extra rather than a core dependency because it still wants its own protocol implementation file and config schema.)
+- Core ships nothing pricing-shaped by default — without an extra, `result.estimate.usd` is `None` and only compute-seconds are reported. (`[onprem-spark]` is a tiny extra rather than a core dependency because it still wants its own protocol implementation file and config schema.)
 - `[databricks]` ships the workspace API client + system-table reader — used by every `[*-databricks]` backend, but **does not itself implement `PricingBackend`** (no DBU rate data lives there).
 - `[azure-databricks]` / `[aws-databricks]` / `[gcp-databricks]` each ship their own `PricingBackend` plus their cloud's DBU-rate data and VM-price source.
 - `[onprem-spark]` ships a `PricingBackend` driven entirely by `burnt.toml` rates.
@@ -157,7 +157,7 @@ System tables (Unity Catalog `system.*` schemas) become useful **only when `[dat
 | Use | System table | Why it matters in burnt |
 |---|---|---|
 | **Live DBU rate lookup** | `system.billing.list_prices` | Replaces the shipped JSON of DBU rates (which goes stale) for orgs that prefer authoritative data. Shipped JSON remains the offline default. |
-| **Real table size for `estimated_input_bytes`** | `system.information_schema.tables` (and where available, table-storage-statistics extensions) | Fills CostGraph nodes' input-bytes from ground truth without running `DESCRIBE DETAIL` per table — single batched SQL query. |
+| **Real table size for `estimated_input_bytes`** | `system.information_schema.tables` (and where available, table-storage-statistics extensions) | Fills PyGraph nodes' input-bytes from ground truth without running `DESCRIBE DETAIL` per table — single batched SQL query. |
 | **Cluster profile resolution** | `system.compute.clusters` | When `burnt.toml` has only a `cluster_id`, look up node type + size to feed the pricing math. Avoids `databricks-sdk` `clusters.get` round-trip per cluster. |
 | **Last-run observed cost** | `system.query.history` (filtered by current user + recent time window) | Optional, opt-in: after `result = burnt.check(...)`, an in-notebook helper can show "your last actual run of this notebook cost $X" — pure observation, no prediction. This is the runtime-side completion of the "honest confidence" story for Databricks users. |
 
@@ -233,12 +233,12 @@ Reuse: existing lazy-import patterns in `src/burnt/runtime/__init__.py`, `src/bu
 
 Architecture-level checks:
 
-1. **Core install isolation:** in a clean venv, `pip install burnt && burnt check ./examples/notebook.py` produces 43 rules' findings + a CostGraph in compute-seconds, no network calls, no cloud SDK imports. `pip show burnt` lists only core deps (pydantic, pydantic-settings, typer, rich, pyyaml, tabulate).
+1. **Core install isolation:** in a clean venv, `pip install burnt && burnt check ./examples/notebook.py` produces 43 rules' findings + a PyGraph in compute-seconds, no network calls, no cloud SDK imports. `pip show burnt` lists only core deps (pydantic, pydantic-settings, typer, rich, pyyaml, tabulate).
 2. **Folded-in CLI flags work in core:** `burnt check --fix` rewrites a known-fixable rule's match site; `burnt check --unsafe-fixes` additionally applies semantic-shift fixes; `burnt check --diff main` only lints files reported by `git diff --name-only main...HEAD`. None of these require an extra (autofix is implemented in the Rust engine via `tree-sitter::InputEdit`).
 3. **`*-databricks` auto-pull works:** `pip install burnt[azure-databricks]` results in `databricks-sdk` being importable (transitive of `[databricks]`). Same for `aws-databricks`, `gcp-databricks`. Installing `[onprem-spark]` does **not** pull `databricks-sdk`.
 4. **Each extra is independently installable, no silent pulls:** `pip install burnt[databricks]` adds `databricks-sdk` + `requests` only; `pip install burnt[azure-databricks]` adds Azure-pricing data + the `[databricks]` deps and nothing else.
-5. **Graceful absence:** `burnt check x.dbc` works in core (`.dbc` parsing ships with base install); without any pricing extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported; without `[databricks]`, system-table enrichment is silently skipped.
-6. **Backend swap by config:** with `[azure-databricks]` and `[onprem-spark]` both installed, `[burnt.pricing] backend = "onprem-spark"` in `burnt.toml` produces `result.cost_estimate.backend == "onprem-spark"`. Switching to `"azure-databricks"` switches the backend without re-installing.
+5. **Graceful absence:** `burnt check x.dbc` works in core (`.dbc` parsing ships with base install); without any pricing extra, `result.estimate.usd` is `None` and only compute-seconds are reported; without `[databricks]`, system-table enrichment is silently skipped.
+6. **Backend swap by config:** with `[azure-databricks]` and `[onprem-spark]` both installed, `[burnt.pricing] backend = "onprem-spark"` in `burnt.toml` produces `result.estimate.backend == "onprem-spark"`. Switching to `"azure-databricks"` switches the backend without re-installing.
 7. **System-table path override:** setting `[burnt.databricks.system_tables] query_history = "prod_observability.query_history"` causes burnt to query that table; pointing at a non-existent table logs once at INFO and falls back without erroring (per §3.5 rule 1).
 8. **Install-matrix doc parity:** the README install matrix is the same matrix the test suite asserts against — one truth, both surfaces.
 
