@@ -13,8 +13,8 @@ Design notes
   ``if/elif`` ladder. Adding a new scaling type is a one-line change.
 * Cross-link with plan nodes — when a matched stage has corresponding
   Exchange/Shuffle entries in the same SQL execution's plan, the
-  shuffle bytes are exposed on ``CostEstimate.shuffle_bytes`` keyed by
-  node id. ``CostNode`` is frozen-slotted, so we attach data via a
+  shuffle bytes are exposed on ``PyEstimate.shuffle_bytes`` keyed by
+  node id. ``PyNode`` is frozen-slotted, so we attach data via a
   sibling map rather than mutating the node.
 * Photon-aware — when both the plan tree confirms a ``Photon*`` node ran
   AND the graph marks the node ``photon_eligible``, the scaling fallback
@@ -37,7 +37,7 @@ from pydantic import BaseModel
 from burnt.core.enums import Confidence, ScalingType
 
 if TYPE_CHECKING:
-    from .model import CostGraph, CostNode
+    from .model import PyGraph, PyNode
 
 # ----------------------------------------------------------------------
 # Strategy table — single source of truth for scaling-function dispatch
@@ -106,7 +106,7 @@ _LINE_WINDOW = 5
 _SHUFFLE_NODE_PREFIXES = ("Exchange", "PhotonShuffle", "ShuffleExchange")
 
 
-class CostEstimate(BaseModel):
+class PyEstimate(BaseModel):
     """Estimated cost for a workload, plus per-node breakdown."""
 
     estimated_dbu: float | None = None
@@ -118,18 +118,18 @@ class CostEstimate(BaseModel):
     warnings: list[str] = []
 
 
-def estimate_cost(
-    graph: CostGraph | Any,
+def estimate(
+    graph: PyGraph | Any,
     session: Any = None,
     *,
     observed_input_bytes: dict[str, int] | None = None,
     dbu_rate: float = 0.75,
     num_workers: int = 2,
-) -> CostEstimate:
+) -> PyEstimate:
     """Estimate per-node cost from a static graph and an optional session.
 
     Args:
-        graph: The static cost graph (``CostGraph`` from Python builder or
+        graph: The static cost graph (``PyGraph`` from Python builder or
             ``PyGraph`` / ``CostGraphPy`` from the Rust engine).
         session: Optional ``SessionState``-shaped object with ``.stages``
             and ``.plan_bundles`` attributes. May be ``None`` for pure
@@ -141,12 +141,12 @@ def estimate_cost(
         num_workers: Worker count used for the scaling-only fallback.
 
     Returns:
-        A ``CostEstimate`` with ``breakdown`` keyed by node id and a
+        A ``PyEstimate`` with ``breakdown`` keyed by node id and a
         ``coverage_ratio`` describing how much of the graph was observed.
     """
     nodes = _graph_nodes(graph)
     if not nodes:
-        return CostEstimate()
+        return PyEstimate()
 
     stages = _session_stages(session)
     plan_lookup = _build_plan_lookup(session)
@@ -179,7 +179,7 @@ def estimate_cost(
     estimated_dbu = total_seconds * dbu_rate / 3600.0
     coverage = matched_count / len(nodes) if nodes else 0.0
 
-    return CostEstimate(
+    return PyEstimate(
         estimated_dbu=estimated_dbu,
         costs={"dbu": estimated_dbu},
         confidence=_bucket(coverage),
@@ -194,7 +194,7 @@ def estimate_cost(
 # ----------------------------------------------------------------------
 
 
-def _graph_nodes(graph: Any) -> list[CostNode | Any]:
+def _graph_nodes(graph: Any) -> list[PyNode | Any]:
     if graph is None:
         return []
     return list(getattr(graph, "nodes", []) or [])

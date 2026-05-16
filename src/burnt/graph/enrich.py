@@ -10,10 +10,10 @@ Returning a sibling map (rather than mutating nodes) avoids two issues:
 
 * The Rust ``PyCostNode`` adapter is a ``#[pyclass]``, not a Python
   dataclass — ``dataclasses.replace`` would raise ``TypeError`` on it.
-* The Python ``CostNode`` is frozen-slotted, so in-place mutation is
+* The Python ``PyNode`` is frozen-slotted, so in-place mutation is
   also off the table.
 
-The map shape mirrors ``CostEstimate.shuffle_bytes``: ``dict[node_id, int]``.
+The map shape mirrors ``PyEstimate.shuffle_bytes``: ``dict[node_id, int]``.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def enrich_graph(
 
     Args:
         graph: Static cost graph (either the Rust ``PyGraph`` or the
-            pure-Python ``CostGraph``). Only ``.nodes`` is accessed.
+            pure-Python ``PyGraph``). Only ``.nodes`` is accessed.
         session: Optional ``SessionState`` with ``.stages``.
         warehouse_id: Reserved for a future Delta/UC metadata path. Unused.
 

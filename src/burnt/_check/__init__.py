@@ -27,7 +27,7 @@ class CheckResult(BaseModel):
     mode: str = "python"  # "python" | "sql" | "dlt"
     findings: list[Finding] = Field(default_factory=list)
     compute_seconds: float | None = None
-    cost_estimate: Any = None  # CostEstimate from providers backend
+    estimate: Any = None  # PyEstimate from providers backend
     graph: Any = None  # CostGraphPy or PipelineGraphPy from Rust engine
     raw: Any = None  # Original AnalysisResultPy
 
@@ -149,21 +149,21 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
     """Tag findings with actual runtime metrics from a session.
 
     The graph here may be either the Rust ``PyGraph`` (from
-    ``analyze_file``/``analyze_source``) or the pure-Python ``CostGraph``.
+    ``analyze_file``/``analyze_source``) or the pure-Python ``PyGraph``.
     Both expose the same ``.nodes`` / ``.edges`` duck-typed surface, so
-    ``enrich_graph`` and ``estimate_cost`` consume them uniformly without
+    ``enrich_graph`` and ``estimate`` consume them uniformly without
     mutating node fields.
     """
     if not hasattr(session, "stages"):
         return
 
     from burnt.graph.enrich import enrich_graph
-    from burnt.graph.estimate import estimate_cost
+    from burnt.graph.estimate import estimate
 
     graph = result.graph
     observed = enrich_graph(graph, session=session) if graph is not None else {}
     estimate = (
-        estimate_cost(graph, session, observed_input_bytes=observed)
+        estimate(graph, session, observed_input_bytes=observed)
         if graph is not None
         else None
     )
@@ -176,7 +176,7 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
         )
         return
 
-    result.cost_estimate = estimate
+    result.estimate = estimate
     result.compute_seconds = sum(estimate.breakdown.values())
 
     line_to_compute = {

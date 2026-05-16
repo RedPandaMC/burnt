@@ -315,7 +315,7 @@ def _render_cost_breakdown(results: list, console: Console) -> None:
     from rich.tree import Tree
 
     for result in results:
-        estimate = getattr(result, "cost_estimate", None)
+        estimate = getattr(result, "estimate", None)
         breakdown = getattr(estimate, "breakdown", None) if estimate else None
         if not breakdown:
             continue
@@ -356,7 +356,7 @@ def _apply_pricing(results: list, backend_name: str, currency: str) -> None:
                 result.compute_seconds,
                 currency=currency,
             )
-            result.cost_estimate = cost
+            result.estimate = cost
         except Exception as e:
             console.print(f"[dim]Pricing error: {e}[/dim]")
 

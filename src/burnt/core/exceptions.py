@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from burnt.core.models import CostEstimate
+    from burnt.core.models import PyEstimate
 
 
 class BurntError(Exception):
@@ -67,7 +67,7 @@ class CostBudgetExceeded(BurntError):
 
     def __init__(
         self,
-        estimate: CostEstimate,
+        estimate: PyEstimate,
         budget: float,
         label: str = "",
         *,

@@ -1,8 +1,8 @@
 """End-to-end test that the REST API session enriches the Rust-built
-graph and feeds estimate_cost.
+graph and feeds estimate.
 
 The unit tests in tests/unit/graph/ exercise enrich and estimate against
-the pure-Python CostGraph. This file pins the *real* boundary: the Rust
+the pure-Python PyGraph. This file pins the *real* boundary: the Rust
 ``analyze_file`` returns a ``PyGraph`` of ``PyCostNode`` pyclasses, and
 the Python runtime-merge layer must handle them without dataclass
 mutation.
@@ -62,11 +62,11 @@ def test_real_pygraph_does_not_crash_with_session(tmp_path: Path) -> None:
     # Before the fix, dataclasses.replace on PyCostNode raised TypeError.
     result = run(path=str(fpath), session=session)
 
-    # The Rust graph reached estimate_cost and produced a breakdown.
+    # The Rust graph reached estimate and produced a breakdown.
     assert result.graph is not None
     assert hasattr(result.graph, "nodes")
     assert hasattr(result.graph, "edges")
-    assert result.cost_estimate is not None
+    assert result.estimate is not None
     assert result.compute_seconds is not None
     assert result.compute_seconds >= 0
 
@@ -91,8 +91,8 @@ def test_session_compute_seconds_reflects_observed_stage(tmp_path: Path) -> None
 
     # At least one node must have been matched to the stage (otherwise
     # the integration is silently failing back to the scaling-only path).
-    assert result.cost_estimate is not None
-    assert result.cost_estimate.coverage_ratio > 0
+    assert result.estimate is not None
+    assert result.estimate.coverage_ratio > 0
     # The matched contribution should be reflected in the total.
     assert result.compute_seconds >= 12.0
 
@@ -116,7 +116,7 @@ def test_session_without_stages_attr_is_no_op(tmp_path: Path) -> None:
 
     result = run(path=str(fpath), session=Bare())
     assert result.compute_seconds is None
-    assert result.cost_estimate is None
+    assert result.estimate is None
 
 
 def test_session_with_empty_stages_uses_scaling_fallback(tmp_path: Path) -> None:
@@ -128,7 +128,7 @@ def test_session_with_empty_stages_uses_scaling_fallback(tmp_path: Path) -> None
     fpath = _write_source(tmp_path, src)
 
     result = run(path=str(fpath), session=_FakeSession(stages=[]))
-    assert result.cost_estimate is not None
-    assert result.cost_estimate.coverage_ratio == 0.0
+    assert result.estimate is not None
+    assert result.estimate.coverage_ratio == 0.0
     assert result.compute_seconds is not None
     assert result.compute_seconds > 0.0

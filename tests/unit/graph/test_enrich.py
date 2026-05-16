@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from burnt.core.enums import NodeKind, ScalingType
 from burnt.graph.enrich import enrich_graph
-from burnt.graph.model import CostGraph, CostNode
+from burnt.graph.model import PyGraph, PyNode
 
 
 class _FakeSession:
@@ -12,8 +12,8 @@ class _FakeSession:
         self.stages = stages or []
 
 
-def _node(node_id: str, line: int) -> CostNode:
-    return CostNode(
+def _node(node_id: str, line: int) -> PyNode:
+    return PyNode(
         id=node_id,
         kind=NodeKind.READ,
         scaling_type=ScalingType.LINEAR,
@@ -22,7 +22,7 @@ def _node(node_id: str, line: int) -> CostNode:
 
 
 def test_observed_input_bytes_back_filled() -> None:
-    g = CostGraph()
+    g = PyGraph()
     g.add_node(_node("n1", 42))
     g.add_node(_node("n2", 100))
 
@@ -45,13 +45,13 @@ def test_observed_input_bytes_back_filled() -> None:
 
 
 def test_no_session_is_empty_dict() -> None:
-    g = CostGraph()
+    g = PyGraph()
     g.add_node(_node("n1", 42))
     assert enrich_graph(g, session=None) == {}
 
 
 def test_unmatched_stage_window_is_ignored() -> None:
-    g = CostGraph()
+    g = PyGraph()
     g.add_node(_node("n1", 10))
     observed = enrich_graph(
         g,

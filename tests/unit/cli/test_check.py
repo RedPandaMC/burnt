@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from burnt._check import CheckResult, Finding
 from burnt.cli.main import app
-from burnt.graph.estimate import CostEstimate
+from burnt.graph.estimate import PyEstimate
 
 runner = CliRunner()
 
@@ -181,7 +181,7 @@ class TestExplainCost:
     def test_explain_cost_renders_breakdown_tree(self, mock_run) -> None:
         result_with_cost = _make_result()
         result_with_cost.compute_seconds = 90.0
-        result_with_cost.cost_estimate = CostEstimate(
+        result_with_cost.estimate = PyEstimate(
             estimated_dbu=0.02,
             breakdown={"n1": 30.0, "n2": 60.0},
             shuffle_bytes={"n2": 1_073_741_824},
@@ -200,7 +200,7 @@ class TestExplainCost:
 
     @patch("burnt.cli.main.check_run")
     def test_explain_cost_no_estimate_skips_silently(self, mock_run) -> None:
-        # cost_estimate left unset
+        # estimate left unset
         mock_run.return_value = _make_result()
         with runner.isolated_filesystem() as fs:
             Path(fs, "test.py").write_text("df.collect()")

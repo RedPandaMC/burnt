@@ -1,4 +1,4 @@
-"""Unit tests for graph.estimate.estimate_cost."""
+"""Unit tests for graph.estimate.estimate."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import pytest
 from burnt.core.enums import EdgeType, NodeKind, ScalingType
 from burnt.graph.estimate import (
     PHOTON_SPEEDUP,
-    estimate_cost,
+    estimate,
 )
-from burnt.graph.model import CostEdge, CostGraph, CostNode
+from burnt.graph.model import PyEdge, PyGraph, PyNode
 
 
 def _node(
@@ -20,8 +20,8 @@ def _node(
     shuffle: bool = False,
     photon: bool = False,
     input_bytes: int | None = None,
-) -> CostNode:
-    return CostNode(
+) -> PyNode:
+    return PyNode(
         id=node_id,
         kind=NodeKind.READ,
         scaling_type=scaling,
@@ -44,7 +44,7 @@ class _FakeSession:
 
 class TestCorrelation:
     def test_two_stages_three_node_graph(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", line=10))
         g.add_node(_node("n2", line=42, shuffle=True))
         g.add_node(_node("n3", line=99))
@@ -63,7 +63,7 @@ class TestCorrelation:
                 },
             ]
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
 
         # n1 and n2 should pick up observed seconds.
         assert result.breakdown["n1"] == pytest.approx(5.0)
@@ -75,7 +75,7 @@ class TestCorrelation:
         assert result.confidence == "high"
 
     def test_tie_break_picks_smallest_stage_id(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", line=10))
         session = _FakeSession(
             stages=[
@@ -83,25 +83,25 @@ class TestCorrelation:
                 {"stageId": 7, "name": "y at f.py:12", "executorRunTime": 12000},
             ]
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
         # Both are 2 lines off — tie. Smaller stageId (7) wins.
         assert result.breakdown["n1"] == pytest.approx(12.0)
 
     def test_line_window_rejects_far_stages(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", line=10))
         session = _FakeSession(
             stages=[
                 {"stageId": 1, "name": "z at f.py:99", "executorRunTime": 100000}
             ]
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
         # Stage too far away to match — node falls back to scaling.
         assert result.coverage_ratio == 0.0
         assert result.breakdown["n1"] != pytest.approx(100.0)
 
     def test_unanchored_line_numbers_do_not_match(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", line=42))
         # Stage description has `:42` in a port number, not a callsite.
         session = _FakeSession(
@@ -113,13 +113,13 @@ class TestCorrelation:
                 }
             ]
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
         assert result.coverage_ratio == 0.0
 
 
 class TestFallback:
     def test_empty_session_uses_scaling(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", scaling=ScalingType.LINEAR, input_bytes=1_000_000_000))
         g.add_node(
             _node(
@@ -129,7 +129,7 @@ class TestFallback:
             )
         )
 
-        result = estimate_cost(g, session=None)
+        result = estimate(g, session=None)
         assert result.coverage_ratio == 0.0
         assert result.confidence == "low"
         # linear: 1GB * 30 = 30s
@@ -138,21 +138,21 @@ class TestFallback:
         assert result.breakdown["n2"] == pytest.approx(300.0, rel=0.01)
 
     def test_empty_graph_returns_empty(self) -> None:
-        result = estimate_cost(CostGraph(), session=None)
+        result = estimate(PyGraph(), session=None)
         assert result.breakdown == {}
         assert result.coverage_ratio == 0.0
 
 
 class TestPhoton:
     def test_photon_speedup_only_when_plan_confirms(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(
             _node("n1", scaling=ScalingType.LINEAR, photon=True, input_bytes=1_000_000_000)
         )
         # No plan bundle — no Photon confirmation → full estimate.
-        no_plan = estimate_cost(g, _FakeSession())
+        no_plan = estimate(g, _FakeSession())
         # With Photon node in plan → halved.
-        with_plan = estimate_cost(
+        with_plan = estimate(
             g,
             _FakeSession(
                 plan_bundles=[
@@ -172,7 +172,7 @@ class TestPhoton:
 
 class TestShuffleCrossLink:
     def test_shuffle_bytes_attached_for_matched_shuffle_nodes(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("n1", line=42, shuffle=True))
         session = _FakeSession(
             stages=[
@@ -195,16 +195,16 @@ class TestShuffleCrossLink:
                 }
             ],
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
         assert result.shuffle_bytes["n1"] == 1024 * 1024 * 128
 
 
 class TestDagAware:
     def test_child_contribution_subtracted_from_parent(self) -> None:
-        g = CostGraph()
+        g = PyGraph()
         g.add_node(_node("parent", line=10))
         g.add_node(_node("child", line=12))
-        g.add_edge(CostEdge(source="child", target="parent", edge_type=EdgeType.DATAFLOW))
+        g.add_edge(PyEdge(source="child", target="parent", edge_type=EdgeType.DATAFLOW))
 
         session = _FakeSession(
             stages=[
@@ -212,7 +212,7 @@ class TestDagAware:
                 {"stageId": 2, "name": "c at f.py:12", "executorRunTime": 4_000},
             ]
         )
-        result = estimate_cost(g, session)
+        result = estimate(g, session)
         # parent originally 10s, child 4s; DAG subtraction: parent = 10 - 4 = 6s.
         assert result.breakdown["parent"] == pytest.approx(6.0)
         assert result.breakdown["child"] == pytest.approx(4.0)
