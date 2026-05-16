@@ -1,1 +1,0 @@
-"""Databricks system table integrations."""
