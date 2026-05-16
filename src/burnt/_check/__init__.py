@@ -146,31 +146,56 @@ def _read_source(target: str) -> str:
 
 
 def _merge_runtime(result: CheckResult, session: Any) -> None:
-    """Tag findings with actual runtime metrics when available."""
+    """Tag findings with actual runtime metrics from a session.
+
+    Uses ``graph.estimate.estimate_cost`` to do the heavy lifting of
+    stage-to-node correlation, then propagates the per-node compute
+    seconds onto findings (matched by line number) and re-sorts so
+    the costliest findings surface first.
+    """
     if not hasattr(session, "stages"):
         return
 
-    total_compute = 0.0
-    for stage in session.stages:
-        total_compute += stage.get("executor_run_time", 0) / 1000.0
+    from burnt.graph.enrich import enrich_graph
+    from burnt.graph.estimate import estimate_cost
 
-    result.compute_seconds = total_compute
+    graph = enrich_graph(result.graph, session=session) if result.graph else None
+    estimate = estimate_cost(graph, session) if graph is not None else None
 
-    # Simple heuristic: if a finding mentions shuffle/crossJoin and we have
-    # high shuffle bytes, boost its compute_seconds.
+    if estimate is None:
+        # Fall back to a flat sum so the existing surface stays populated.
+        result.compute_seconds = sum(
+            s.get("executorRunTime", 0) / 1000.0 for s in session.stages
+        )
+        return
+
+    result.cost_estimate = estimate
+    result.compute_seconds = sum(estimate.breakdown.values())
+
+    line_to_compute = {
+        n.line_number: estimate.breakdown.get(n.id, 0.0)
+        for n in (graph.nodes or [])
+        if getattr(n, "line_number", None) is not None
+    }
     for finding in result.findings:
-        if any(
-            kw in finding.message.lower()
-            for kw in ("crossjoin", "shuffle", "cartesian", "repartition")
-        ):
-            shuffle_bytes = sum(
-                s.get("shuffle_write_bytes", 0) + s.get("shuffle_read_bytes", 0)
-                for s in session.stages
-            )
-            if shuffle_bytes > 1e9:  # > 1GB shuffle
-                finding.compute_seconds = (
-                    sum(s.get("executor_run_time", 0) for s in session.stages) / 1000.0
-                )
+        if finding.line_number is None:
+            continue
+        # Match within ±5 lines, same window the estimator uses.
+        best = None
+        for line, seconds in line_to_compute.items():
+            delta = abs(line - finding.line_number)
+            if delta > 5:
+                continue
+            if best is None or delta < best[0]:
+                best = (delta, seconds)
+        if best is not None:
+            finding.compute_seconds = best[1]
+
+    # Re-sort: highest compute seconds first; findings with no compute
+    # info sink to the bottom while preserving their original order.
+    result.findings.sort(
+        key=lambda f: -(f.compute_seconds or 0.0),
+    )
 
 
 __all__ = ["CheckResult", "Finding", "run"]
