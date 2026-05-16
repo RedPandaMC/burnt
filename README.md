@@ -11,7 +11,7 @@ Per-operation, per-table, per-dollar.
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
 [![Rust](https://img.shields.io/badge/engine-rust-orange)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
 </div>
 
@@ -122,23 +122,21 @@ Inside Databricks:
 %pip install burnt
 ```
 
-> **Current status (v0.2.0-dev):** Static lint (43 rules), CostGraph, and REST session
-> enrichment are fully operational. Dollar estimates require a pricing-backend extra;
-> see the matrix below.
+> **Current status (v0.2.0-dev):** Static lint (43 rules), CostGraph, REST session
+> enrichment, and four pricing backends (Azure, AWS, GCP, on-prem) are fully operational.
 
 ### Install matrix
 
-| Install | Lint (43 rules) | Compute-seconds | Live runtime | Dollars | System-table enrichment |
-|---------|:--------------:|:---------------:|:------------:|:-------:|:----------------------:|
-| `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ✅ | ❌ | ❌ |
-| `+ [onprem-spark]` | ✅ | ✅ | ✅ | ✅ user-supplied rates | ❌ |
-| `+ [databricks]` alone | ✅ | ✅ | ✅ | ❌ | ✅ |
-| `+ [azure-databricks]` | ✅ | ✅ | ✅ | ✅ Azure DBU + VM | ✅ |
-| `+ [aws-databricks]` | ✅ | ✅ | ✅ | ✅ AWS DBU + EC2 | ✅ |
-| `+ [gcp-databricks]` | ✅ | ✅ | ✅ | ✅ GCP DBU + GCE | ✅ |
-| `[all]` | ✅ | ✅ | ✅ | ✅ selected backend | ✅ |
+| Install | Lint (43 rules) | Compute-seconds | Dollars | System tables |
+|---------|:--------------:|:---------------:|:-------:|:-------------:|
+| `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ❌ | ❌ |
+| `+ [azure-databricks]` | ✅ | ✅ | ✅ Azure DBU + VM retail prices | ✅ workspace API |
+| `+ [aws-databricks]` | ✅ | ✅ | ✅ AWS EC2 bulk pricing | ✅ workspace API |
+| `+ [gcp-databricks]` | ✅ | ✅ | ✅ GCP Compute catalog (API key required) | ✅ workspace API |
+| `+ [onprem-spark]` | ✅ | ✅ | ✅ user-supplied rates in `burnt.toml` | ❌ |
+| `[all]` | ✅ | ✅ | ✅ selected backend | ✅ |
 
-Every `[*-databricks]` extra automatically installs `[databricks]` (Databricks workspace API + system tables). `[onprem-spark]` is self-contained — configure your own `$/vCPU-hour` in `burnt.toml`.
+All cloud pricing extras install `[databricks]` as a transitive dependency (workspace API + system tables). Azure and AWS use free unauthenticated APIs. GCP requires a free Cloud Billing API key set as `GCP_BILLING_API_KEY` or `BURNT_GCP_API_KEY`. `[onprem-spark]` is self-contained — configure `$/vCPU-hour` in `burnt.toml`.
 
 ---
 
@@ -156,7 +154,6 @@ result.display()
 result.findings         # list[Finding]
 result.to_json()        # dict
 result.to_markdown()    # str
-result.to_sarif()       # SARIF 2.1.0 dict
 ```
 
 ## CLI
@@ -180,6 +177,12 @@ burnt rules                     # Browse all 43 rules (interactive TUI)
 burnt init                      # Generate burnt.toml
 burnt doctor                    # Check config, Spark availability, system-table access
 burnt cache clear               # Clear the analysis cache
+
+# Pricing backends
+burnt pricing list-backends     # Show available pricing backends
+burnt pricing refresh           # Force-refresh pricing data from cloud APIs
+burnt pricing list-instances    # List available instance types from the active backend
+burnt pricing estimate          # Estimate cost for a given compute time and instance type
 ```
 
 ---
@@ -194,12 +197,15 @@ ignore = ["BNT_001"]
 fail-on = "warning"
 
 [burnt.pricing]
-backend = "azure-databricks"   # auto-detected if only one pricing extra is installed
+backend  = "azure-databricks"   # auto-detected if only one pricing extra is installed
+currency = "USD"
 
-[burnt.onprem_spark]
+[burnt.onprem]
 cost_per_vcpu_hour  = 0.048
 cost_per_gb_hour    = 0.006
 cost_per_gb_shuffle = 0.001
+total_vcpus         = 16
+total_memory_gb     = 64.0
 
 [burnt.databricks.system_tables]
 enabled = true   # set false to skip system-table queries entirely
@@ -268,20 +274,19 @@ Run `burnt rules` for the full list with descriptions, examples, and fix suggest
 ```
 CLI: burnt check                 Notebook: burnt.check()
       │                                │
-  Rust engine (PyO3)          Rust engine (same)
-  43 rules, CostGraph         + REST API enrichment
-  tree-sitter Py/SQL/DLT      + PricingBackend (optional)
-                                    │
-                          ┌─────────┴──────────┐
-                          │                    │
-                   [databricks]         [onprem-spark]
-                 [azure-databricks]    user $/vCPU-hour
-                 [aws-databricks]
-                 [gcp-databricks]
+   Rust engine (PyO3)          Rust engine (same)
+   43 rules, CostGraph         + REST API enrichment
+   tree-sitter Py/SQL/DLT      + providers/ (optional)
+                                     │
+                           ┌─────────┴──────────┐
+                           │                    │
+                    [azure-databricks]    [onprem-spark]
+                    [aws-databricks]       user $/vCPU-hour
+                    [gcp-databricks]
 ```
 
 **Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, CostGraph builder, 43 rules.  
-**Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `PricingBackend`, Rich display, typer CLI.  
+**Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `ProviderBackend` (providers/), Rich display, typer CLI.  
 **Core install:** zero cloud SDK, zero credentials required.
 
 ---
