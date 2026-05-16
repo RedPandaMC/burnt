@@ -29,24 +29,36 @@ class CacheSettings(BaseModel):
     ttl_seconds: float = 3600.0
 
 
-class WatchSettings(BaseModel):
-    """Settings for the watch / monitoring subsystem."""
+class PricingSettings(BaseModel):
+    """Settings for the pricing backend."""
 
-    tag_key: str | None = None
-    drift_threshold: float = 0.25
-    idle_threshold: float = 0.10
-    budget: float | None = None
-    days: int = 30
-    warehouse_id: str | None = None
+    backend: str | None = None
+    currency: str = "USD"
+    auto_refresh: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> PricingSettings:
+        if not data:
+            return cls()
+        data = {k.replace("-", "_"): v for k, v in data.items()}
+        return cls(**data)
 
 
-class AlertSettings(BaseModel):
-    """Settings for alert dispatch."""
+class OnPremSettings(BaseModel):
+    """On-premises Spark pricing configuration."""
 
-    slack: str | None = None
-    teams: str | None = None
-    webhook: str | None = None
-    delta_table: str | None = None
+    cost_per_vcpu_hour: float = 0.048
+    cost_per_gb_hour: float = 0.006
+    cost_per_gb_shuffle: float = 0.001
+    datacenter_overhead_pct: float = 15.0
+    total_vcpus: int = 16
+    total_memory_gb: float = 64.0
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> OnPremSettings:
+        if not data:
+            return cls()
+        return cls(**data)
 
 
 class Settings(BaseSettings):
@@ -66,8 +78,8 @@ class Settings(BaseSettings):
     pricing_source: str = "api"
     lint: LintSettings = LintSettings()
     cache: CacheSettings = CacheSettings()
-    watch: WatchSettings = WatchSettings()
-    alert: AlertSettings = AlertSettings()
+    pricing: PricingSettings = PricingSettings()
+    onprem: OnPremSettings = OnPremSettings()
 
     @classmethod
     def from_toml(cls, path: Path) -> Settings:
@@ -90,31 +102,27 @@ class Settings(BaseSettings):
         top_level = {
             k: v
             for k, v in section.items()
-            if k not in ("lint", "cache", "watch", "alert")
+            if k not in ("lint", "cache", "pricing", "onprem")
         }
         lint_data = section.get("lint", {})
         cache_data = section.get("cache", {})
-        watch_data = section.get("watch", {})
-        alert_data = section.get("alert", {})
+        pricing_data = section.get("pricing")
+        onprem_data = section.get("onprem")
 
         # TOML uses kebab-case; map to snake_case for pydantic
         lint_data = {k.replace("-", "_"): v for k, v in lint_data.items()}
         cache_data = {k.replace("-", "_"): v for k, v in cache_data.items()}
-        watch_data = {k.replace("-", "_"): v for k, v in watch_data.items()}
-        alert_data = {k.replace("-", "_"): v for k, v in alert_data.items()}
         top_level = {k.replace("-", "_"): v for k, v in top_level.items()}
 
         lint = LintSettings(**lint_data) if lint_data else LintSettings()
         cache = CacheSettings(**cache_data) if cache_data else CacheSettings()
-        watch = WatchSettings(**watch_data) if watch_data else WatchSettings()
-        alert = AlertSettings(**alert_data) if alert_data else AlertSettings()
+        pricing = PricingSettings.from_dict(pricing_data)
+        onprem = OnPremSettings.from_dict(onprem_data)
 
-        return cls(lint=lint, cache=cache, watch=watch, alert=alert, **top_level)
+        return cls(lint=lint, cache=cache, pricing=pricing, onprem=onprem, **top_level)
 
     @classmethod
-    def discover(
-        cls, cwd: Path | None = None
-    ) -> tuple[Path | None, Settings]:
+    def discover(cls, cwd: Path | None = None) -> tuple[Path | None, Settings]:
         """Walk upward from cwd looking for a config file.
 
         Stops at git root or HOME. Returns (config_path, settings).
@@ -196,12 +204,8 @@ class Settings(BaseSettings):
         # For nested models, do field-level merge
         lint_merged = _merge_model(LintSettings, [s.lint for s in settings])
         cache_merged = _merge_model(CacheSettings, [s.cache for s in settings])
-        watch_merged = _merge_model(WatchSettings, [s.watch for s in settings])
-        alert_merged = _merge_model(AlertSettings, [s.alert for s in settings])
         merged["lint"] = lint_merged
         merged["cache"] = cache_merged
-        merged["watch"] = watch_merged
-        merged["alert"] = alert_merged
 
         return cls(**merged)
 

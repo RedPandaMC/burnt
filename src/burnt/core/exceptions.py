@@ -77,7 +77,7 @@ class CostBudgetExceeded(BurntError):
         self.budget = budget
         self.currency = currency
         self.label = label
-        estimate_cost = estimate.cost_in(currency) or estimate.primary_cost or 0
+        estimate_cost = estimate.cost_in(currency) or estimate.cost_in("USD") or 0
         msg = (
             f"Estimated cost {currency} {estimate_cost:.2f} exceeds "
             f"budget {currency} {budget:.2f}"
