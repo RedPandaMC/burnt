@@ -148,10 +148,11 @@ def _read_source(target: str) -> str:
 def _merge_runtime(result: CheckResult, session: Any) -> None:
     """Tag findings with actual runtime metrics from a session.
 
-    Uses ``graph.estimate.estimate_cost`` to do the heavy lifting of
-    stage-to-node correlation, then propagates the per-node compute
-    seconds onto findings (matched by line number) and re-sorts so
-    the costliest findings surface first.
+    The graph here may be either the Rust ``PyGraph`` (from
+    ``analyze_file``/``analyze_source``) or the pure-Python ``CostGraph``.
+    Both expose the same ``.nodes`` / ``.edges`` duck-typed surface, so
+    ``enrich_graph`` and ``estimate_cost`` consume them uniformly without
+    mutating node fields.
     """
     if not hasattr(session, "stages"):
         return
@@ -159,11 +160,17 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
     from burnt.graph.enrich import enrich_graph
     from burnt.graph.estimate import estimate_cost
 
-    graph = enrich_graph(result.graph, session=session) if result.graph else None
-    estimate = estimate_cost(graph, session) if graph is not None else None
+    graph = result.graph
+    observed = enrich_graph(graph, session=session) if graph is not None else {}
+    estimate = (
+        estimate_cost(graph, session, observed_input_bytes=observed)
+        if graph is not None
+        else None
+    )
 
-    if estimate is None:
-        # Fall back to a flat sum so the existing surface stays populated.
+    if estimate is None or not estimate.breakdown:
+        # No graph or no nodes — fall back to a flat sum so the
+        # CheckResult surface stays populated.
         result.compute_seconds = sum(
             s.get("executorRunTime", 0) / 1000.0 for s in session.stages
         )

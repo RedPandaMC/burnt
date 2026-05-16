@@ -122,6 +122,7 @@ def estimate_cost(
     graph: CostGraph | Any,
     session: Any = None,
     *,
+    observed_input_bytes: dict[str, int] | None = None,
     dbu_rate: float = 0.75,
     num_workers: int = 2,
 ) -> CostEstimate:
@@ -133,6 +134,9 @@ def estimate_cost(
         session: Optional ``SessionState``-shaped object with ``.stages``
             and ``.plan_bundles`` attributes. May be ``None`` for pure
             static estimation.
+        observed_input_bytes: Optional ``{node_id: bytes}`` map from
+            ``enrich_graph``; overrides ``node.estimated_input_bytes``
+            for the scaling-function fallback when present.
         dbu_rate: DBU price multiplier folded into the dollar total.
         num_workers: Worker count used for the scaling-only fallback.
 
@@ -146,6 +150,7 @@ def estimate_cost(
 
     stages = _session_stages(session)
     plan_lookup = _build_plan_lookup(session)
+    observed = observed_input_bytes or {}
 
     breakdown: dict[str, float] = {}
     shuffle_bytes: dict[str, int] = {}
@@ -162,7 +167,7 @@ def estimate_cost(
             if sw is not None:
                 shuffle_bytes[node.id] = sw
         else:
-            est = _scaling_estimate(node, plan_lookup)
+            est = _scaling_estimate(node, plan_lookup, observed.get(node.id))
             breakdown[node.id] = est
 
     # DAG-aware adjustment — for every fork/join, the child contribution
@@ -306,12 +311,22 @@ def _parse_metric_bytes(raw: Any) -> int:
 
 
 def _scaling_estimate(
-    node: Any, plan_lookup: dict[int, list[dict[str, Any]]]
+    node: Any,
+    plan_lookup: dict[int, list[dict[str, Any]]],
+    observed_bytes: int | None = None,
 ) -> float:
-    """Fallback estimate when no stage matches the node."""
+    """Fallback estimate when no stage matches the node.
+
+    ``observed_bytes`` from ``enrich_graph`` takes precedence over the
+    node's static ``estimated_input_bytes`` when present.
+    """
     scaling = _resolve_scaling(node)
     fn = _SCALING_STRATEGY.get(scaling, _linear)
-    left = float(getattr(node, "estimated_input_bytes", None) or _DEFAULT_BYTES_PER_NODE)
+    left = float(
+        observed_bytes
+        if observed_bytes is not None
+        else getattr(node, "estimated_input_bytes", None) or _DEFAULT_BYTES_PER_NODE
+    )
     right = left  # quadratic only — assume self-join shape when unknown
     estimate = fn(left, right)
 

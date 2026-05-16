@@ -1,61 +1,66 @@
 """Enrich graph nodes with observed runtime metadata.
 
-When a session has collected stages, this layer back-fills each
-``CostNode.estimated_input_bytes`` with the observed ``inputBytes`` of
-the stage that correlates to that node (same line-number correlation
-the estimator uses). Falls back to a no-op when no session is present.
+When a session has collected stages, this layer correlates stages to
+graph nodes by line number (same ±5-line window the estimator uses)
+and returns the observed ``inputBytes`` keyed by node id. The estimator
+then prefers observed bytes over the static Rust-side estimate when
+computing scaling-function fallbacks for unmatched nodes.
 
-``CostNode`` is frozen-slotted, so the in-place enrichment returns a
-new ``CostGraph`` rather than mutating the input.
+Returning a sibling map (rather than mutating nodes) avoids two issues:
+
+* The Rust ``PyCostNode`` adapter is a ``#[pyclass]``, not a Python
+  dataclass — ``dataclasses.replace`` would raise ``TypeError`` on it.
+* The Python ``CostNode`` is frozen-slotted, so in-place mutation is
+  also off the table.
+
+The map shape mirrors ``CostEstimate.shuffle_bytes``: ``dict[node_id, int]``.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import replace
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from .model import CostGraph
+from typing import Any
 
 _LINE_RE = re.compile(r"(?:\.py|\.sql|<stdin>):(\d+)")
 _LINE_WINDOW = 5
 
 
 def enrich_graph(
-    graph: CostGraph,
+    graph: Any,
     *,
     session: Any = None,
     warehouse_id: str | None = None,
-) -> CostGraph:
-    """Annotate every matched node with its observed ``inputBytes``.
+) -> dict[str, int]:
+    """Return observed ``inputBytes`` per graph node id.
 
     Args:
-        graph: Static cost graph from the Rust engine.
+        graph: Static cost graph (either the Rust ``PyGraph`` or the
+            pure-Python ``CostGraph``). Only ``.nodes`` is accessed.
         session: Optional ``SessionState`` with ``.stages``.
-        warehouse_id: Reserved for a future Delta/UC metadata enrichment
-            path. Unused today.
+        warehouse_id: Reserved for a future Delta/UC metadata path. Unused.
 
     Returns:
-        A new ``CostGraph`` whose nodes carry observed input bytes where
-        a stage matched, untouched copies otherwise.
+        A dict ``{node_id: observed_input_bytes}`` containing only
+        nodes that had a matching stage. Empty when no session is
+        present or no stage correlates.
     """
-    if session is None or not getattr(graph, "nodes", None):
-        return graph
+    if session is None or graph is None:
+        return {}
+
+    nodes = list(getattr(graph, "nodes", []) or [])
+    if not nodes:
+        return {}
 
     stages = list(getattr(session, "stages", []) or [])
     if not stages:
-        return graph
+        return {}
 
-    new_nodes = []
-    for node in graph.nodes:
-        observed = _observed_input_bytes(node, stages)
-        if observed is None:
-            new_nodes.append(node)
-        else:
-            new_nodes.append(replace(node, estimated_input_bytes=observed))
-
-    return replace(graph, nodes=new_nodes)
+    observed: dict[str, int] = {}
+    for node in nodes:
+        bytes_in = _observed_input_bytes(node, stages)
+        if bytes_in is not None:
+            observed[node.id] = bytes_in
+    return observed
 
 
 def enrich_dlt(

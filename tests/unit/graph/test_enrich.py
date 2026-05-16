@@ -26,7 +26,7 @@ def test_observed_input_bytes_back_filled() -> None:
     g.add_node(_node("n1", 42))
     g.add_node(_node("n2", 100))
 
-    enriched = enrich_graph(
+    observed = enrich_graph(
         g,
         session=_FakeSession(
             stages=[
@@ -39,24 +39,21 @@ def test_observed_input_bytes_back_filled() -> None:
         ),
     )
 
-    by_id = {n.id: n for n in enriched.nodes}
-    assert by_id["n1"].estimated_input_bytes == 4_509_715_456
-    # n2 had no matching stage — original (None) preserved.
-    assert by_id["n2"].estimated_input_bytes is None
+    assert observed == {"n1": 4_509_715_456}
+    # n2 had no matching stage — absent from the map, not zero.
+    assert "n2" not in observed
 
 
-def test_no_session_is_pass_through() -> None:
+def test_no_session_is_empty_dict() -> None:
     g = CostGraph()
     g.add_node(_node("n1", 42))
-    enriched = enrich_graph(g, session=None)
-    # Same nodes, same identity-equal values.
-    assert enriched.nodes[0].estimated_input_bytes is None
+    assert enrich_graph(g, session=None) == {}
 
 
 def test_unmatched_stage_window_is_ignored() -> None:
     g = CostGraph()
     g.add_node(_node("n1", 10))
-    enriched = enrich_graph(
+    observed = enrich_graph(
         g,
         session=_FakeSession(
             stages=[
@@ -68,4 +65,29 @@ def test_unmatched_stage_window_is_ignored() -> None:
             ]
         ),
     )
-    assert enriched.nodes[0].estimated_input_bytes is None
+    assert observed == {}
+
+
+def test_works_with_duck_typed_node_objects() -> None:
+    """enrich_graph must not depend on dataclass replace — Rust
+    PyCostNode instances are #[pyclass], not dataclasses."""
+
+    class FakeNode:
+        def __init__(self, node_id: str, line: int) -> None:
+            self.id = node_id
+            self.line_number = line
+
+    class FakeGraph:
+        def __init__(self, nodes: list[FakeNode]) -> None:
+            self.nodes = nodes
+
+    g = FakeGraph([FakeNode("rust_node_1", 7)])
+    observed = enrich_graph(
+        g,
+        session=_FakeSession(
+            stages=[
+                {"stageId": 5, "name": "x at nb.py:7", "inputBytes": 999}
+            ]
+        ),
+    )
+    assert observed == {"rust_node_1": 999}
