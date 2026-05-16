@@ -56,7 +56,7 @@ pub enum ScalingBehavior {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CostNode {
+pub struct Node {
     pub id: String,
     pub kind: OperationKind,
     pub scaling_type: ScalingBehavior,
@@ -71,7 +71,7 @@ pub struct CostNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CostEdge {
+pub struct Edge {
     pub source: String,
     pub target: String,
     pub edge_type: String,
@@ -104,7 +104,7 @@ pub struct PipelineTable {
     pub name: String,
     pub kind: SdpTableKind,
     pub source_type: SdpSourceType,
-    pub inner_nodes: Vec<CostNode>,
+    pub inner_nodes: Vec<Node>,
     pub expectations: Vec<String>,
     pub is_incremental: bool,
 }
@@ -251,9 +251,9 @@ pub struct AnalysisResultPy {
     #[pyo3(get)]
     pub mode: String,
     #[pyo3(get)]
-    pub graph: Option<crate::graph::CostGraphPy>,
+    pub graph: Option<crate::graph::PyGraph>,
     #[pyo3(get)]
-    pub pipeline: Option<crate::graph::PipelineGraphPy>,
+    pub pipeline: Option<crate::graph::PyPipeline>,
     #[pyo3(get)]
     pub findings: Vec<Finding>,
     #[pyo3(get)]
@@ -264,7 +264,7 @@ pub struct AnalysisResultPy {
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyCostNode {
+pub struct PyNode {
     #[pyo3(get)]
     pub id: String,
     #[pyo3(get)]
@@ -289,9 +289,9 @@ pub struct PyCostNode {
     pub source_code: Option<String>,
 }
 
-impl From<CostNode> for PyCostNode {
-    fn from(n: CostNode) -> Self {
-        PyCostNode {
+impl From<Node> for PyNode {
+    fn from(n: Node) -> Self {
+        PyNode {
             id: n.id,
             kind: n.kind.to_string(),
             scaling_type: n.scaling_type.to_string(),
@@ -309,7 +309,7 @@ impl From<CostNode> for PyCostNode {
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyCostEdge {
+pub struct PyEdge {
     #[pyo3(get)]
     pub source: String,
     #[pyo3(get)]
@@ -318,9 +318,9 @@ pub struct PyCostEdge {
     pub edge_type: String,
 }
 
-impl From<CostEdge> for PyCostEdge {
-    fn from(e: CostEdge) -> Self {
-        PyCostEdge {
+impl From<Edge> for PyEdge {
+    fn from(e: Edge) -> Self {
+        PyEdge {
             source: e.source,
             target: e.target,
             edge_type: e.edge_type,
@@ -340,7 +340,7 @@ pub struct PyPipelineTable {
     #[pyo3(get)]
     pub source_type: String,
     #[pyo3(get)]
-    pub inner_nodes: Vec<PyCostNode>,
+    pub inner_nodes: Vec<PyNode>,
     #[pyo3(get)]
     pub expectations: Vec<String>,
     #[pyo3(get)]

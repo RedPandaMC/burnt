@@ -18,12 +18,12 @@ pub mod session;
 pub mod types;
 
 use detect::detect_mode_from_source;
-use graph::{CostGraph, CostGraphPy, PipelineGraph, PipelineGraphPy};
+use graph::{Graph, PyGraph, PipelineGraph, PyPipeline};
 use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode,
     PyPipelineTable, RuleEntry,
 };
 
@@ -35,7 +35,7 @@ fn version() -> String {
 
 /// Builds a cost/pipeline graph for `source` using auto-detected language mode.
 ///
-/// Returns a `CostGraphPy` for Python/SQL input and a `PipelineGraphPy` for DLT.
+/// Returns a `PyGraph` for Python/SQL input and a `PyPipeline` for DLT.
 #[pyfunction]
 fn check(source: &str) -> PyResult<PyObject> {
     let mode = detect_mode_from_source(source);
@@ -43,17 +43,17 @@ fn check(source: &str) -> PyResult<PyObject> {
     Python::with_gil(|py| match mode {
         AnalysisMode::Sdp => {
             let pg = PipelineGraph::from_sdp(source);
-            let pg_py: PipelineGraphPy = pg.into();
+            let pg_py: PyPipeline = pg.into();
             Ok(pg_py.into_py(py))
         }
         AnalysisMode::Sql => {
-            let cg = CostGraph::from_sql(source)?;
-            let cg_py: CostGraphPy = cg.into();
+            let cg = Graph::from_sql(source)?;
+            let cg_py: PyGraph = cg.into();
             Ok(cg_py.into_py(py))
         }
         AnalysisMode::Python => {
-            let cg = CostGraph::from_python(source)?;
-            let cg_py: CostGraphPy = cg.into();
+            let cg = Graph::from_python(source)?;
+            let cg_py: PyGraph = cg.into();
             Ok(cg_py.into_py(py))
         }
     })
@@ -90,18 +90,18 @@ pub fn get_registry_count() -> usize {
 fn build_graph_and_pipeline(
     mode: &AnalysisMode,
     source: &str,
-) -> PyResult<(Option<CostGraphPy>, Option<PipelineGraphPy>, Vec<Finding>)> {
+) -> PyResult<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>)> {
     match mode {
         AnalysisMode::Sdp => {
             let pg = PipelineGraph::from_sdp(source);
             Ok((None, Some(pg.into()), Vec::new()))
         }
         AnalysisMode::Sql => {
-            let cg = CostGraph::from_sql(source)?;
+            let cg = Graph::from_sql(source)?;
             Ok((Some(cg.into()), None, Vec::new()))
         }
         AnalysisMode::Python => {
-            let cg = CostGraph::from_python(source)?;
+            let cg = Graph::from_python(source)?;
             let sem_findings = cg.findings.clone();
             Ok((Some(cg.into()), None, sem_findings))
         }
@@ -226,10 +226,10 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<SessionStatePy>()?;
     m.add_class::<PyPlanNode>()?;
-    m.add_class::<CostGraphPy>()?;
-    m.add_class::<PipelineGraphPy>()?;
-    m.add_class::<PyCostNode>()?;
-    m.add_class::<PyCostEdge>()?;
+    m.add_class::<PyGraph>()?;
+    m.add_class::<PyPipeline>()?;
+    m.add_class::<PyNode>()?;
+    m.add_class::<PyEdge>()?;
     m.add_class::<PyPipelineTable>()?;
     m.add_class::<types::Finding>()?;
     m.add_class::<rules::PyRuleInfo>()?;

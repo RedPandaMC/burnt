@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::semantic::SemanticModel;
-use crate::types::{CostEdge, CostNode, Finding, OperationKind, ScalingBehavior};
-use tree_sitter::{Node, Parser};
+use crate::types::{Edge, Node, Finding, OperationKind, ScalingBehavior};
+use tree_sitter::{Node as TsNode, Parser};
 
 pub struct PythonGraphBuilder {
-    nodes: Vec<CostNode>,
-    edges: Vec<CostEdge>,
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
     bindings: HashMap<String, String>,
     semantic_model: SemanticModel,
 }
@@ -26,7 +26,7 @@ impl PythonGraphBuilder {
     pub fn build_from_source(
         mut self,
         source: &str,
-    ) -> (Vec<CostNode>, Vec<CostEdge>, Vec<Finding>) {
+    ) -> (Vec<Node>, Vec<Edge>, Vec<Finding>) {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
@@ -42,7 +42,7 @@ impl PythonGraphBuilder {
         (self.nodes, self.edges, findings)
     }
 
-    fn visit_node(&mut self, node: &Node, source: &str) {
+    fn visit_node(&mut self, node: &TsNode, source: &str) {
         match node.kind() {
             "assignment" => {
                 self.handle_assignment(node, source);
@@ -59,9 +59,9 @@ impl PythonGraphBuilder {
         }
     }
 
-    fn handle_assignment(&mut self, node: &Node, source: &str) {
+    fn handle_assignment(&mut self, node: &TsNode, source: &str) {
         let mut cursor = node.walk();
-        let children: Vec<Node> = node.children(&mut cursor).collect();
+        let children: Vec<TsNode> = node.children(&mut cursor).collect();
 
         if let Some(left) = children.first() {
             if left.kind() == "identifier" {
@@ -87,12 +87,12 @@ impl PythonGraphBuilder {
         }
     }
 
-    fn handle_call(&mut self, node: &Node, source: &str) -> Option<String> {
+    fn handle_call(&mut self, node: &TsNode, source: &str) -> Option<String> {
         let line = node.start_position().row as u32 + 1;
         self.handle_spark_call(node, source, line)
     }
 
-    fn handle_spark_call(&mut self, node: &Node, source: &str, line: u32) -> Option<String> {
+    fn handle_spark_call(&mut self, node: &TsNode, source: &str, line: u32) -> Option<String> {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
         if call_text.contains("spark.read") || call_text.contains("spark.readStream") {
@@ -171,7 +171,7 @@ impl PythonGraphBuilder {
         // so +1 gives a stable 1-based ID without a separate counter field.
         let node_id = format!("node_{}", self.nodes.len() + 1);
 
-        self.nodes.push(CostNode {
+        self.nodes.push(Node {
             id: node_id.clone(),
             kind,
             scaling_type,
@@ -190,7 +190,7 @@ impl PythonGraphBuilder {
 
     #[allow(dead_code)]
     fn create_edge(&mut self, source: &str, target: &str, edge_type: &str) {
-        self.edges.push(CostEdge {
+        self.edges.push(Edge {
             source: source.to_string(),
             target: target.to_string(),
             edge_type: edge_type.to_string(),
@@ -214,7 +214,7 @@ mod tests {
 
         let (nodes, _edges, _findings) = PythonGraphBuilder::new().build_from_source(source);
 
-        let read_nodes: Vec<&CostNode> = nodes
+        let read_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Read))
             .collect();

@@ -89,7 +89,7 @@ pub fn parse_physical_plan(json_str: &str) -> Vec<PlanNode> {
     try_parse(json_str).unwrap_or_default()
 }
 
-/// Python-facing adapter mirroring the `PyCostNode` style elsewhere in
+/// Python-facing adapter mirroring the `PyNode` style elsewhere in
 /// the crate. The metrics dict is built once under the GIL at conversion
 /// time and cached as a `Py<PyDict>` — getter access is a refcount bump
 /// rather than a full rebuild on every call.
