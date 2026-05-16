@@ -1,0 +1,42 @@
+{
+  "id": 42,
+  "description": "SELECT * FROM t ORDER BY x",
+  "nodes": [
+    {
+      "nodeId": 1,
+      "nodeName": "Sort",
+      "metrics": [
+        {"name": "number of output rows", "accumulatorId": 100, "metricType": "sum"},
+        {"name": "peak memory", "accumulatorId": 101, "metricType": "size"}
+      ]
+    },
+    {
+      "nodeId": 2,
+      "nodeName": "Exchange",
+      "metrics": [
+        {"name": "shuffle write size", "accumulatorId": 200, "metricType": "size"},
+        {"name": "number of output rows", "accumulatorId": 201, "metricType": "sum"}
+      ]
+    },
+    {
+      "nodeId": 3,
+      "nodeName": "Scan parquet",
+      "metrics": [
+        {"name": "number of files read", "accumulatorId": 300, "metricType": "sum"},
+        {"name": "size of files read", "accumulatorId": 301, "metricType": "size"}
+      ]
+    }
+  ],
+  "edges": [
+    {"fromId": 2, "toId": 1},
+    {"fromId": 3, "toId": 2}
+  ],
+  "metricValues": {
+    "100": "12345",
+    "101": "256.0 MiB",
+    "200": "128.0 MiB",
+    "201": "12345",
+    "300": "4",
+    "301": "512.0 MiB"
+  }
+}

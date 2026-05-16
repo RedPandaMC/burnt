@@ -5,6 +5,7 @@ pub mod detect;
 pub mod graph;
 pub mod ingestion;
 pub(crate) mod parse;
+pub mod plan_parser;
 pub mod rules;
 mod semantic;
 pub mod session;

@@ -1,0 +1,15 @@
+{
+  "id": 10,
+  "nodes": [
+    {"nodeId": 1, "nodeName": "BroadcastHashJoin", "metrics": []},
+    {"nodeId": 2, "nodeName": "Exchange", "metrics": []},
+    {"nodeId": 3, "nodeName": "ReusedExchange", "metrics": []},
+    {"nodeId": 4, "nodeName": "Scan parquet", "metrics": []}
+  ],
+  "edges": [
+    {"fromId": 2, "toId": 1},
+    {"fromId": 3, "toId": 1},
+    {"fromId": 4, "toId": 2},
+    {"fromId": 2, "toId": 3}
+  ]
+}
