@@ -1,8 +1,11 @@
 mod rest_client;
 mod types;
 
+use std::sync::Arc;
+
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 
 use crate::json_py::value_vec_to_py_list;
@@ -133,63 +136,28 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     };
     let auth = state_mut.auth_header.clone();
 
-    let client = RestClient::new();
+    // One client, one parsed auth header, one connection pool — reused
+    // across every endpoint and every parallel /sql/{id} call.
+    let client = Arc::new(RestClient::new(auth.as_deref()));
     let base = format!("{}/applications/{}", rest_url.trim_end_matches('/'), app_id);
 
     let mut collected: Vec<Value> = Vec::new();
     let mut any_error = false;
 
-    // ── /stages ──
-    if let Ok(items) =
-        client.get_json::<Vec<StageMetrics>>(&format!("{}/stages", base), auth.as_deref())
-    {
-        for item in items {
-            if let Ok(v) = serde_json::to_value(item) {
-                collected.push(v);
-            }
-        }
-    } else {
-        any_error = true;
-    }
-
-    // ── /jobs ──
-    if let Ok(items) =
-        client.get_json::<Vec<JobSummary>>(&format!("{}/jobs", base), auth.as_deref())
-    {
-        for item in items {
-            if let Ok(v) = serde_json::to_value(item) {
-                collected.push(v);
-            }
-        }
-    } else {
-        any_error = true;
-    }
-
-    // ── /sql ──
     let mut sql_exec_ids: Vec<i64> = Vec::new();
-    if let Ok(items) =
-        client.get_json::<Vec<SqlExecution>>(&format!("{}/sql", base), auth.as_deref())
-    {
-        for item in items {
-            sql_exec_ids.push(item.id);
-            if let Ok(v) = serde_json::to_value(item) {
-                collected.push(v);
-            }
-        }
-    } else {
+
+    if !collect_endpoint::<StageMetrics>(&client, &base, "stages", &mut collected, |_| {}) {
         any_error = true;
     }
-
-    // ── /executors ──
-    if let Ok(items) =
-        client.get_json::<Vec<ExecutorSummary>>(&format!("{}/executors", base), auth.as_deref())
-    {
-        for item in items {
-            if let Ok(v) = serde_json::to_value(item) {
-                collected.push(v);
-            }
-        }
-    } else {
+    if !collect_endpoint::<JobSummary>(&client, &base, "jobs", &mut collected, |_| {}) {
+        any_error = true;
+    }
+    if !collect_endpoint::<SqlExecution>(&client, &base, "sql", &mut collected, |item| {
+        sql_exec_ids.push(item.id);
+    }) {
+        any_error = true;
+    }
+    if !collect_endpoint::<ExecutorSummary>(&client, &base, "executors", &mut collected, |_| {}) {
         any_error = true;
     }
 
@@ -203,33 +171,13 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     //
     // Fail-soft: per-execution errors land in `partial_errors`, they do
     // not flip `active` to false or empty the rest of the collected data.
-    let auth_owned = auth.clone();
     let base_owned = base.clone();
     let bundles_and_errors: Vec<(Option<Value>, Option<String>)> = sql_exec_ids
         .par_iter()
         .map(|exec_id| {
-            let local_client = RestClient::new();
             let url = format!("{}/sql/{}", base_owned, exec_id);
-            match local_client.get_text(&url, auth_owned.as_deref()) {
-                Ok(body) => {
-                    let nodes = parse_physical_plan(&body);
-                    let plan_nodes: Vec<Value> = nodes
-                        .into_iter()
-                        .map(|n| {
-                            json!({
-                                "nodeId": n.node_id,
-                                "nodeName": n.node_name,
-                                "parentIds": n.parent_ids,
-                                "metrics": n.metrics,
-                            })
-                        })
-                        .collect();
-                    let bundle = json!({
-                        "sqlExecId": exec_id,
-                        "planNodes": plan_nodes,
-                    });
-                    (Some(bundle), None)
-                }
+            match client.get_text(&url) {
+                Ok(body) => (Some(bundle_for(*exec_id, &body)), None),
                 Err(e) => (None, Some(format!("/sql/{exec_id}: {e}"))),
             }
         })
@@ -247,6 +195,51 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     state_mut.collected = collected;
 
     Ok(())
+}
+
+/// Fetch a single endpoint, push its items onto `collected`, and invoke
+/// `tap` for each successfully-fetched item (used by the `/sql`
+/// endpoint to harvest execution ids).
+///
+/// Returns `true` if the endpoint was fetched successfully (including
+/// the empty case). `false` signals the caller to flip `active = false`.
+fn collect_endpoint<T>(
+    client: &RestClient,
+    base: &str,
+    path: &'static str,
+    collected: &mut Vec<Value>,
+    mut tap: impl FnMut(&T),
+) -> bool
+where
+    T: DeserializeOwned + Serialize,
+{
+    let url = format!("{base}/{path}");
+    let Ok(items) = client.get_json::<Vec<T>>(&url) else {
+        return false;
+    };
+    for item in items {
+        tap(&item);
+        if let Ok(v) = serde_json::to_value(item) {
+            collected.push(v);
+        }
+    }
+    true
+}
+
+/// Build the `planNodes` bundle for a single SQL execution.
+fn bundle_for(exec_id: i64, body: &str) -> Value {
+    let plan_nodes: Vec<Value> = parse_physical_plan(body)
+        .into_iter()
+        .map(|n| {
+            json!({
+                "nodeId": n.node_id,
+                "nodeName": n.node_name,
+                "parentIds": n.parent_ids,
+                "metrics": n.metrics,
+            })
+        })
+        .collect();
+    json!({ "sqlExecId": exec_id, "planNodes": plan_nodes })
 }
 
 #[cfg(test)]
