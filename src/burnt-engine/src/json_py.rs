@@ -14,6 +14,7 @@ use serde_json::Value;
 /// Allocation errors during list/dict construction are surfaced via
 /// `expect` with a descriptive message — they only occur on Python
 /// allocator failure, which is unrecoverable anyway.
+#[must_use]
 pub fn value_to_py(py: Python<'_>, value: &Value) -> PyObject {
     match value {
         Value::Null => py.None(),
@@ -46,6 +47,7 @@ pub fn value_to_py(py: Python<'_>, value: &Value) -> PyObject {
 }
 
 /// Convert a slice of `Value`s into a Python `list`.
+#[must_use]
 pub fn value_vec_to_py_list(py: Python<'_>, values: &[Value]) -> PyObject {
     let list = PyList::empty_bound(py);
     for v in values {

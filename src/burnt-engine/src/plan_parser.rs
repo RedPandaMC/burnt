@@ -84,6 +84,7 @@ struct RawEdge {
 /// list rather than an error — the caller is the monitoring REST loop
 /// and a single malformed execution must not poison the rest of the
 /// collected state.
+#[must_use]
 pub fn parse_physical_plan(json_str: &str) -> Vec<PlanNode> {
     try_parse(json_str).unwrap_or_default()
 }

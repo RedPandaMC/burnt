@@ -1,3 +1,7 @@
+// See note in `lib.rs` — pyo3's `#[pyfunction]` codegen forces this
+// useless conversion. Scoped here rather than crate-wide.
+#![allow(clippy::useless_conversion)]
+
 mod rest_client;
 mod types;
 
@@ -203,6 +207,7 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
 ///
 /// Returns `true` if the endpoint was fetched successfully (including
 /// the empty case). `false` signals the caller to flip `active = false`.
+#[must_use]
 fn collect_endpoint<T>(
     client: &RestClient,
     base: &str,

@@ -32,6 +32,7 @@ pub struct PythonParseResult {
 
 #[derive(Debug, Clone, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
+#[non_exhaustive]
 pub enum OperationKind {
     Read,
     Transform,
@@ -45,6 +46,7 @@ pub enum OperationKind {
 
 #[derive(Debug, Clone, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
+#[non_exhaustive]
 pub enum ScalingBehavior {
     Linear,
     LinearWithCliff,
@@ -77,6 +79,7 @@ pub struct CostEdge {
 
 #[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
+#[non_exhaustive]
 pub enum SdpTableKind {
     StreamingTable,
     MaterializedView,
@@ -85,6 +88,7 @@ pub enum SdpTableKind {
 
 #[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
 #[strum(serialize_all = "snake_case")]
+#[non_exhaustive]
 pub enum SdpSourceType {
     CloudFiles,
     Kafka,
