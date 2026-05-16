@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::graph::python::PythonGraphBuilder;
 use crate::parse::import_map::ImportMap;
-use crate::types::{CostEdge, PipelineTable, SdpSourceType, SdpTableKind};
-use tree_sitter::{Node, Parser};
+use crate::types::{Edge, PipelineTable, SdpSourceType, SdpTableKind};
+use tree_sitter::{Node as TsNode, Parser};
 
 pub struct SdpGraphBuilder {
     tables: Vec<PipelineTable>,
-    edges: Vec<CostEdge>,
+    edges: Vec<Edge>,
     table_counter: u32,
     current_table: Option<PipelineTable>,
     table_references: HashMap<String, String>,
@@ -28,7 +28,7 @@ impl SdpGraphBuilder {
         }
     }
 
-    pub fn build_from_source(mut self, source: &str) -> (Vec<PipelineTable>, Vec<CostEdge>) {
+    pub fn build_from_source(mut self, source: &str) -> (Vec<PipelineTable>, Vec<Edge>) {
         self.parser.reset();
         self.parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
@@ -48,7 +48,7 @@ impl SdpGraphBuilder {
         (self.tables, self.edges)
     }
 
-    fn visit_node(&mut self, node: &Node, source: &str) {
+    fn visit_node(&mut self, node: &TsNode, source: &str) {
         match node.kind() {
             "decorator" => self.handle_decorator(node, source),
             "function_definition" => {
@@ -65,7 +65,7 @@ impl SdpGraphBuilder {
         }
     }
 
-    fn handle_decorator(&mut self, node: &Node, source: &str) {
+    fn handle_decorator(&mut self, node: &TsNode, source: &str) {
         let decorator_text = node.utf8_text(source.as_bytes()).unwrap_or("");
 
         if let Some((ns_part, kind)) = self.extract_decorator_ns_and_kind(decorator_text) {
@@ -108,10 +108,10 @@ impl SdpGraphBuilder {
         None
     }
 
-    fn handle_function_definition(&mut self, node: &Node, source: &str) {
+    fn handle_function_definition(&mut self, node: &TsNode, source: &str) {
         if self.current_table.is_some() {
             let mut cursor = node.walk();
-            let children: Vec<Node> = node.children(&mut cursor).collect();
+            let children: Vec<TsNode> = node.children(&mut cursor).collect();
 
             let table_name = children
                 .iter()
@@ -148,7 +148,7 @@ impl SdpGraphBuilder {
         }
     }
 
-    fn handle_sdp_call(&mut self, node: &Node, source: &str) {
+    fn handle_sdp_call(&mut self, node: &TsNode, source: &str) {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
         if call_text.contains("LIVE.") {
@@ -188,13 +188,13 @@ impl SdpGraphBuilder {
         }
     }
 
-    fn handle_sdp_read(&mut self, node: &Node, source: &str) {
+    fn handle_sdp_read(&mut self, node: &TsNode, source: &str) {
         if let Some(table) = &mut self.current_table {
             table.source_type = SdpSourceType::SdpRead;
 
             // Extract table name from arguments
             let mut cursor = node.walk();
-            let children: Vec<Node> = node.children(&mut cursor).collect();
+            let children: Vec<TsNode> = node.children(&mut cursor).collect();
 
             for child in &children {
                 if child.kind() == "argument_list" {
@@ -207,7 +207,7 @@ impl SdpGraphBuilder {
                         let table_name = table_name.trim();
                         if let Some(source_table_id) = self.table_references.get(table_name) {
                             // Create edge from source table to current table
-                            let edge = CostEdge {
+                            let edge = Edge {
                                 source: source_table_id.clone(),
                                 target: table.id.clone(),
                                 edge_type: "sdp_read".to_string(),
@@ -220,13 +220,13 @@ impl SdpGraphBuilder {
         }
     }
 
-    fn handle_dp_read(&mut self, _node: &Node, _source: &str) {
+    fn handle_dp_read(&mut self, _node: &TsNode, _source: &str) {
         if let Some(table) = &mut self.current_table {
             table.source_type = SdpSourceType::DpRead;
         }
     }
 
-    fn handle_live_ref(&mut self, node: &Node, source: &str) {
+    fn handle_live_ref(&mut self, node: &TsNode, source: &str) {
         let text = node.utf8_text(source.as_bytes()).unwrap_or("");
         if let Some(start) = text.find("LIVE.") {
             let ref_text = &text[start + 5..];
@@ -237,7 +237,7 @@ impl SdpGraphBuilder {
                         table.source_type = SdpSourceType::LiveRef;
 
                         // Create edge from source table to current table
-                        let edge = CostEdge {
+                        let edge = Edge {
                             source: source_table_id.clone(),
                             target: table.id.clone(),
                             edge_type: "live_ref".to_string(),

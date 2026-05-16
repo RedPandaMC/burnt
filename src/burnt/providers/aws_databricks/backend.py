@@ -12,7 +12,7 @@ from .catalog import load_catalog
 from .rates import DBU_RATES, PHOTON_MULTIPLIER
 
 if TYPE_CHECKING:
-    from burnt.core.models import CostEstimate
+    from burnt.core.models import PyEstimate
 
 
 class AwsDatabricksBackend:
@@ -33,8 +33,8 @@ class AwsDatabricksBackend:
         spot_policy: str = "ON_DEMAND",
         shuffle_bytes: int = 0,
         currency: str = "USD",
-    ) -> CostEstimate:
-        from burnt.core.models import CostEstimate as CoreCostEstimate
+    ) -> PyEstimate:
+        from burnt.core.models import PyEstimate as CoreCostEstimate
 
         region = region or self.region
         spec = self.resolve_instance(instance_type or "m5.xlarge", region)

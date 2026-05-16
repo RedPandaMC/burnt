@@ -1,6 +1,6 @@
 import pytest
 
-from burnt.core.models import ClusterConfig, CostEstimate, PricingInfo
+from burnt.core.models import ClusterConfig, PricingInfo, PyEstimate
 
 
 class TestClusterConfig:
@@ -45,7 +45,7 @@ class TestPricingInfo:
 
 class TestCostEstimate:
     def test_cost_estimate_creation(self):
-        estimate = CostEstimate(
+        estimate = PyEstimate(
             estimated_dbu=100.0,
             costs={"USD": 55.0},
             confidence="high",
@@ -57,35 +57,35 @@ class TestCostEstimate:
         assert estimate.confidence == "high"
 
     def test_cost_estimate_default_confidence(self):
-        estimate = CostEstimate(estimated_dbu=10.0)
+        estimate = PyEstimate(estimated_dbu=10.0)
         assert estimate.confidence == "low"
 
     def test_cost_estimate_costs_empty_by_default(self):
-        estimate = CostEstimate(estimated_dbu=100.0)
+        estimate = PyEstimate(estimated_dbu=100.0)
         assert estimate.costs == {}
 
     def test_cost_estimate_confidence_values(self):
         for conf in ["low", "medium", "high"]:
-            estimate = CostEstimate(estimated_dbu=10.0, confidence=conf)
+            estimate = PyEstimate(estimated_dbu=10.0, confidence=conf)
             assert estimate.confidence == conf
 
         with pytest.raises(ValueError):
-            CostEstimate(estimated_dbu=10.0, confidence="invalid")
+            PyEstimate(estimated_dbu=10.0, confidence="invalid")
 
     def test_cost_in_returns_value_from_costs(self):
-        estimate = CostEstimate(costs={"USD": 50.0, "EUR": 46.0})
+        estimate = PyEstimate(costs={"USD": 50.0, "EUR": 46.0})
         assert estimate.cost_in("USD") == 50.0
         assert estimate.cost_in("EUR") == 46.0
 
     def test_cost_in_is_case_insensitive(self):
-        estimate = CostEstimate(costs={"GBP": 42.0})
+        estimate = PyEstimate(costs={"GBP": 42.0})
         assert estimate.cost_in("gbp") == 42.0
         assert estimate.cost_in("GBP") == 42.0
 
     def test_cost_in_returns_none_for_missing_currency(self):
-        estimate = CostEstimate(costs={"USD": 50.0})
+        estimate = PyEstimate(costs={"USD": 50.0})
         assert estimate.cost_in("JPY") is None
 
     def test_cost_in_returns_none_on_empty_costs(self):
-        estimate = CostEstimate()
+        estimate = PyEstimate()
         assert estimate.cost_in("USD") is None

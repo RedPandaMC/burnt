@@ -27,8 +27,8 @@ class CheckResult(BaseModel):
     mode: str = "python"  # "python" | "sql" | "dlt"
     findings: list[Finding] = Field(default_factory=list)
     compute_seconds: float | None = None
-    cost_estimate: Any = None  # CostEstimate from providers backend
-    graph: Any = None  # CostGraphPy or PipelineGraphPy from Rust engine
+    estimate: Any = None  # PyEstimate from providers backend
+    graph: Any = None  # PyGraph or PyPipeline from Rust engine
     raw: Any = None  # Original AnalysisResultPy
 
     def display(self) -> None:
@@ -146,31 +146,63 @@ def _read_source(target: str) -> str:
 
 
 def _merge_runtime(result: CheckResult, session: Any) -> None:
-    """Tag findings with actual runtime metrics when available."""
+    """Tag findings with actual runtime metrics from a session.
+
+    The graph here may be either the Rust ``PyGraph`` (from
+    ``analyze_file``/``analyze_source``) or the pure-Python ``PyGraph``.
+    Both expose the same ``.nodes`` / ``.edges`` duck-typed surface, so
+    ``enrich_graph`` and ``estimate`` consume them uniformly without
+    mutating node fields.
+    """
     if not hasattr(session, "stages"):
         return
 
-    total_compute = 0.0
-    for stage in session.stages:
-        total_compute += stage.get("executor_run_time", 0) / 1000.0
+    from burnt.graph.enrich import enrich_graph
+    from burnt.graph.estimate import estimate
 
-    result.compute_seconds = total_compute
+    graph = result.graph
+    observed = enrich_graph(graph, session=session) if graph is not None else {}
+    estimate = (
+        estimate(graph, session, observed_input_bytes=observed)
+        if graph is not None
+        else None
+    )
 
-    # Simple heuristic: if a finding mentions shuffle/crossJoin and we have
-    # high shuffle bytes, boost its compute_seconds.
+    if estimate is None or not estimate.breakdown:
+        # No graph or no nodes — fall back to a flat sum so the
+        # CheckResult surface stays populated.
+        result.compute_seconds = sum(
+            s.get("executorRunTime", 0) / 1000.0 for s in session.stages
+        )
+        return
+
+    result.estimate = estimate
+    result.compute_seconds = sum(estimate.breakdown.values())
+
+    line_to_compute = {
+        n.line_number: estimate.breakdown.get(n.id, 0.0)
+        for n in (graph.nodes or [])
+        if getattr(n, "line_number", None) is not None
+    }
     for finding in result.findings:
-        if any(
-            kw in finding.message.lower()
-            for kw in ("crossjoin", "shuffle", "cartesian", "repartition")
-        ):
-            shuffle_bytes = sum(
-                s.get("shuffle_write_bytes", 0) + s.get("shuffle_read_bytes", 0)
-                for s in session.stages
-            )
-            if shuffle_bytes > 1e9:  # > 1GB shuffle
-                finding.compute_seconds = (
-                    sum(s.get("executor_run_time", 0) for s in session.stages) / 1000.0
-                )
+        if finding.line_number is None:
+            continue
+        # Match within ±5 lines, same window the estimator uses.
+        best = None
+        for line, seconds in line_to_compute.items():
+            delta = abs(line - finding.line_number)
+            if delta > 5:
+                continue
+            if best is None or delta < best[0]:
+                best = (delta, seconds)
+        if best is not None:
+            finding.compute_seconds = best[1]
+
+    # Re-sort: highest compute seconds first; findings with no compute
+    # info sink to the bottom while preserving their original order.
+    result.findings.sort(
+        key=lambda f: -(f.compute_seconds or 0.0),
+    )
 
 
 __all__ = ["CheckResult", "Finding", "run"]

@@ -122,7 +122,7 @@ Inside Databricks:
 %pip install burnt
 ```
 
-> **Current status (v0.2.0-dev):** Static lint (43 rules), CostGraph, REST session
+> **Current status (v0.2.0-dev):** Static lint (43 rules), PyGraph, REST session
 > enrichment, and four pricing backends (Azure, AWS, GCP, on-prem) are fully operational.
 
 ### Install matrix
@@ -275,7 +275,7 @@ Run `burnt rules` for the full list with descriptions, examples, and fix suggest
 CLI: burnt check                 Notebook: burnt.check()
       │                                │
    Rust engine (PyO3)          Rust engine (same)
-   43 rules, CostGraph         + REST API enrichment
+   43 rules, PyGraph         + REST API enrichment
    tree-sitter Py/SQL/DLT      + providers/ (optional)
                                      │
                            ┌─────────┴──────────┐
@@ -285,7 +285,7 @@ CLI: burnt check                 Notebook: burnt.check()
                     [gcp-databricks]
 ```
 
-**Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, CostGraph builder, 43 rules.  
+**Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, PyGraph builder, 43 rules.  
 **Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `ProviderBackend` (providers/), Rich display, typer CLI.  
 **Core install:** zero cloud SDK, zero credentials required.
 

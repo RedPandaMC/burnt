@@ -141,7 +141,7 @@ Adds dollar estimates, system table queries, and DESCRIBE DETAIL enrichment. Lin
 
 ### Components
 
-**Rust engine** (`burnt-engine` via PyO3): tree-sitter Python/SQL parsing, CostGraph construction, 43 lint rules across 6 categories. Always installed (compiled wheel).
+**Rust engine** (`burnt-engine` via PyO3): tree-sitter Python/SQL parsing, PyGraph construction, 43 lint rules across 6 categories. Always installed (compiled wheel).
 
 **Runtime capture** (`runtime/rest_client.py`): `burnt.start_session()` resolves the Spark monitoring REST endpoint. On Databricks, uses the driver-proxy-api URL; on local Spark, uses `spark.sparkContext.uiWebUrl`. At `check()` time, `GET /applications/{id}/stages`, `/jobs`, `/sql`, `/executors`.
 
@@ -152,7 +152,7 @@ Adds dollar estimates, system table queries, and DESCRIBE DETAIL enrichment. Lin
 - `[gcp-databricks]` — GCP DBU rates × GCE machine type prices
 - `[onprem-spark]` — user-supplied `$/vCPU-hour`, `$/GB-hour`, `$/GB-shuffle` from `burnt.toml`; no cloud SDK
 
-Without any pricing extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported.
+Without any pricing extra, `result.estimate.usd` is `None` and only compute-seconds are reported.
 
 ---
 
@@ -193,7 +193,7 @@ User executes Spark code normally. The REST API records per stage (collected at 
 report = burnt.check(path="./notebook.py")  # path is optional
 ```
 
-1. **Static pass**: Rust engine parses code → `CostGraph` + static `Findings`
+1. **Static pass**: Rust engine parses code → `PyGraph` + static `Findings`
 2. **Runtime pass**: `GET /applications/{app_id}/stages`, `/jobs`, `/sql`, `/executors`.
    Stage names encode the source call site (e.g. `"crossJoin at pipeline.py:42"`). Stages are matched to graph nodes by comparing the encoded file/line against `node.line_number ± 5`.
 3. **Enrich**: matched nodes get `actual_compute_seconds = sum(executorRunTime) / 1000` and `actual_shuffle_bytes`.
@@ -209,11 +209,11 @@ report.to_markdown()     # for PR descriptions
 
 ---
 
-## 6. Cost Graph
+## 6. Graph
 
 Generic Spark model. No Databricks concepts in core.
 
-### CostNode
+### PyNode
 
 | Field | Description |
 |-------|-------------|
@@ -286,10 +286,10 @@ repartition(L89)   0.8 hr    6%       Remove or increase
 
 ### Pricing Backend Mapping (Optional Extras)
 
-A `PricingBackend` extra maps compute-seconds to dollar estimates. Without one, `result.cost_estimate.usd` is `None`.
+A `PricingBackend` extra maps compute-seconds to dollar estimates. Without one, `result.estimate.usd` is `None`.
 
 ```python
-result.cost_estimate  # CostEstimate with USD if a pricing backend extra is active
+result.estimate  # PyEstimate with USD if a pricing backend extra is active
 ```
 
 | Setup | Output |
@@ -334,7 +334,7 @@ result.cost_estimate  # CostEstimate with USD if a pricing backend extra is acti
 
 ## 10. Pricing Backends
 
-Dollar estimates are provided by optional pricing-backend extras. Core ships nothing pricing-shaped — without an extra, `result.cost_estimate.usd` is `None` and only compute-seconds are reported.
+Dollar estimates are provided by optional pricing-backend extras. Core ships nothing pricing-shaped — without an extra, `result.estimate.usd` is `None` and only compute-seconds are reported.
 
 ### `[databricks]` — workspace API client + system-table reader
 
@@ -359,7 +359,7 @@ Each implements `PricingBackend` with cloud-specific DBU rates and VM/instance p
 ```python
 import burnt  # core 43 rules + compute-seconds always work
 result = burnt.check()
-result.cost_estimate.usd  # available when a [*-databricks] extra is installed and credentials are present
+result.estimate.usd  # available when a [*-databricks] extra is installed and credentials are present
 ```
 
 ### `[onprem-spark]` — self-hosted Spark pricing
@@ -383,7 +383,7 @@ Zero external dependencies. Highest reach for non-Databricks Spark users.
 # src/burnt/core/pricing.py
 class PricingBackend(Protocol):
     name: str                                        # "azure-databricks", "onprem-spark", ...
-    def map(self, graph: CostGraph) -> CostEstimate: # compute-seconds → $$
+    def map(self, graph: PyGraph) -> PyEstimate: # compute-seconds → $$
         ...
 ```
 
@@ -613,11 +613,11 @@ src/burnt/
 │   ├── cache.py           # TTL cache
 │   ├── config.py          # BurntConfig (Pydantic settings)
 │   ├── exceptions.py      # BurntError, ConfigError, NotAvailableError
-│   ├── models.py          # Finding, CheckResult, CostEstimate
+│   ├── models.py          # Finding, CheckResult, PyEstimate
 │   ├── pricing.py         # PricingBackend protocol
 │   └── protocols.py       # Backend protocol
 ├── graph/
-│   ├── model.py           # CostGraph, CostNode
+│   ├── model.py           # PyGraph, PyNode
 │   ├── scaling.py         # LinearScaling, QuadraticScaling, etc.
 │   └── estimate.py        # Graph walk → compute seconds
 ├── runtime/
@@ -661,7 +661,7 @@ result = burnt.check("./pipeline.py")  # specific file or directory
 
 result.display()          # Rich table (terminal)
 result.findings           # list[Finding], sorted by cost impact
-result.graph              # CostGraph
+result.graph              # PyGraph
 result.compute_seconds    # total observed compute time (None if no session)
 result.to_json()          # dict
 result.to_markdown()      # str
@@ -687,7 +687,7 @@ result.to_sarif()         # SARIF 2.1.0 dict
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
 | P0 Base Rework | done | Cleanup, new package structure |
-| P1 Rust Engine | done | tree-sitter, CostGraph, 43 rules, PyO3 bridge |
+| P1 Rust Engine | done | tree-sitter, PyGraph, 43 rules, PyO3 bridge |
 | P2 Design Alignment | **in progress** | Pre-pivot code removal, REST session client, public API cleanup |
 | P3 Modular Architecture | todo | Pricing backends, `--fix`/`--unsafe-fixes`/`--diff` (Rust engine), config schema |
 | P4 Session & Intelligence | todo | Cost estimation, EXPLAIN enrichment (unblocked after P2) |

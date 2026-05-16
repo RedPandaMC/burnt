@@ -1,7 +1,7 @@
 """
 burnt — static cost analyzer for Spark.
 
-Parses Python, SQL, and notebook source with a Rust engine (tree-sitter + CostGraph),
+Parses Python, SQL, and notebook source with a Rust engine (tree-sitter + PyGraph),
 applies 43 lint rules, and produces actionable findings ranked by cost impact.
 
 Three modes (auto-detected):
@@ -26,7 +26,7 @@ from .core.exceptions import (
     ParseError,
     PricingError,
 )
-from .core.models import CostEstimate
+from .core.models import PyEstimate
 
 if TYPE_CHECKING:
     from ._session import SessionState
@@ -39,11 +39,11 @@ __all__ = [
     "BurntError",
     "ConfigError",
     "CostBudgetExceeded",
-    "CostEstimate",
     "EstimationError",
     "NotAvailableError",
     "ParseError",
     "PricingError",
+    "PyEstimate",
     "check",
     "config",
     "start_session",

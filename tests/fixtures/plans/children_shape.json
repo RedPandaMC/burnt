@@ -1,0 +1,8 @@
+{
+  "id": 9,
+  "nodes": [
+    {"nodeId": 1, "nodeName": "Sort", "metrics": [], "children": [2]},
+    {"nodeId": 2, "nodeName": "Exchange", "metrics": [], "children": [3]},
+    {"nodeId": 3, "nodeName": "Scan parquet", "metrics": [], "children": []}
+  ]
+}

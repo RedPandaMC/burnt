@@ -4,12 +4,12 @@ use sqlparser::ast::{Join, Query, SetExpr, Statement, TableFactor, TableWithJoin
 use sqlparser::dialect::DatabricksDialect;
 use sqlparser::parser::Parser;
 
-use crate::types::{CostEdge, CostNode, OperationKind, ScalingBehavior};
+use crate::types::{Edge, Node, OperationKind, ScalingBehavior};
 
 #[derive(Debug, Clone)]
 pub struct SqlGraphBuilder {
-    nodes: Vec<CostNode>,
-    edges: Vec<CostEdge>,
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
     table_definitions: HashMap<String, String>,
     table_references: HashMap<String, Vec<String>>,
 }
@@ -24,7 +24,7 @@ impl SqlGraphBuilder {
         }
     }
 
-    pub fn build_from_source(mut self, source: &str) -> (Vec<CostNode>, Vec<CostEdge>) {
+    pub fn build_from_source(mut self, source: &str) -> (Vec<Node>, Vec<Edge>) {
         let statements = match Parser::parse_sql(&DatabricksDialect {}, source) {
             Ok(stmts) => stmts,
             Err(_) => return (Vec::new(), Vec::new()),
@@ -321,7 +321,7 @@ impl SqlGraphBuilder {
     ) -> String {
         let node_id = format!("sql_node_{}", self.nodes.len() + 1);
 
-        let node = CostNode {
+        let node = Node {
             id: node_id.clone(),
             kind,
             scaling_type,
@@ -340,7 +340,7 @@ impl SqlGraphBuilder {
     }
 
     fn create_edge(&mut self, source: &str, target: &str, edge_type: &str) {
-        let edge = CostEdge {
+        let edge = Edge {
             source: source.to_string(),
             target: target.to_string(),
             edge_type: edge_type.to_string(),
@@ -367,7 +367,7 @@ mod tests {
 
         assert!(!nodes.is_empty());
 
-        let shuffle_nodes: Vec<&CostNode> = nodes
+        let shuffle_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Shuffle))
             .collect();
@@ -383,15 +383,15 @@ mod tests {
 
         assert!(!nodes.is_empty());
 
-        let read_nodes: Vec<&CostNode> = nodes
+        let read_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Read))
             .collect();
-        let write_nodes: Vec<&CostNode> = nodes
+        let write_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Write))
             .collect();
-        let shuffle_nodes: Vec<&CostNode> = nodes
+        let shuffle_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Shuffle))
             .collect();

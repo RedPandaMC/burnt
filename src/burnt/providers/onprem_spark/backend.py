@@ -10,7 +10,7 @@ from ..exchange import FrankfurterProvider
 from .config import OnPremConfig
 
 if TYPE_CHECKING:
-    from burnt.core.models import CostEstimate
+    from burnt.core.models import PyEstimate
 
 
 def compute_onprem_cost(
@@ -92,8 +92,8 @@ class OnPremSparkBackend:
         spot_policy: str = "ON_DEMAND",
         shuffle_bytes: int = 0,
         currency: str = "USD",
-    ) -> CostEstimate:
-        from burnt.core.models import CostEstimate as CoreCostEstimate
+    ) -> PyEstimate:
+        from burnt.core.models import PyEstimate as CoreCostEstimate
 
         total_vcpus = self.total_vcpus * num_workers
         total_memory_gb = self.total_memory_gb * num_workers

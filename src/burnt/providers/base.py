@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
 
-    from burnt.core.models import CostEstimate
+    from burnt.core.models import PyEstimate
 
 
 @runtime_checkable
@@ -38,7 +38,7 @@ class ProviderBackend(Protocol):
         spot_policy: str = "ON_DEMAND",
         shuffle_bytes: int = 0,
         currency: str = "USD",
-    ) -> CostEstimate:
+    ) -> PyEstimate:
         """Map compute seconds to a cost estimate.
 
         Args:
@@ -53,7 +53,7 @@ class ProviderBackend(Protocol):
             currency: Target currency code (USD, EUR, GBP, ...).
 
         Returns:
-            CostEstimate with estimated_cost_usd and optionally estimated_cost_eur.
+            PyEstimate with estimated_cost_usd and optionally estimated_cost_eur.
         """
         ...
 

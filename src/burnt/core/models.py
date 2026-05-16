@@ -88,7 +88,7 @@ class PricingInfo(BaseModel):
     region: str = "EAST_US"
 
 
-class CostEstimate(BaseModel):
+class PyEstimate(BaseModel):
     """Cost estimate for a query or workload.
 
     All currency amounts live in ``costs`` — a plain dict keyed by ISO 4217 code.

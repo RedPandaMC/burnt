@@ -102,6 +102,11 @@ def check(
     currency: str = typer.Option(
         "USD", "--currency", help="Output currency code (USD, EUR, GBP, ...)"
     ),
+    explain_cost: bool = typer.Option(
+        False,
+        "--explain-cost",
+        help="Print a per-node cost breakdown tree after the findings table",
+    ),
 ) -> None:
     """Check SQL/PySpark files for cost anti-patterns."""
     import json as json_mod
@@ -262,6 +267,9 @@ def check(
     else:
         to_table_multi(results)
 
+    if explain_cost:
+        _render_cost_breakdown(results, console)
+
     raise typer.Exit(1)
 
 
@@ -297,6 +305,37 @@ def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bo
     return False
 
 
+def _render_cost_breakdown(results: list, console: Console) -> None:
+    """Render a Rich tree of per-node compute seconds for every result.
+
+    Used by `burnt check --explain-cost`. Skips silently when a result
+    carries no cost estimate (e.g. no active Spark session at check
+    time).
+    """
+    from rich.tree import Tree
+
+    for result in results:
+        estimate = getattr(result, "estimate", None)
+        breakdown = getattr(estimate, "breakdown", None) if estimate else None
+        if not breakdown:
+            continue
+        header = (
+            f"{result.file_path or 'inline'} — "
+            f"{result.compute_seconds:.1f}s total, "
+            f"coverage {getattr(estimate, 'coverage_ratio', 0.0):.0%}"
+        )
+        tree = Tree(header)
+        for node_id, seconds in sorted(
+            breakdown.items(), key=lambda kv: -kv[1]
+        ):
+            label = f"{node_id}: {seconds:.2f}s"
+            shuffle = (estimate.shuffle_bytes or {}).get(node_id)
+            if shuffle:
+                label += f"  [dim](shuffle {shuffle / 1e9:.2f} GB)[/dim]"
+            tree.add(label)
+        console.print(tree)
+
+
 def _apply_pricing(results: list, backend_name: str, currency: str) -> None:
     """Apply a pricing backend to all check results that have compute_seconds."""
     from burnt.providers import get_backend
@@ -317,7 +356,7 @@ def _apply_pricing(results: list, backend_name: str, currency: str) -> None:
                 result.compute_seconds,
                 currency=currency,
             )
-            result.cost_estimate = cost
+            result.estimate = cost
         except Exception as e:
             console.print(f"[dim]Pricing error: {e}[/dim]")
 
