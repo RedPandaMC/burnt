@@ -48,7 +48,7 @@ impl SessionStatePy {
         let stages: Vec<Value> = self
             .collected
             .iter()
-            .filter(|v| v.get("stage_id").is_some())
+            .filter(|v| v.get("stageId").is_some())
             .cloned()
             .collect();
         value_vec_to_py_list(py, &stages)
@@ -212,4 +212,41 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Round-trips a `StageMetrics` through `serde_json::to_value` and asserts
+    /// the `stages` filter picks it up under the canonical camelCase key.
+    /// Regression guard: the filter previously looked for `stage_id`, but the
+    /// camelCase serde rename means stage JSON in `collected` carries `stageId`.
+    #[test]
+    fn stages_getter_matches_camel_case_key() {
+        let stage = types::StageMetrics {
+            stage_id: 7,
+            name: "scan at f.py:10".into(),
+            status: "COMPLETE".into(),
+            num_active_tasks: 0,
+            num_complete_tasks: 1,
+            num_failed_tasks: 0,
+            executor_run_time: 1234,
+            executor_cpu_time: 0,
+            input_bytes: 0,
+            output_bytes: 0,
+            shuffle_read_bytes: 0,
+            shuffle_write_bytes: 0,
+            memory_bytes_spilled: 0,
+            disk_bytes_spilled: 0,
+        };
+
+        let mut state = SessionStatePy::new();
+        state.collected.push(serde_json::to_value(stage).unwrap());
+        state.collected.push(json!({"jobId": 1, "name": "j"}));
+
+        let raw = state.collected.iter().filter(|v| v.get("stageId").is_some());
+        assert_eq!(raw.count(), 1, "exactly one element should carry stageId");
+    }
 }
