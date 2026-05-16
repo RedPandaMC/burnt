@@ -18,6 +18,8 @@ app = typer.Typer(
 )
 cache_app = typer.Typer(help="Manage the burnt local cache")
 app.add_typer(cache_app, name="cache")
+pricing_app = typer.Typer(help="Pricing backend management")
+app.add_typer(pricing_app, name="pricing")
 
 console = Console()
 
@@ -92,6 +94,14 @@ def check(
     extend_ignore: list[str] = typer.Option(  # noqa: B008
         [], "--extend-ignore", help="Add rules to ignore on top of config ignore"
     ),
+    backend: str | None = typer.Option(
+        None,
+        "--backend",
+        help="Pricing backend override: azure-databricks, aws-databricks, gcp-databricks, onprem-spark",
+    ),
+    currency: str = typer.Option(
+        "USD", "--currency", help="Output currency code (USD, EUR, GBP, ...)"
+    ),
 ) -> None:
     """Check SQL/PySpark files for cost anti-patterns."""
     import json as json_mod
@@ -128,7 +138,8 @@ def check(
     else:
         for ext in ("*.sql", "*.py"):
             files_to_check.extend(
-                f for f in sorted(target.rglob(ext))
+                f
+                for f in sorted(target.rglob(ext))
                 if not _is_excluded(f, settings.lint.exclude, target)
             )
 
@@ -211,6 +222,11 @@ def check(
 
         results.append(result)
 
+    # Apply pricing backend if configured
+    effective_backend = backend or settings.pricing.backend
+    if effective_backend:
+        _apply_pricing(results, effective_backend, currency)
+
     if not fail_build:
         console.print("[green]No cost anti-patterns found.[/green]")
         raise typer.Exit(0)
@@ -279,6 +295,31 @@ def _is_excluded(file_path: Path, exclude_patterns: list[str], root: Path) -> bo
         if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(str(file_path), pattern):
             return True
     return False
+
+
+def _apply_pricing(results: list, backend_name: str, currency: str) -> None:
+    """Apply a pricing backend to all check results that have compute_seconds."""
+    from burnt.providers import get_backend
+
+    provider = get_backend(backend_name)
+    if provider is None:
+        console.print(
+            f"[yellow]Pricing backend '{backend_name}' not available.[/yellow] "
+            "Install the matching extra: pip install burnt[onprem-spark]"
+        )
+        return
+
+    for result in results:
+        if result.compute_seconds is None or result.compute_seconds <= 0:
+            continue
+        try:
+            cost = provider.estimate(
+                result.compute_seconds,
+                currency=currency,
+            )
+            result.cost_estimate = cost
+        except Exception as e:
+            console.print(f"[dim]Pricing error: {e}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -785,7 +826,7 @@ def doctor(
         console.print(f"  {'Config':<22} {config_path}")
         url_val = settings.workspace_url or "(not set)"
         console.print(f"    {'workspace-url':<16} {url_val}")
-        console.print(f"    {'lint.fail-on':<16} {settings.lint.fail_on}")
+        console.print(f"    {'lint.fail-on':<16} {settings.lint.fail_on.value}")
 
         try:
             from burnt._engine import get_registry_count
@@ -834,6 +875,182 @@ def doctor(
 
     console.print(SEP)
     raise typer.Exit(0)
+
+
+# ---------------------------------------------------------------------------
+# burnt pricing *
+# ---------------------------------------------------------------------------
+
+
+@pricing_app.command("list-backends")
+def pricing_list_backends() -> None:
+    """List all available pricing backends."""
+    from burnt.providers import list_backends
+
+    backends = list_backends()
+    if not backends:
+        console.print("[yellow]No pricing backends installed.[/yellow]")
+        console.print(
+            "  Install one: pip install burnt[azure-databricks]  "
+            "| burnt[aws-databricks] | burnt[gcp-databricks] | burnt[onprem-spark]"
+        )
+        raise typer.Exit(0)
+
+    table = Table(title="Available Pricing Backends")
+    table.add_column("Name", style="cyan")
+    table.add_column("Status")
+    for name in backends:
+        from burnt.providers import get_backend
+
+        p = get_backend(name)
+        status = (
+            "[green]available[/green]"
+            if (p and p.is_available())
+            else "[dim]unavailable[/dim]"
+        )
+        table.add_row(name, status)
+    console.print(table)
+
+
+@pricing_app.command("refresh")
+def pricing_refresh(
+    backend: str | None = typer.Option(
+        None, "--backend", help="Refresh only this backend (default: all)"
+    ),
+) -> None:
+    """Force-refresh pricing data from APIs."""
+    from burnt.providers import get_backend, list_backends
+
+    to_refresh = [backend] if backend else list_backends()
+    for name in to_refresh:
+        p = get_backend(name)
+        if p is None:
+            console.print(f"[red]Backend '{name}' not found[/red]")
+            continue
+        try:
+            p.refresh_cache()
+            console.print(f"[green]Refreshed[/green] {name}")
+        except Exception as e:
+            console.print(f"[red]Failed[/red] {name}: {e}")
+
+
+@pricing_app.command("list-instances")
+def pricing_list_instances(
+    backend: str = typer.Option(
+        "azure-databricks", "--backend", help="Backend to list instances for"
+    ),
+    category: str | None = typer.Option(None, "--category", help="Filter by category"),
+    limit: int = typer.Option(20, "--limit", help="Max results"),
+) -> None:
+    """List cached instance types and their DBU rates."""
+    from burnt.providers import get_backend
+
+    p = get_backend(backend)
+    if p is None:
+        console.print(f"[red]Backend '{backend}' not found[/red]")
+        raise typer.Exit(1)
+
+    if not p.is_available():
+        console.print(f"[yellow]Backend '{backend}' is not available.[/yellow]")
+        raise typer.Exit(1)
+
+    try:
+        catalog = _get_instance_catalog(p)
+    except Exception as e:
+        console.print(f"[red]Error loading catalog: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    if category:
+        catalog = [c for c in catalog if c.category == category]
+
+    table = Table(title=f"Instance Catalog — {backend}")
+    table.add_column("Instance Type", style="cyan")
+    table.add_column("vCPUs")
+    table.add_column("Memory GB")
+    table.add_column("DBU/hr")
+    table.add_column("VM$/hr")
+    table.add_column("Category")
+
+    for spec in catalog[:limit]:
+        table.add_row(
+            spec.instance_type,
+            str(spec.vcpus),
+            f"{spec.memory_gb:.0f}",
+            f"{spec.dbu_rate:.2f}",
+            f"${spec.vm_cost_per_hour:.3f}",
+            spec.category,
+        )
+
+    console.print(table)
+    console.print(f"[dim]{len(catalog)} total instance types[/dim]")
+
+
+def _get_instance_catalog(p) -> list:
+    """Extract instance catalog from a provider backend."""
+    from burnt.providers.aws_databricks import load_catalog as load_aws
+    from burnt.providers.azure_databricks import load_catalog as load_azure
+    from burnt.providers.gcp_databricks import load_catalog as load_gcp
+
+    name = p.name
+    if name == "azure-databricks":
+        return list(load_azure().values())
+    if name == "aws-databricks":
+        return list(load_aws().values())
+    if name == "gcp-databricks":
+        return list(load_gcp().values())
+    return []
+
+
+@pricing_app.command("estimate")
+def pricing_estimate(
+    compute_seconds: float = typer.Argument(..., help="Compute seconds"),
+    instance_type: str = typer.Option("Standard_DS3_v2", "--instance-type", "-i"),
+    num_workers: int = typer.Option(2, "--workers", "-w"),
+    backend: str = typer.Option(
+        "azure-databricks", "--backend", "-b", help="Backend to use"
+    ),
+    currency: str = typer.Option("USD", "--currency", "-c"),
+    region: str | None = typer.Option(None, "--region"),
+) -> None:
+    """Estimate cost for a given compute workload."""
+    from burnt.providers import get_backend
+
+    p = get_backend(backend)
+    if p is None:
+        console.print(f"[red]Backend '{backend}' not found[/red]")
+        raise typer.Exit(1)
+
+    try:
+        estimate = p.estimate(
+            compute_seconds,
+            instance_type=instance_type,
+            num_workers=num_workers,
+            region=region,
+            currency=currency,
+        )
+    except Exception as e:
+        console.print(f"[red]Estimation failed: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    console.print(f"\n[bold]Cost Estimate — {backend}[/bold]")
+    console.print(f"  Compute seconds:  {compute_seconds:,.1f}s")
+    console.print(f"  Instance type:   {instance_type} x {num_workers} workers")
+    target_cost = estimate.cost_in(currency) or estimate.cost_in("USD")
+    if target_cost is not None:
+        console.print(f"  Estimated cost:  [green]{currency} {target_cost:.4f}[/green]")
+        if currency != "USD" and estimate.cost_in("USD") is not None:
+            console.print(
+                f"                   [dim](USD {estimate.cost_in('USD'):.4f})[/dim]"
+            )
+        if estimate.breakdown:
+            console.print("  Breakdown:")
+            for k, v in estimate.breakdown.items():
+                console.print(f"    {k}: {v}")
+    else:
+        console.print("  Estimated cost:  [dim]unavailable[/dim]")
+    if estimate.warnings:
+        for w in estimate.warnings:
+            console.print(f"  [yellow]Warning: {w}[/yellow]")
 
 
 # ---------------------------------------------------------------------------
