@@ -88,10 +88,11 @@ pub fn parse_physical_plan(json_str: &str) -> Vec<PlanNode> {
     try_parse(json_str).unwrap_or_default()
 }
 
-/// Python-facing adapter mirroring the `PyCostNode` style elsewhere in the
-/// crate. Owns its data so it can cross the GIL boundary as `Clone`.
+/// Python-facing adapter mirroring the `PyCostNode` style elsewhere in
+/// the crate. The metrics dict is built once under the GIL at conversion
+/// time and cached as a `Py<PyDict>` — getter access is a refcount bump
+/// rather than a full rebuild on every call.
 #[pyclass(name = "PlanNode")]
-#[derive(Clone)]
 pub struct PyPlanNode {
     #[pyo3(get)]
     pub node_id: i64,
@@ -100,7 +101,7 @@ pub struct PyPlanNode {
     /// Full DAG view — multi-valued for ReusedExchange and similar.
     #[pyo3(get)]
     pub parent_ids: Vec<i64>,
-    inner_metrics: HashMap<String, serde_json::Value>,
+    metrics: Py<PyDict>,
 }
 
 #[pymethods]
@@ -115,13 +116,8 @@ impl PyPlanNode {
 
     /// Resolved metric `name -> value` map.
     #[getter]
-    fn metrics(&self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new_bound(py);
-        for (k, v) in &self.inner_metrics {
-            dict.set_item(k, value_to_py(py, v))
-                .expect("PyDict::set_item failed under stable allocator");
-        }
-        dict.into_py(py)
+    fn metrics(&self, py: Python<'_>) -> Py<PyDict> {
+        self.metrics.clone_ref(py)
     }
 
     fn __repr__(&self) -> String {
@@ -132,25 +128,31 @@ impl PyPlanNode {
     }
 }
 
-impl From<PlanNode> for PyPlanNode {
-    fn from(n: PlanNode) -> Self {
+impl PyPlanNode {
+    fn from_plan_node(py: Python<'_>, n: PlanNode) -> Self {
+        let dict = PyDict::new_bound(py);
+        for (k, v) in &n.metrics {
+            dict.set_item(k, value_to_py(py, v))
+                .expect("PyDict::set_item failed under stable allocator");
+        }
         PyPlanNode {
             node_id: n.node_id,
             node_name: n.node_name,
             parent_ids: n.parent_ids,
-            inner_metrics: n.metrics,
+            metrics: dict.unbind(),
         }
     }
 }
 
 /// PyO3-exposed parser entry-point. Mirrors `parse_physical_plan` but
-/// returns the Python-friendly adapter.
+/// returns the Python-friendly adapter, with metric dicts built eagerly
+/// under the GIL so per-node `.metrics` access is a refcount bump.
 #[pyfunction]
 #[pyo3(name = "parse_physical_plan")]
-pub fn parse_physical_plan_py(json_str: &str) -> Vec<PyPlanNode> {
+pub fn parse_physical_plan_py(py: Python<'_>, json_str: &str) -> Vec<PyPlanNode> {
     parse_physical_plan(json_str)
         .into_iter()
-        .map(PyPlanNode::from)
+        .map(|n| PyPlanNode::from_plan_node(py, n))
         .collect()
 }
 
