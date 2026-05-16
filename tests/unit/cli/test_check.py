@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from burnt._check import CheckResult, Finding
 from burnt.cli.main import app
+from burnt.graph.estimate import CostEstimate
 
 runner = CliRunner()
 
@@ -173,6 +174,41 @@ class TestCheckDirectory:
             result = runner.invoke(app, ["check", tmpdir])
             assert result.exit_code == 1
             assert mock_run.called
+
+
+class TestExplainCost:
+    @patch("burnt.cli.main.check_run")
+    def test_explain_cost_renders_breakdown_tree(self, mock_run) -> None:
+        result_with_cost = _make_result()
+        result_with_cost.compute_seconds = 90.0
+        result_with_cost.cost_estimate = CostEstimate(
+            estimated_dbu=0.02,
+            breakdown={"n1": 30.0, "n2": 60.0},
+            shuffle_bytes={"n2": 1_073_741_824},
+            coverage_ratio=0.5,
+        )
+        mock_run.return_value = result_with_cost
+        with runner.isolated_filesystem() as fs:
+            Path(fs, "test.py").write_text("df.collect()")
+            result = runner.invoke(
+                app, ["check", str(Path(fs, "test.py")), "--explain-cost"]
+            )
+        assert "n1" in result.output
+        assert "n2" in result.output
+        assert "30.00s" in result.output
+        assert "60.00s" in result.output
+
+    @patch("burnt.cli.main.check_run")
+    def test_explain_cost_no_estimate_skips_silently(self, mock_run) -> None:
+        # cost_estimate left unset
+        mock_run.return_value = _make_result()
+        with runner.isolated_filesystem() as fs:
+            Path(fs, "test.py").write_text("df.collect()")
+            result = runner.invoke(
+                app, ["check", str(Path(fs, "test.py")), "--explain-cost"]
+            )
+        assert result.exit_code == 1
+        assert "Tree" not in result.output  # no tree rendered
 
 
 class TestCheckConfigError:
