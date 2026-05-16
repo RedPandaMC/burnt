@@ -2,10 +2,10 @@ mod rest_client;
 mod types;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 
+use crate::json_py::value_vec_to_py_list;
 use crate::plan_parser::parse_physical_plan;
 use rest_client::RestClient;
 use types::{ExecutorSummary, JobSummary, SqlExecution, StageMetrics};
@@ -97,45 +97,6 @@ impl Default for SessionStatePy {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Convert a `serde_json::Value` into an equivalent Python object.
-fn value_to_py(py: Python<'_>, value: &Value) -> PyObject {
-    match value {
-        Value::Null => py.None(),
-        Value::Bool(b) => b.into_py(py),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i.into_py(py)
-            } else {
-                n.as_f64().unwrap_or(0.0).into_py(py)
-            }
-        }
-        Value::String(s) => s.clone().into_py(py),
-        Value::Array(arr) => {
-            let list = PyList::empty_bound(py);
-            for item in arr {
-                list.append(value_to_py(py, item)).unwrap();
-            }
-            list.into_py(py)
-        }
-        Value::Object(obj) => {
-            let dict = PyDict::new_bound(py);
-            for (k, v) in obj {
-                dict.set_item(k, value_to_py(py, v)).unwrap();
-            }
-            dict.into_py(py)
-        }
-    }
-}
-
-/// Convert a slice of `Value`s into a Python `list`.
-fn value_vec_to_py_list(py: Python<'_>, values: &[Value]) -> PyObject {
-    let list = PyList::empty_bound(py);
-    for v in values {
-        list.append(value_to_py(py, v)).unwrap();
-    }
-    list.into_py(py)
 }
 
 /// Create a new `SessionStatePy` and mark it active.

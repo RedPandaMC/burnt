@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 pub mod detect;
 pub mod graph;
 pub mod ingestion;
+pub(crate) mod json_py;
 pub(crate) mod parse;
 pub mod plan_parser;
 pub mod rules;

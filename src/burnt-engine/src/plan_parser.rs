@@ -17,6 +17,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use serde::{Deserialize, Serialize};
 
+use crate::json_py::value_to_py;
+
 #[derive(Debug, thiserror::Error)]
 pub enum PlanParseError {
     #[error("malformed plan JSON: {0}")]
@@ -113,10 +115,11 @@ impl PyPlanNode {
 
     /// Resolved metric `name -> value` map.
     #[getter]
-    fn metrics<'py>(&self, py: Python<'py>) -> PyObject {
+    fn metrics(&self, py: Python<'_>) -> PyObject {
         let dict = PyDict::new_bound(py);
         for (k, v) in &self.inner_metrics {
-            dict.set_item(k, json_value_to_py(py, v)).ok();
+            dict.set_item(k, value_to_py(py, v))
+                .expect("PyDict::set_item failed under stable allocator");
         }
         dict.into_py(py)
     }
@@ -136,33 +139,6 @@ impl From<PlanNode> for PyPlanNode {
             node_name: n.node_name,
             parent_ids: n.parent_ids,
             inner_metrics: n.metrics,
-        }
-    }
-}
-
-fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyObject {
-    use serde_json::Value;
-    match value {
-        Value::Null => py.None(),
-        Value::Bool(b) => b.into_py(py),
-        Value::Number(n) => n
-            .as_i64()
-            .map(|i| i.into_py(py))
-            .unwrap_or_else(|| n.as_f64().unwrap_or(0.0).into_py(py)),
-        Value::String(s) => s.clone().into_py(py),
-        Value::Array(arr) => {
-            let list = pyo3::types::PyList::empty_bound(py);
-            for item in arr {
-                list.append(json_value_to_py(py, item)).ok();
-            }
-            list.into_py(py)
-        }
-        Value::Object(obj) => {
-            let dict = PyDict::new_bound(py);
-            for (k, v) in obj {
-                dict.set_item(k, json_value_to_py(py, v)).ok();
-            }
-            dict.into_py(py)
         }
     }
 }
