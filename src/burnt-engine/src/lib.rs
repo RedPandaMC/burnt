@@ -14,6 +14,7 @@ pub mod types;
 use detect::detect_mode_from_source;
 use graph::{CostGraph, CostGraphPy, PipelineGraph, PipelineGraphPy};
 use ingestion::files::ingest_file;
+use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
     AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyCostEdge, PyCostNode, PyGraph,
@@ -215,8 +216,10 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(analyze_directory, m)?)?;
     m.add_function(wrap_pyfunction!(session_start, m)?)?;
     m.add_function(wrap_pyfunction!(session_collect, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_physical_plan_py, m)?)?;
 
     m.add_class::<SessionStatePy>()?;
+    m.add_class::<PyPlanNode>()?;
     m.add_class::<CostGraphPy>()?;
     m.add_class::<PipelineGraphPy>()?;
     m.add_class::<PyCostNode>()?;

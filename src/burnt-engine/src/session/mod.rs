@@ -3,8 +3,10 @@ mod types;
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use serde_json::Value;
+use rayon::prelude::*;
+use serde_json::{json, Value};
 
+use crate::plan_parser::parse_physical_plan;
 use rest_client::RestClient;
 use types::{ExecutorSummary, JobSummary, SqlExecution, StageMetrics};
 
@@ -23,6 +25,9 @@ pub struct SessionStatePy {
     #[pyo3(get, set)]
     pub auth_header: Option<String>,
     collected: Vec<Value>,
+    /// Per-execution plan-fetch failures recorded soft — distinct from
+    /// the top-level all-or-nothing failure that flips `active` to false.
+    pub partial_errors: Vec<String>,
 }
 
 #[pymethods]
@@ -35,7 +40,13 @@ impl SessionStatePy {
             app_id: None,
             auth_header: None,
             collected: Vec::new(),
+            partial_errors: Vec::new(),
         }
+    }
+
+    #[getter]
+    fn partial_errors(&self) -> Vec<String> {
+        self.partial_errors.clone()
     }
 
     #[getter]
@@ -52,6 +63,20 @@ impl SessionStatePy {
             .cloned()
             .collect();
         value_vec_to_py_list(py, &stages)
+    }
+
+    /// Plan-node bundles keyed by SQL execution id. Each entry has shape
+    /// `{"sqlExecId": <int>, "planNodes": [<node dict>, ...]}` and is
+    /// produced by the per-execution `/sql/{id}` fetch in `session_collect`.
+    #[getter]
+    fn plan_bundles(&self, py: Python<'_>) -> PyObject {
+        let bundles: Vec<Value> = self
+            .collected
+            .iter()
+            .filter(|v| v.get("planNodes").is_some())
+            .cloned()
+            .collect();
+        value_vec_to_py_list(py, &bundles)
     }
 
     fn __repr__(&self, _py: Python<'_>) -> PyResult<String> {
@@ -122,6 +147,7 @@ pub fn session_start(rest_url: &str, app_id: &str) -> PyResult<SessionStatePy> {
         app_id: Some(app_id.to_string()),
         auth_header: None,
         collected: Vec::new(),
+        partial_errors: Vec::new(),
     })
 }
 
@@ -179,10 +205,12 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     }
 
     // ── /sql ──
+    let mut sql_exec_ids: Vec<i64> = Vec::new();
     if let Ok(items) =
         client.get_json::<Vec<SqlExecution>>(&format!("{}/sql", base), auth.as_deref())
     {
         for item in items {
+            sql_exec_ids.push(item.id);
             if let Ok(v) = serde_json::to_value(item) {
                 collected.push(v);
             }
@@ -207,9 +235,55 @@ pub fn session_collect(state: &Bound<'_, SessionStatePy>) -> PyResult<()> {
     if any_error {
         state_mut.active = false;
         state_mut.collected.clear();
-    } else {
-        state_mut.collected = collected;
+        return Ok(());
     }
+
+    // ── /sql/{id} per execution, fetched in parallel ──
+    //
+    // Fail-soft: per-execution errors land in `partial_errors`, they do
+    // not flip `active` to false or empty the rest of the collected data.
+    let auth_owned = auth.clone();
+    let base_owned = base.clone();
+    let bundles_and_errors: Vec<(Option<Value>, Option<String>)> = sql_exec_ids
+        .par_iter()
+        .map(|exec_id| {
+            let local_client = RestClient::new();
+            let url = format!("{}/sql/{}", base_owned, exec_id);
+            match local_client.get_text(&url, auth_owned.as_deref()) {
+                Ok(body) => {
+                    let nodes = parse_physical_plan(&body);
+                    let plan_nodes: Vec<Value> = nodes
+                        .into_iter()
+                        .map(|n| {
+                            json!({
+                                "nodeId": n.node_id,
+                                "nodeName": n.node_name,
+                                "parentIds": n.parent_ids,
+                                "metrics": n.metrics,
+                            })
+                        })
+                        .collect();
+                    let bundle = json!({
+                        "sqlExecId": exec_id,
+                        "planNodes": plan_nodes,
+                    });
+                    (Some(bundle), None)
+                }
+                Err(e) => (None, Some(format!("/sql/{exec_id}: {e}"))),
+            }
+        })
+        .collect();
+
+    for (maybe_bundle, maybe_err) in bundles_and_errors {
+        if let Some(b) = maybe_bundle {
+            collected.push(b);
+        }
+        if let Some(e) = maybe_err {
+            state_mut.partial_errors.push(e);
+        }
+    }
+
+    state_mut.collected = collected;
 
     Ok(())
 }
@@ -244,7 +318,7 @@ mod tests {
 
         let mut state = SessionStatePy::new();
         state.collected.push(serde_json::to_value(stage).unwrap());
-        state.collected.push(json!({"jobId": 1, "name": "j"}));
+        state.collected.push(serde_json::json!({"jobId": 1, "name": "j"}));
 
         let raw = state.collected.iter().filter(|v| v.get("stageId").is_some());
         assert_eq!(raw.count(), 1, "exactly one element should carry stageId");

@@ -13,6 +13,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
@@ -82,6 +84,98 @@ struct RawEdge {
 /// collected state.
 pub fn parse_physical_plan(json_str: &str) -> Vec<PlanNode> {
     try_parse(json_str).unwrap_or_default()
+}
+
+/// Python-facing adapter mirroring the `PyCostNode` style elsewhere in the
+/// crate. Owns its data so it can cross the GIL boundary as `Clone`.
+#[pyclass(name = "PlanNode")]
+#[derive(Clone)]
+pub struct PyPlanNode {
+    #[pyo3(get)]
+    pub node_id: i64,
+    #[pyo3(get)]
+    pub node_name: String,
+    /// Full DAG view — multi-valued for ReusedExchange and similar.
+    #[pyo3(get)]
+    pub parent_ids: Vec<i64>,
+    inner_metrics: HashMap<String, serde_json::Value>,
+}
+
+#[pymethods]
+impl PyPlanNode {
+    /// Convenience accessor matching the issue spec: returns the first
+    /// parent or `None` for plan roots. Use `parent_ids` for the full
+    /// multi-parent picture.
+    #[getter]
+    fn parent_id(&self) -> Option<i64> {
+        self.parent_ids.first().copied()
+    }
+
+    /// Resolved metric `name -> value` map.
+    #[getter]
+    fn metrics<'py>(&self, py: Python<'py>) -> PyObject {
+        let dict = PyDict::new_bound(py);
+        for (k, v) in &self.inner_metrics {
+            dict.set_item(k, json_value_to_py(py, v)).ok();
+        }
+        dict.into_py(py)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PlanNode(id={}, name={:?}, parents={:?})",
+            self.node_id, self.node_name, self.parent_ids
+        )
+    }
+}
+
+impl From<PlanNode> for PyPlanNode {
+    fn from(n: PlanNode) -> Self {
+        PyPlanNode {
+            node_id: n.node_id,
+            node_name: n.node_name,
+            parent_ids: n.parent_ids,
+            inner_metrics: n.metrics,
+        }
+    }
+}
+
+fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyObject {
+    use serde_json::Value;
+    match value {
+        Value::Null => py.None(),
+        Value::Bool(b) => b.into_py(py),
+        Value::Number(n) => n
+            .as_i64()
+            .map(|i| i.into_py(py))
+            .unwrap_or_else(|| n.as_f64().unwrap_or(0.0).into_py(py)),
+        Value::String(s) => s.clone().into_py(py),
+        Value::Array(arr) => {
+            let list = pyo3::types::PyList::empty_bound(py);
+            for item in arr {
+                list.append(json_value_to_py(py, item)).ok();
+            }
+            list.into_py(py)
+        }
+        Value::Object(obj) => {
+            let dict = PyDict::new_bound(py);
+            for (k, v) in obj {
+                dict.set_item(k, json_value_to_py(py, v)).ok();
+            }
+            dict.into_py(py)
+        }
+    }
+}
+
+/// PyO3-exposed parser entry-point. Mirrors `parse_physical_plan` but
+/// returns the Python-friendly adapter.
+#[pyfunction]
+#[pyo3(name = "parse_physical_plan")]
+pub fn parse_physical_plan_py(json_str: &str) -> Vec<PyPlanNode> {
+    parse_physical_plan(json_str)
+        .into_iter()
+        .map(PyPlanNode::from)
+        .collect()
 }
 
 fn try_parse(json_str: &str) -> Result<Vec<PlanNode>, PlanParseError> {
