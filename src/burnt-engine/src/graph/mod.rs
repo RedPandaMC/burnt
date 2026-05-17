@@ -24,6 +24,9 @@ pub struct Graph {
 
 impl Graph {
     pub fn from_python(source: &str) -> Result<Self, PyErr> {
+        use crate::parse::import_map::ImportMap;
+        use tree_sitter::Parser;
+
         let (nodes, edges, findings) = PythonGraphBuilder::new().build_from_source(source);
 
         let mut graph = Graph {
@@ -34,6 +37,21 @@ impl Graph {
             confidence: "low".to_string(),
         };
         crate::resolved::populate_dag_facts(&mut graph);
+
+        // Populate ScopeFacts.namespace by classifying each node's call site
+        // against the file's ImportMap. Done at finalise time so the builder
+        // stays import-map-free.
+        let mut parser = Parser::new();
+        if parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .is_ok()
+        {
+            if let Some(tree) = parser.parse(source, None) {
+                let imap = ImportMap::build(source, tree.root_node());
+                populate_python_namespaces(&mut graph, &imap);
+            }
+        }
+
         Ok(graph)
     }
 
@@ -49,6 +67,57 @@ impl Graph {
         };
         crate::resolved::populate_dag_facts(&mut graph);
         Ok(graph)
+    }
+}
+
+/// Resolve each Python node's namespace via the file's `ImportMap` and
+/// stash it on `node.scope.namespace`. Keeps the DSL out of `ImportMap`
+/// lookups at rule-execution time.
+fn populate_python_namespaces(graph: &mut Graph, imap: &crate::parse::import_map::ImportMap) {
+    use crate::resolved::Namespace;
+    for node in &mut graph.nodes {
+        let Some(source_code) = node.source_code.as_deref() else {
+            continue;
+        };
+        // Prefer the AST `method_chain` when available — more precise than
+        // text-based heuristics.
+        let head = node
+            .ast
+            .as_ref()
+            .and_then(|s| match &s.root {
+                crate::resolved::AstNode::Call(c) => c.method_chain.first().cloned(),
+                _ => None,
+            })
+            .or_else(|| {
+                // Fall back to text-based extraction of the head identifier.
+                imap.extract_call_parts(source_code)
+                    .map(|(ns, _)| ns.to_string())
+            });
+
+        let Some(head) = head else { continue };
+        node.scope.namespace = Some(classify_namespace(&head, imap));
+    }
+}
+
+fn classify_namespace(
+    head: &str,
+    imap: &crate::parse::import_map::ImportMap,
+) -> crate::resolved::Namespace {
+    use crate::resolved::Namespace;
+    if head == "spark" || imap.is_spark_ns(head) {
+        return Namespace::Spark;
+    }
+    if imap.is_pipeline_ns(head) {
+        // The pipeline namespace can resolve to either `dlt` or `dp`; check
+        // the underlying module to disambiguate.
+        match imap.resolve(head) {
+            Some("dp") => Namespace::Dp,
+            _ => Namespace::Dlt,
+        }
+    } else if let Some(module) = imap.resolve(head) {
+        Namespace::UserDefined(module.to_string())
+    } else {
+        Namespace::Unknown
     }
 }
 
