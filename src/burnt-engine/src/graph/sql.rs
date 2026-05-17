@@ -4,7 +4,71 @@ use sqlparser::ast::{Join, Query, SetExpr, Statement, TableFactor, TableWithJoin
 use sqlparser::dialect::DatabricksDialect;
 use sqlparser::parser::Parser;
 
-use crate::types::{Edge, Node, OperationKind, ScalingBehavior};
+use crate::types::{Edge, Node, OperationKind, ScalingBehavior, TableRef};
+
+/// Walk a SQL string and collect every distinct table reference it touches.
+///
+/// Public crate helper so the Python builder can reuse it when it sees an
+/// inline `spark.sql("…")` literal: the same parser path that backs the
+/// SQL graph builder also yields its `TableRef`s. Returns an empty Vec on
+/// parse failure (mirrors `SqlGraphBuilder::build_from_source` behaviour).
+pub fn extract_table_refs(sql_text: &str) -> Vec<TableRef> {
+    let Ok(statements) = Parser::parse_sql(&DatabricksDialect {}, sql_text) else {
+        return Vec::new();
+    };
+    let mut refs: Vec<TableRef> = Vec::new();
+    for stmt in &statements {
+        collect_table_refs_from_statement(stmt, &mut refs);
+    }
+    refs
+}
+
+fn collect_table_refs_from_statement(stmt: &Statement, out: &mut Vec<TableRef>) {
+    match stmt {
+        Statement::Query(query) => collect_table_refs_from_query(query, out),
+        Statement::CreateTable(create) => {
+            out.push(TableRef::from_object_name(&create.name));
+            if let Some(q) = &create.query {
+                collect_table_refs_from_query(q, out);
+            }
+        }
+        Statement::CreateView(create_view) => {
+            out.push(TableRef::from_object_name(&create_view.name));
+            collect_table_refs_from_query(&create_view.query, out);
+        }
+        Statement::Insert(insert) => {
+            if let sqlparser::ast::TableObject::TableName(name) = &insert.table {
+                out.push(TableRef::from_object_name(name));
+            }
+            if let Some(q) = &insert.source {
+                collect_table_refs_from_query(q, out);
+            }
+        }
+        Statement::Explain { statement, .. } => {
+            collect_table_refs_from_statement(statement, out);
+        }
+        _ => {}
+    }
+}
+
+fn collect_table_refs_from_query(query: &Query, out: &mut Vec<TableRef>) {
+    if let SetExpr::Select(select) = &*query.body {
+        for table in &select.from {
+            collect_table_refs_from_table(table, out);
+        }
+    }
+}
+
+fn collect_table_refs_from_table(table: &TableWithJoins, out: &mut Vec<TableRef>) {
+    if let TableFactor::Table { name, .. } = &table.relation {
+        out.push(TableRef::from_object_name(name));
+    }
+    for join in &table.joins {
+        if let TableFactor::Table { name, .. } = &join.relation {
+            out.push(TableRef::from_object_name(name));
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SqlGraphBuilder {
@@ -46,6 +110,7 @@ impl SqlGraphBuilder {
                 self.process_query(query, statement_index, None);
             }
             Statement::CreateTable(create_table) => {
+                let table_ref = TableRef::from_object_name(&create_table.name);
                 let table_name = create_table.name.to_string();
                 if let Some(query) = &create_table.query {
                     let write_node_id = self.create_node(
@@ -58,6 +123,7 @@ impl SqlGraphBuilder {
                         Some(format!("CREATE TABLE {}", table_name)),
                     );
 
+                    self.push_table_ref(&write_node_id, table_ref);
                     self.table_definitions
                         .insert(table_name.clone(), write_node_id.clone());
 
@@ -65,6 +131,7 @@ impl SqlGraphBuilder {
                 }
             }
             Statement::CreateView(create_view) => {
+                let table_ref = TableRef::from_object_name(&create_view.name);
                 let view_name = create_view.name.to_string();
                 let write_node_id = self.create_node(
                     OperationKind::Write,
@@ -76,11 +143,25 @@ impl SqlGraphBuilder {
                     Some(format!("CREATE VIEW {}", view_name)),
                 );
 
+                self.push_table_ref(&write_node_id, table_ref);
                 self.table_definitions
                     .insert(view_name.clone(), write_node_id.clone());
                 self.process_query(&create_view.query, statement_index, Some(&write_node_id));
             }
-            Statement::Merge { .. } => {
+            Statement::Merge {
+                table: target, source, ..
+            } => {
+                let target_ref = if let TableFactor::Table { name, .. } = target {
+                    Some(TableRef::from_object_name(name))
+                } else {
+                    None
+                };
+                let source_ref = if let TableFactor::Table { name, .. } = source {
+                    Some(TableRef::from_object_name(name))
+                } else {
+                    None
+                };
+
                 // MERGE INTO creates a write operation with shuffle
                 let merge_node_id = self.create_node(
                     OperationKind::Write,
@@ -91,6 +172,9 @@ impl SqlGraphBuilder {
                     statement_index + 1,
                     Some("MERGE INTO".to_string()),
                 );
+                if let Some(ref t) = target_ref {
+                    self.push_table_ref(&merge_node_id, t.clone());
+                }
 
                 // MERGE involves reading from source and target
                 let read_node_id = self.create_node(
@@ -102,6 +186,9 @@ impl SqlGraphBuilder {
                     statement_index + 1,
                     Some("MERGE source read".to_string()),
                 );
+                if let Some(s) = source_ref {
+                    self.push_table_ref(&read_node_id, s);
+                }
 
                 let read_node_id2 = self.create_node(
                     OperationKind::Read,
@@ -112,6 +199,9 @@ impl SqlGraphBuilder {
                     statement_index + 1,
                     Some("MERGE target read".to_string()),
                 );
+                if let Some(t) = target_ref {
+                    self.push_table_ref(&read_node_id2, t);
+                }
 
                 let shuffle_node_id = self.create_node(
                     OperationKind::Shuffle,
@@ -221,6 +311,7 @@ impl SqlGraphBuilder {
     ) {
         match &table.relation {
             TableFactor::Table { name, .. } => {
+                let table_ref = TableRef::from_object_name(name);
                 let table_name = name.to_string();
                 let read_node_id = self.create_node(
                     OperationKind::Read,
@@ -232,6 +323,7 @@ impl SqlGraphBuilder {
                     Some(format!("Read {}", table_name)),
                 );
 
+                self.push_table_ref(&read_node_id, table_ref);
                 read_nodes.push(read_node_id.clone());
 
                 // Record table reference for edge creation
@@ -254,6 +346,7 @@ impl SqlGraphBuilder {
 
     fn process_join(&mut self, join: &Join, statement_index: u32, read_nodes: &mut Vec<String>) {
         if let TableFactor::Table { name, .. } = &join.relation {
+            let table_ref = TableRef::from_object_name(name);
             let table_name = name.to_string();
             let read_node_id = self.create_node(
                 OperationKind::Read,
@@ -265,6 +358,7 @@ impl SqlGraphBuilder {
                 Some(format!("Join read {}", table_name)),
             );
 
+            self.push_table_ref(&read_node_id, table_ref);
             read_nodes.push(read_node_id.clone());
 
             // Record table reference
@@ -347,6 +441,17 @@ impl SqlGraphBuilder {
         };
         self.edges.push(edge);
     }
+
+    /// Attach a `TableRef` to a previously created node by id. Dedupes on
+    /// `TableRef` equality so the same table appearing twice in a statement
+    /// surfaces once per node.
+    fn push_table_ref(&mut self, node_id: &str, tref: TableRef) {
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            if !node.tables_referenced.contains(&tref) {
+                node.tables_referenced.push(tref);
+            }
+        }
+    }
 }
 
 impl Default for SqlGraphBuilder {
@@ -399,5 +504,106 @@ mod tests {
         assert!(!read_nodes.is_empty());
         assert!(!write_nodes.is_empty());
         assert!(!shuffle_nodes.is_empty());
+    }
+
+    #[test]
+    fn three_part_select_populates_tables_referenced_on_each_read() {
+        let source = "SELECT * FROM cat.sch.t JOIN sch.u";
+        let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
+
+        let read_fqns: Vec<String> = nodes
+            .iter()
+            .filter(|n| matches!(n.kind, OperationKind::Read))
+            .flat_map(|n| n.tables_referenced.iter().map(|t| t.fqn()))
+            .collect();
+
+        assert_eq!(read_fqns.len(), 2);
+        assert!(read_fqns.contains(&"cat.sch.t".to_string()));
+        assert!(read_fqns.contains(&"sch.u".to_string()));
+    }
+
+    #[test]
+    fn create_table_as_select_marks_target_on_write_node_and_source_on_reads() {
+        let source = "CREATE TABLE out AS SELECT * FROM src";
+        let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
+
+        let write = nodes
+            .iter()
+            .find(|n| matches!(n.kind, OperationKind::Write))
+            .expect("write node");
+        assert_eq!(
+            write
+                .tables_referenced
+                .iter()
+                .map(|t| t.fqn())
+                .collect::<Vec<_>>(),
+            vec!["out".to_string()]
+        );
+
+        let read = nodes
+            .iter()
+            .find(|n| matches!(n.kind, OperationKind::Read))
+            .expect("read node");
+        assert_eq!(
+            read.tables_referenced
+                .iter()
+                .map(|t| t.fqn())
+                .collect::<Vec<_>>(),
+            vec!["src".to_string()]
+        );
+    }
+
+    #[test]
+    fn merge_marks_target_on_write_and_target_read_source_on_source_read() {
+        let source = "\
+MERGE INTO target_tbl t \
+USING src_tbl s ON s.id = t.id \
+WHEN MATCHED THEN UPDATE SET t.x = s.x";
+        let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
+
+        let write = nodes
+            .iter()
+            .find(|n| matches!(n.kind, OperationKind::Write))
+            .expect("merge write node");
+        let write_fqns: Vec<String> = write.tables_referenced.iter().map(|t| t.fqn()).collect();
+        assert_eq!(write_fqns, vec!["target_tbl".to_string()]);
+
+        let reads: Vec<&Node> = nodes
+            .iter()
+            .filter(|n| matches!(n.kind, OperationKind::Read))
+            .collect();
+        assert_eq!(reads.len(), 2);
+        let all_read_fqns: Vec<String> = reads
+            .iter()
+            .flat_map(|n| n.tables_referenced.iter().map(|t| t.fqn()))
+            .collect();
+        assert!(all_read_fqns.contains(&"src_tbl".to_string()));
+        assert!(all_read_fqns.contains(&"target_tbl".to_string()));
+    }
+
+    #[test]
+    fn extract_table_refs_handles_select_and_join() {
+        let refs = extract_table_refs("SELECT * FROM a.b.c JOIN d");
+        let fqns: Vec<String> = refs.iter().map(|t| t.fqn()).collect();
+        assert_eq!(fqns, vec!["a.b.c".to_string(), "d".to_string()]);
+    }
+
+    #[test]
+    fn extract_table_refs_returns_empty_on_parse_error() {
+        let refs = extract_table_refs("not valid sql at all");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn extract_table_refs_handles_ctas_and_insert() {
+        let refs = extract_table_refs("CREATE TABLE out AS SELECT * FROM src");
+        let fqns: Vec<String> = refs.iter().map(|t| t.fqn()).collect();
+        assert!(fqns.contains(&"out".to_string()));
+        assert!(fqns.contains(&"src".to_string()));
+
+        let refs = extract_table_refs("INSERT INTO dst SELECT * FROM origin");
+        let fqns: Vec<String> = refs.iter().map(|t| t.fqn()).collect();
+        assert!(fqns.contains(&"dst".to_string()));
+        assert!(fqns.contains(&"origin".to_string()));
     }
 }
