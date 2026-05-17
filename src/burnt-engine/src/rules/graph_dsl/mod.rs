@@ -22,11 +22,17 @@
 //! Commits 6–9 add the predicate engine, matcher, finding emission, and
 //! TOML/pipeline wiring on top of the IR defined here.
 
+pub mod context;
 pub mod error;
 mod ir;
 mod lexer;
 pub mod parser;
+pub mod predicate;
+pub mod value;
 
+pub use context::{FindingMutation, MatchCtx};
 pub use error::{ParseError, ParseErrorKind};
 pub use ir::{Capture, Head, Pattern, PatternBody, PredArg, Predicate, Prefix, Value};
 pub use parser::parse_pattern;
+pub use predicate::{evaluate_predicate, lookup, registered_names, registry_size, PredResult, PredicateFn};
+pub use value::{ast_arg_kind, ast_node_kind, AstNodeRef, AstPathStep, CaptureMap, CaptureValue};
