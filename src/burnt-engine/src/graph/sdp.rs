@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::graph::python::PythonGraphBuilder;
 use crate::parse::import_map::ImportMap;
-use crate::types::{Edge, PipelineTable, SdpSourceType, SdpTableKind};
+use crate::types::{Edge, PipelineTable, SdpSourceType, SdpTableKind, TableRef};
 use tree_sitter::{Node as TsNode, Parser};
 
 pub struct SdpGraphBuilder {
@@ -133,6 +133,16 @@ impl SdpGraphBuilder {
 
                     if let Some(table) = &mut self.current_table {
                         table.inner_nodes = inner_nodes;
+                        // Tag every inner node with the DLT/SDP output ref so
+                        // downstream consumers can answer "which pipeline table
+                        // does this node materialise?" without back-walking
+                        // through the parent struct.
+                        let output_ref = TableRef::from_dotted(&table.name);
+                        for n in &mut table.inner_nodes {
+                            if !n.tables_referenced.contains(&output_ref) {
+                                n.tables_referenced.push(output_ref.clone());
+                            }
+                        }
                     }
 
                     let mut block_cursor = child.walk();
@@ -232,6 +242,7 @@ impl SdpGraphBuilder {
             let ref_text = &text[start + 5..];
             if let Some(end) = ref_text.find(|c: char| !c.is_alphanumeric() && c != '_') {
                 let table_name = &ref_text[..end];
+                let live_ref = TableRef::temp_view(table_name);
                 if let Some(source_table_id) = self.table_references.get(table_name) {
                     if let Some(table) = &mut self.current_table {
                         table.source_type = SdpSourceType::LiveRef;
@@ -243,6 +254,20 @@ impl SdpGraphBuilder {
                             edge_type: "live_ref".to_string(),
                         };
                         self.edges.push(edge);
+                        for n in &mut table.inner_nodes {
+                            if !n.tables_referenced.contains(&live_ref) {
+                                n.tables_referenced.push(live_ref.clone());
+                            }
+                        }
+                    }
+                } else if let Some(table) = &mut self.current_table {
+                    // LIVE.<unknown> — still surface the temp_view ref so the
+                    // pipeline table records the dependency even when the
+                    // source DLT table isn't visible in this file.
+                    for n in &mut table.inner_nodes {
+                        if !n.tables_referenced.contains(&live_ref) {
+                            n.tables_referenced.push(live_ref.clone());
+                        }
                     }
                 }
             }
@@ -465,5 +490,58 @@ def my_table():
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].source_type, SdpSourceType::DpRead);
+    }
+
+    #[test]
+    fn dlt_table_attaches_output_ref_to_each_inner_node() {
+        let source = r#"
+import dlt
+
+@dlt.table
+def gold_users():
+    return spark.read.parquet("s3://b/raw/users")
+"#;
+        let (tables, _) = SdpGraphBuilder::new().build_from_source(source);
+        assert_eq!(tables.len(), 1);
+        let t = &tables[0];
+        assert!(!t.inner_nodes.is_empty(), "expected at least one inner node");
+        for n in &t.inner_nodes {
+            let fqns: Vec<String> = n.tables_referenced.iter().map(|r| r.fqn()).collect();
+            assert!(
+                fqns.contains(&"gold_users".to_string()),
+                "inner node {} missing output ref: {:?}",
+                n.id,
+                fqns
+            );
+        }
+    }
+
+    #[test]
+    fn live_ref_attaches_temp_view_ref_to_inner_nodes() {
+        let source = r#"
+import dlt
+
+@dlt.table
+def upstream():
+    return spark.read.parquet("s3://b/raw/upstream")
+
+@dlt.table
+def downstream():
+    return spark.read.parquet("hint").join(LIVE.upstream, "id")
+"#;
+        let (tables, _) = SdpGraphBuilder::new().build_from_source(source);
+        let downstream = tables
+            .iter()
+            .find(|t| t.name == "downstream")
+            .expect("downstream table");
+        let any_live_ref = downstream.inner_nodes.iter().any(|n| {
+            n.tables_referenced
+                .iter()
+                .any(|r| r.is_temp_view && r.table == "upstream")
+        });
+        assert!(
+            any_live_ref,
+            "no LIVE.upstream temp_view ref found on downstream inner nodes"
+        );
     }
 }

@@ -1,29 +1,24 @@
-"""Per-node cost estimation.
+"""Per-node cost estimation, consumed by ``burnt._check`` only.
 
-Merges observed stage data (REST session client) with the static cost
-graph. Stages that correlate to a graph node by line number contribute
-`actual_compute_seconds`; nodes without a match fall back to a scaling
-function selected by the node's ``ScalingType``.
+After the resolved-graph refactor this module is `_check`-internal: it is
+not exported from ``burnt.__init__`` and the only caller is
+``_check._merge_runtime``. The signature accepts a ``resolved``
+``PyResolvedGraph`` argument; runtime correlation has moved into the
+Rust merge layer (``src/burnt-engine/src/resolved/merge.rs``) so the
+line-number heuristic lives in exactly one place.
 
-Design notes
-------------
+Per-node estimate priority:
 
-* Strategy dispatch — a single module-level table maps every
-  ``ScalingType`` to its scaling function. No string-matching, no
-  ``if/elif`` ladder. Adding a new scaling type is a one-line change.
-* Cross-link with plan nodes — when a matched stage has corresponding
-  Exchange/Shuffle entries in the same SQL execution's plan, the
-  shuffle bytes are exposed on ``PyEstimate.shuffle_bytes`` keyed by
-  node id. ``PyNode`` is frozen-slotted, so we attach data via a
-  sibling map rather than mutating the node.
-* Photon-aware — when both the plan tree confirms a ``Photon*`` node ran
-  AND the graph marks the node ``photon_eligible``, the scaling fallback
-  is multiplied by ``PHOTON_SPEEDUP``.
-* Confidence calibration — emits ``coverage_ratio`` (matched / total) as
-  a float alongside the legacy three-bucket enum.
-* DAG-aware — the estimator subtracts child contributions on fork/join
-  shapes by walking the graph's edges, so reused subqueries do not
-  double-count.
+1. Observed compute from any attached stage in the resolved graph
+   (executor run time → seconds).
+2. Sum of ``TableSpec.size_bytes`` for the node's ``tables_referenced``
+   when a table-spec overlay is present.
+3. Static ``estimated_input_bytes`` from the Rust side.
+4. ``_DEFAULT_BYTES_PER_NODE`` fallback.
+
+Whichever wins feeds the scaling-function dispatch, with the
+plan-subtree contributing Photon-aware multipliers and the existing
+DAG-aware double-count subtraction unchanged.
 """
 
 from __future__ import annotations
@@ -39,15 +34,7 @@ from burnt.core.enums import Confidence, ScalingType
 if TYPE_CHECKING:
     from .model import PyGraph, PyNode
 
-# ----------------------------------------------------------------------
-# Strategy table — single source of truth for scaling-function dispatch
-# ----------------------------------------------------------------------
 
-# Each entry takes (estimated_input_bytes, fallback right-side bytes) and
-# returns *estimated compute seconds*. Coefficients follow the issue spec:
-# linear      = (bytes / 1e9) * 30   — ~30s per GB read
-# quadratic   = (left * right) / 1e18 * 300
-# Cliff/step/maintenance keep the same shape with their own coefficients.
 _ScalingCallable = Callable[[float, float], float]
 
 
@@ -56,7 +43,6 @@ def _linear(left: float, _right: float) -> float:
 
 
 def _linear_with_cliff(left: float, _right: float) -> float:
-    # 3x slowdown above 1 GB threshold to model memory spill.
     if left >= 1e9:
         return (left / 1e9) * 90.0
     return (left / 1e9) * 30.0
@@ -67,15 +53,12 @@ def _quadratic(left: float, right: float) -> float:
 
 
 def _step(left: float, _right: float) -> float:
-    # Below 100 GiB: linear; above: model the crash by reporting a huge
-    # compute number rather than raising — keeps the estimator pure.
     if left > 100 * 1024**3:
         return 1e6
     return (left / 1e9) * 30.0
 
 
 def _maintenance(left: float, _right: float) -> float:
-    # Maintenance ops (OPTIMIZE/VACUUM) scale with size plus file count.
     file_count = int(left // 1_000_000)
     return (left + file_count * 1e6) / 1e9 * 30.0
 
@@ -88,21 +71,11 @@ _SCALING_STRATEGY: dict[ScalingType, _ScalingCallable] = {
     ScalingType.MAINTENANCE: _maintenance,
 }
 
-# Photon node names from Spark plan trees ("PhotonHashAggregate" etc.).
 _PHOTON_PREFIX = "Photon"
 PHOTON_SPEEDUP = 0.5
-
-# Default assumed cluster shape used for the scaling-only fallback when
-# no observed data exists at all.
 _DEFAULT_BYTES_PER_NODE = 100 * 1024**2  # 100 MiB
 
-# Anchored line-number regex — matches `<file>.py:42`, `<file>.sql:42`,
-# and `<stdin>:42`. Unanchored `:(\d+)` would catch port numbers and
-# timestamps in stage descriptions.
-_LINE_RE = re.compile(r"(?:\.py|\.sql|<stdin>):(\d+)")
-_LINE_WINDOW = 5
-
-# Plan-node names that surface shuffle write bytes.
+# Plan-operator names that surface shuffle-write bytes via metrics.
 _SHUFFLE_NODE_PREFIXES = ("Exchange", "PhotonShuffle", "ShuffleExchange")
 
 
@@ -122,62 +95,72 @@ def estimate(
     graph: PyGraph | Any,
     session: Any = None,
     *,
-    observed_input_bytes: dict[str, int] | None = None,
+    resolved: Any = None,
     dbu_rate: float = 0.75,
     num_workers: int = 2,
 ) -> PyEstimate:
-    """Estimate per-node cost from a static graph and an optional session.
+    """Estimate per-node cost from a static graph and an optional resolved overlay.
 
     Args:
-        graph: The static cost graph (``PyGraph`` from Python builder or
-            ``PyGraph`` / ``PyGraph`` from the Rust engine).
-        session: Optional ``SessionState``-shaped object with ``.stages``
-            and ``.plan_bundles`` attributes. May be ``None`` for pure
-            static estimation.
-        observed_input_bytes: Optional ``{node_id: bytes}`` map from
-            ``enrich_graph``; overrides ``node.estimated_input_bytes``
-            for the scaling-function fallback when present.
+        graph: The static cost graph. The Rust ``PyGraph`` shape is the
+            primary input; pure-Python ``PyGraph`` is supported for tests.
+        session: Optional ``SessionState``-shaped object. Used only to
+            populate ``compute_seconds`` on the result when no
+            ``resolved`` overlay supplies stages — i.e. when called
+            outside the ``_check`` orchestrator.
+        resolved: Optional ``PyResolvedGraph`` produced by the
+            ``_resolve_graph`` Rust entry point. When present, runtime
+            correlation, plan-subtree extraction, and table-spec lookup
+            all flow through it.
         dbu_rate: DBU price multiplier folded into the dollar total.
-        num_workers: Worker count used for the scaling-only fallback.
+        num_workers: Worker count used for the scaling-only fallback
+            (kept for API back-compat; not currently used in this
+            simplified implementation).
 
     Returns:
         A ``PyEstimate`` with ``breakdown`` keyed by node id and a
         ``coverage_ratio`` describing how much of the graph was observed.
     """
+    _ = (session, num_workers)  # silence unused-parameter checks while keeping API
+
     nodes = _graph_nodes(graph)
     if not nodes:
         return PyEstimate()
 
-    stages = _session_stages(session)
-    plan_lookup = _build_plan_lookup(session)
-    observed = observed_input_bytes or {}
-
     breakdown: dict[str, float] = {}
     shuffle_bytes: dict[str, int] = {}
-    matched_count = 0
+    covered = 0
+
+    plan_has_photon = _plan_has_photon(resolved)
 
     for node in nodes:
-        match = _correlate_stage(node, stages)
-        if match is not None:
-            seconds = match.get("executorRunTime", 0) / 1000.0
+        overlay = _overlay_for(resolved, node.id)
+        if overlay is not None and overlay.stages:
+            seconds = sum(
+                (s.duration_ms or 0) / 1000.0 for s in overlay.stages
+            )
             breakdown[node.id] = float(seconds)
-            matched_count += 1
-
-            sw = _shuffle_write_for(node, plan_lookup)
+            covered += 1
+            sw = _shuffle_write_for(node, overlay)
             if sw is not None:
                 shuffle_bytes[node.id] = sw
-        else:
-            est = _scaling_estimate(node, plan_lookup, observed.get(node.id))
-            breakdown[node.id] = est
+            continue
 
-    # DAG-aware adjustment — for every fork/join, the child contribution
-    # is already accounted for in the parent's executor runtime, so we
-    # subtract it to avoid double-counting.
+        if overlay is not None and overlay.plan_subtree is not None:
+            covered += 1
+
+        # Fallback: scaling function over the best input-bytes estimate.
+        bytes_left = _resolve_input_bytes(node, resolved)
+        if _node_covered_by_table_spec(node, resolved):
+            covered += 1
+        est = _scaling_estimate(node, bytes_left, plan_has_photon)
+        breakdown[node.id] = est
+
     breakdown = _subtract_child_contributions(graph, breakdown)
 
     total_seconds = sum(breakdown.values())
     estimated_dbu = total_seconds * dbu_rate / 3600.0
-    coverage = matched_count / len(nodes) if nodes else 0.0
+    coverage = min(covered / len(nodes), 1.0) if nodes else 0.0
 
     return PyEstimate(
         estimated_dbu=estimated_dbu,
@@ -189,96 +172,125 @@ def estimate(
     )
 
 
-# ----------------------------------------------------------------------
-# Internals
-# ----------------------------------------------------------------------
-
-
 def _graph_nodes(graph: Any) -> list[PyNode | Any]:
     if graph is None:
         return []
     return list(getattr(graph, "nodes", []) or [])
 
 
-def _session_stages(session: Any) -> list[dict[str, Any]]:
-    if session is None:
-        return []
-    return list(getattr(session, "stages", []) or [])
-
-
-def _build_plan_lookup(session: Any) -> dict[int, list[dict[str, Any]]]:
-    """Map ``sqlExecId -> [plan node dicts]``."""
-    if session is None:
-        return {}
-    bundles = getattr(session, "plan_bundles", []) or []
-    out: dict[int, list[dict[str, Any]]] = {}
-    for bundle in bundles:
-        exec_id = bundle.get("sqlExecId")
-        if exec_id is None:
-            continue
-        out[int(exec_id)] = bundle.get("planNodes") or []
-    return out
-
-
-def _correlate_stage(
-    node: Any, stages: list[dict[str, Any]]
-) -> dict[str, Any] | None:
-    """Pick the stage whose name carries a line number within ±5 of the node.
-
-    Deterministic tie-break: smallest line-number delta wins; on a tie,
-    smallest stage id wins.
-    """
-    node_line = getattr(node, "line_number", None)
-    if node_line is None:
+def _overlay_for(resolved: Any, node_id: str) -> Any:
+    if resolved is None:
         return None
-
-    best: tuple[int, int, dict[str, Any]] | None = None
-    for stage in stages:
-        name = stage.get("name") or ""
-        m = _LINE_RE.search(name)
-        if m is None:
-            continue
-        stage_line = int(m.group(1))
-        delta = abs(stage_line - node_line)
-        if delta > _LINE_WINDOW:
-            continue
-        sid = int(stage.get("stageId", 0))
-        candidate = (delta, sid, stage)
-        if best is None or candidate < best:
-            best = candidate
-
-    return best[2] if best else None
-
-
-def _shuffle_write_for(
-    node: Any, plan_lookup: dict[int, list[dict[str, Any]]]
-) -> int | None:
-    """Return the total shuffle-write bytes from plan Exchange nodes
-    inside any execution whose plan touches this node's line range.
-
-    The cross-link is intentionally fuzzy — graph nodes have no direct
-    pointer to a SQL execution. We sum shuffle bytes across all
-    Exchange-like plan nodes in every execution since these typically
-    correspond one-to-one with the graph's shuffle nodes.
-    """
-    if not plan_lookup:
+    overlay_fn = getattr(resolved, "overlay", None)
+    if overlay_fn is None:
         return None
+    return overlay_fn(node_id)
+
+
+def _resolve_input_bytes(node: Any, resolved: Any) -> float:
+    """Priority chain: table-spec sum → static heuristic → default."""
+    spec_total = _table_spec_total(node, resolved)
+    if spec_total is not None:
+        return float(spec_total)
+    static = getattr(node, "estimated_input_bytes", None)
+    if static is not None:
+        return float(static)
+    return float(_DEFAULT_BYTES_PER_NODE)
+
+
+def _table_spec_total(node: Any, resolved: Any) -> int | None:
+    if resolved is None:
+        return None
+    spec_lookup = getattr(resolved, "table_spec", None)
+    if spec_lookup is None:
+        return None
+    total = 0
+    matched_any = False
+    for tref in getattr(node, "tables_referenced", []) or []:
+        fqn = getattr(tref, "fqn", None)
+        if fqn is None:
+            continue
+        spec = spec_lookup(fqn)
+        if spec is None:
+            continue
+        if spec.size_bytes is None:
+            continue
+        total += int(spec.size_bytes)
+        matched_any = True
+    return total if matched_any else None
+
+
+def _node_covered_by_table_spec(node: Any, resolved: Any) -> bool:
+    if resolved is None:
+        return False
+    spec_lookup = getattr(resolved, "table_spec", None)
+    if spec_lookup is None:
+        return False
+    for tref in getattr(node, "tables_referenced", []) or []:
+        fqn = getattr(tref, "fqn", None)
+        if fqn is None:
+            continue
+        if spec_lookup(fqn) is not None:
+            return True
+    return False
+
+
+def _scaling_estimate(
+    node: Any,
+    bytes_left: float,
+    plan_has_photon: bool,
+) -> float:
+    scaling = _resolve_scaling(node)
+    fn = _SCALING_STRATEGY.get(scaling, _linear)
+    estimate_val = fn(bytes_left, bytes_left)
+    if getattr(node, "photon_eligible", False) and plan_has_photon:
+        estimate_val *= PHOTON_SPEEDUP
+    return float(estimate_val)
+
+
+def _resolve_scaling(node: Any) -> ScalingType:
+    raw = getattr(node, "scaling_type", None)
+    if isinstance(raw, ScalingType):
+        return raw
+    if raw is None:
+        return ScalingType.LINEAR
+    try:
+        return ScalingType(str(raw))
+    except ValueError:
+        return ScalingType.LINEAR
+
+
+def _plan_has_photon(resolved: Any) -> bool:
+    if resolved is None:
+        return False
+    for node_id in resolved.node_ids():
+        overlay = resolved.overlay(node_id)
+        if overlay is None or overlay.plan_subtree is None:
+            continue
+        for plan_node in overlay.plan_subtree.nodes:
+            if plan_node.node_name.startswith(_PHOTON_PREFIX):
+                return True
+    return False
+
+
+def _shuffle_write_for(node: Any, overlay: Any) -> int | None:
     if not getattr(node, "shuffle_required", False):
         return None
-
+    subtree = overlay.plan_subtree
+    if subtree is None:
+        return None
     total = 0
-    for plan_nodes in plan_lookup.values():
-        for p in plan_nodes:
-            name = p.get("nodeName", "")
-            if not any(name.startswith(prefix) for prefix in _SHUFFLE_NODE_PREFIXES):
-                continue
-            metrics = p.get("metrics") or {}
-            raw = metrics.get("shuffle write size") or metrics.get(
-                "shuffle bytes written"
-            )
-            parsed = _parse_metric_bytes(raw)
-            if parsed:
-                total += parsed
+    for p in subtree.nodes:
+        name = p.node_name
+        if not any(name.startswith(prefix) for prefix in _SHUFFLE_NODE_PREFIXES):
+            continue
+        metrics = p.metrics or {}
+        raw = metrics.get("shuffle write size") or metrics.get(
+            "shuffle bytes written"
+        )
+        parsed = _parse_metric_bytes(raw)
+        if parsed:
+            total += parsed
     return total or None
 
 
@@ -310,65 +322,11 @@ def _parse_metric_bytes(raw: Any) -> int:
     return int(value * factors.get(unit, 1))
 
 
-def _scaling_estimate(
-    node: Any,
-    plan_lookup: dict[int, list[dict[str, Any]]],
-    observed_bytes: int | None = None,
-) -> float:
-    """Fallback estimate when no stage matches the node.
-
-    ``observed_bytes`` from ``enrich_graph`` takes precedence over the
-    node's static ``estimated_input_bytes`` when present.
-    """
-    scaling = _resolve_scaling(node)
-    fn = _SCALING_STRATEGY.get(scaling, _linear)
-    left = float(
-        observed_bytes
-        if observed_bytes is not None
-        else getattr(node, "estimated_input_bytes", None) or _DEFAULT_BYTES_PER_NODE
-    )
-    right = left  # quadratic only — assume self-join shape when unknown
-    estimate = fn(left, right)
-
-    # Photon-aware scaling — only kicks in when both the graph node
-    # claims eligibility AND the plan tree confirms a Photon* node ran.
-    if getattr(node, "photon_eligible", False) and _plan_has_photon(plan_lookup):
-        estimate *= PHOTON_SPEEDUP
-
-    return float(estimate)
-
-
-def _resolve_scaling(node: Any) -> ScalingType:
-    raw = getattr(node, "scaling_type", None)
-    if isinstance(raw, ScalingType):
-        return raw
-    if raw is None:
-        return ScalingType.LINEAR
-    try:
-        return ScalingType(str(raw))
-    except ValueError:
-        return ScalingType.LINEAR
-
-
-def _plan_has_photon(plan_lookup: dict[int, list[dict[str, Any]]]) -> bool:
-    return any(
-        p.get("nodeName", "").startswith(_PHOTON_PREFIX)
-        for plan_nodes in plan_lookup.values()
-        for p in plan_nodes
-    )
-
-
 def _subtract_child_contributions(
     graph: Any, breakdown: dict[str, float]
 ) -> dict[str, float]:
     """Subtract child estimates from each parent so DAG joins do not
-    double-count reused subqueries.
-
-    A node's runtime already includes the runtime of its inputs (Spark
-    aggregates executor time at the leaf level), so summing parents
-    without correction over-reports total compute. Walk every edge and
-    deduct ``min(parent, child)`` from the parent.
-    """
+    double-count reused subqueries."""
     edges = list(getattr(graph, "edges", []) or [])
     if not edges:
         return breakdown

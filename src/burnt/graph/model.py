@@ -12,6 +12,41 @@ _mutable_slots = ConfigDict(slots=True)
 
 
 @dataclass(config=_frozen_slots)
+class PyTableRef:
+    """Pure-Python mirror of the Rust `PyTableRef` PyO3 type.
+
+    Used by duck-typed unit tests that construct fake graphs without going
+    through the Rust builder. Field-for-field equivalent to
+    `burnt._engine.PyTableRef`.
+    """
+
+    raw: str
+    table: str
+    catalog: str | None = None
+    schema: str | None = None
+    is_temp_view: bool = False
+    is_path_read: bool = False
+    path: str | None = None
+    fqn: str = ""
+
+    def __post_init__(self) -> None:
+        # Materialise fqn from components when the caller did not supply one,
+        # matching the Rust adapter's behaviour.
+        if not self.fqn:
+            if self.is_path_read:
+                computed = f"path:{self.path or self.raw}"
+            elif self.catalog and self.schema:
+                computed = f"{self.catalog}.{self.schema}.{self.table}"
+            elif self.schema:
+                computed = f"{self.schema}.{self.table}"
+            elif self.catalog:
+                computed = f"{self.catalog}.{self.table}"
+            else:
+                computed = self.table
+            object.__setattr__(self, "fqn", computed)
+
+
+@dataclass(config=_frozen_slots)
 class PyNode:
     """A single operation in a cost graph."""
 
@@ -21,7 +56,7 @@ class PyNode:
     photon_eligible: bool = False
     shuffle_required: bool = False
     driver_bound: bool = False
-    tables_referenced: list[str] = Field(default_factory=list)
+    tables_referenced: list[PyTableRef] = Field(default_factory=list)
     estimated_input_bytes: int | None = None
     estimated_cost_usd: float | None = None
     line_number: int | None = None

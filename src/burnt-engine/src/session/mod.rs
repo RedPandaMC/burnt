@@ -106,6 +106,16 @@ impl Default for SessionStatePy {
     }
 }
 
+impl SessionStatePy {
+    /// Crate-internal access to the raw `collected` payloads. Used by the
+    /// `resolved` module to feed `ResolvedGraphBuilder`. Not exposed to
+    /// Python — the `_check` orchestrator already has the right surface
+    /// through `_resolve_graph`.
+    pub(crate) fn raw_collected(&self) -> &[Value] {
+        &self.collected
+    }
+}
+
 /// Create a new `SessionStatePy` and mark it active.
 #[pyfunction]
 pub fn session_start(rest_url: &str, app_id: &str) -> PyResult<SessionStatePy> {

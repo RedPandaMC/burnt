@@ -1,7 +1,197 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use sqlparser::ast::ObjectName;
 use std::path::PathBuf;
 use strum::Display;
+
+/// A resolved reference to a Spark table, view, or path-based dataset.
+///
+/// Created by the graph builders from SQL `ObjectName`s, Python `.table()` /
+/// `spark.table()` literals, and path-based reads. Constructors are
+/// infallible — unparseable inputs land in `raw` with single-component
+/// `table = raw`.
+///
+/// `fqn()` returns a stable key used as the join field with the
+/// `TableSpec` overlay attached to `ResolvedGraph`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TableRef {
+    pub raw: String,
+    pub catalog: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub is_temp_view: bool,
+    pub is_path_read: bool,
+    pub path: Option<String>,
+}
+
+impl TableRef {
+    /// Build from a `sqlparser::ast::ObjectName` (1, 2, or 3 part name).
+    /// Quote style is dropped — `fqn` always normalises to unquoted dotted form.
+    /// `ObjectNamePart::Function` variants (Snowflake-style dynamic identifiers)
+    /// preserve their rendered form so the ref is still greppable.
+    pub fn from_object_name(name: &ObjectName) -> Self {
+        let parts: Vec<String> = name
+            .0
+            .iter()
+            .map(|part| {
+                part.as_ident()
+                    .map(|i| i.value.clone())
+                    .unwrap_or_else(|| part.to_string())
+            })
+            .collect();
+        let raw = name.to_string();
+        match parts.as_slice() {
+            [t] => Self {
+                raw,
+                catalog: None,
+                schema: None,
+                table: t.clone(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            [s, t] => Self {
+                raw,
+                catalog: None,
+                schema: Some(s.clone()),
+                table: t.clone(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            [c, s, t] => Self {
+                raw,
+                catalog: Some(c.clone()),
+                schema: Some(s.clone()),
+                table: t.clone(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            _ => {
+                // Spark allows up to 3 parts; longer names collapse to the last
+                // identifier with the rest joined into schema for diagnostic value.
+                let table = parts.last().cloned().unwrap_or_default();
+                let head = &parts[..parts.len() - 1];
+                Self {
+                    raw,
+                    catalog: head.first().cloned(),
+                    schema: if head.len() >= 2 {
+                        Some(head[1..].join("."))
+                    } else {
+                        None
+                    },
+                    table,
+                    is_temp_view: false,
+                    is_path_read: false,
+                    path: None,
+                }
+            }
+        }
+    }
+
+    /// Build from a dotted string literal such as `"cat.sch.tbl"`. Used by
+    /// the Python builder when it sees `spark.table("…")` / `.table("…")`.
+    /// Identical splitting to [`TableRef::from_object_name`].
+    pub fn from_dotted(raw: &str) -> Self {
+        let parts: Vec<&str> = raw.split('.').collect();
+        match parts.as_slice() {
+            [t] => Self {
+                raw: raw.to_string(),
+                catalog: None,
+                schema: None,
+                table: (*t).to_string(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            [s, t] => Self {
+                raw: raw.to_string(),
+                catalog: None,
+                schema: Some((*s).to_string()),
+                table: (*t).to_string(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            [c, s, t] => Self {
+                raw: raw.to_string(),
+                catalog: Some((*c).to_string()),
+                schema: Some((*s).to_string()),
+                table: (*t).to_string(),
+                is_temp_view: false,
+                is_path_read: false,
+                path: None,
+            },
+            _ => {
+                let table = parts.last().copied().unwrap_or_default().to_string();
+                Self {
+                    raw: raw.to_string(),
+                    catalog: parts.first().map(|s| (*s).to_string()),
+                    schema: if parts.len() >= 3 {
+                        Some(parts[1..parts.len() - 1].join("."))
+                    } else {
+                        None
+                    },
+                    table,
+                    is_temp_view: false,
+                    is_path_read: false,
+                    path: None,
+                }
+            }
+        }
+    }
+
+    /// Build from a path-based read such as `spark.read.parquet("s3://b/k")`.
+    /// `table` is the basename of the path so the ref still has a human-readable
+    /// short name; `fqn` returns `path:<full>`.
+    pub fn from_path(path: &str) -> Self {
+        let trimmed = path.trim_end_matches('/');
+        let table = trimmed
+            .rsplit('/')
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(trimmed)
+            .to_string();
+        Self {
+            raw: path.to_string(),
+            catalog: None,
+            schema: None,
+            table,
+            is_temp_view: false,
+            is_path_read: true,
+            path: Some(path.to_string()),
+        }
+    }
+
+    /// Build a temp-view ref such as `LIVE.foo` or a `CREATE TEMP VIEW` target.
+    pub fn temp_view(name: &str) -> Self {
+        Self {
+            raw: name.to_string(),
+            catalog: None,
+            schema: None,
+            table: name.to_string(),
+            is_temp_view: true,
+            is_path_read: false,
+            path: None,
+        }
+    }
+
+    /// Stable join key used by the `TableSpec` overlay. Format:
+    /// - path reads → `path:<full path>`
+    /// - named refs → `catalog.schema.table` (missing parts omitted)
+    pub fn fqn(&self) -> String {
+        if self.is_path_read {
+            return format!("path:{}", self.path.as_deref().unwrap_or(&self.raw));
+        }
+        match (&self.catalog, &self.schema) {
+            (Some(c), Some(s)) => format!("{c}.{s}.{}", self.table),
+            (None, Some(s)) => format!("{s}.{}", self.table),
+            (None, None) => self.table.clone(),
+            (Some(c), None) => format!("{c}.{}", self.table),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlFragment {
@@ -63,7 +253,7 @@ pub struct Node {
     pub photon_eligible: bool,
     pub shuffle_required: bool,
     pub driver_bound: bool,
-    pub tables_referenced: Vec<String>,
+    pub tables_referenced: Vec<TableRef>,
     pub estimated_input_bytes: Option<u64>,
     pub estimated_cost_usd: Option<f64>,
     pub line_number: Option<u32>,
@@ -262,6 +452,55 @@ pub struct AnalysisResultPy {
     pub path: Option<String>,
 }
 
+/// PyO3 adapter for [`TableRef`].
+///
+/// Exposed read-only — table refs flow Rust → Python only. The `fqn` getter
+/// is materialised at construction so Python code can use it as a dict key
+/// without a method call.
+#[pyclass]
+#[derive(Clone)]
+pub struct PyTableRef {
+    #[pyo3(get)]
+    pub raw: String,
+    #[pyo3(get)]
+    pub catalog: Option<String>,
+    #[pyo3(get)]
+    pub schema: Option<String>,
+    #[pyo3(get)]
+    pub table: String,
+    #[pyo3(get)]
+    pub is_temp_view: bool,
+    #[pyo3(get)]
+    pub is_path_read: bool,
+    #[pyo3(get)]
+    pub path: Option<String>,
+    #[pyo3(get)]
+    pub fqn: String,
+}
+
+#[pymethods]
+impl PyTableRef {
+    fn __repr__(&self) -> String {
+        format!("TableRef(fqn={:?})", self.fqn)
+    }
+}
+
+impl From<TableRef> for PyTableRef {
+    fn from(t: TableRef) -> Self {
+        let fqn = t.fqn();
+        PyTableRef {
+            raw: t.raw,
+            catalog: t.catalog,
+            schema: t.schema,
+            table: t.table,
+            is_temp_view: t.is_temp_view,
+            is_path_read: t.is_path_read,
+            path: t.path,
+            fqn,
+        }
+    }
+}
+
 #[pyclass]
 #[derive(Clone)]
 pub struct PyNode {
@@ -278,7 +517,7 @@ pub struct PyNode {
     #[pyo3(get)]
     pub driver_bound: bool,
     #[pyo3(get)]
-    pub tables_referenced: Vec<String>,
+    pub tables_referenced: Vec<PyTableRef>,
     #[pyo3(get)]
     pub estimated_input_bytes: Option<u64>,
     #[pyo3(get)]
@@ -298,7 +537,7 @@ impl From<Node> for PyNode {
             photon_eligible: n.photon_eligible,
             shuffle_required: n.shuffle_required,
             driver_bound: n.driver_bound,
-            tables_referenced: n.tables_referenced,
+            tables_referenced: n.tables_referenced.into_iter().map(Into::into).collect(),
             estimated_input_bytes: n.estimated_input_bytes,
             estimated_cost_usd: n.estimated_cost_usd,
             line_number: n.line_number,
@@ -358,5 +597,99 @@ impl From<PipelineTable> for PyPipelineTable {
             expectations: t.expectations,
             is_incremental: t.is_incremental,
         }
+    }
+}
+
+#[cfg(test)]
+mod table_ref_tests {
+    use super::*;
+    use sqlparser::ast::{SetExpr, Statement, TableFactor};
+    use sqlparser::dialect::DatabricksDialect;
+    use sqlparser::parser::Parser;
+
+    fn parse_object_name(sql_table: &str) -> ObjectName {
+        let sql = format!("SELECT 1 FROM {sql_table}");
+        let stmts = Parser::parse_sql(&DatabricksDialect {}, &sql).expect("parse");
+        let Statement::Query(q) = stmts.into_iter().next().expect("one stmt") else {
+            panic!("expected query");
+        };
+        let SetExpr::Select(s) = *q.body else {
+            panic!("expected select");
+        };
+        let TableFactor::Table { name, .. } = s.from.into_iter().next().unwrap().relation else {
+            panic!("expected table factor");
+        };
+        name
+    }
+
+    #[test]
+    fn parse_one_part() {
+        let r = TableRef::from_object_name(&parse_object_name("t"));
+        assert_eq!(r.catalog, None);
+        assert_eq!(r.schema, None);
+        assert_eq!(r.table, "t");
+        assert_eq!(r.fqn(), "t");
+    }
+
+    #[test]
+    fn parse_two_part() {
+        let r = TableRef::from_object_name(&parse_object_name("sch.t"));
+        assert_eq!(r.catalog, None);
+        assert_eq!(r.schema.as_deref(), Some("sch"));
+        assert_eq!(r.table, "t");
+        assert_eq!(r.fqn(), "sch.t");
+    }
+
+    #[test]
+    fn parse_three_part() {
+        let r = TableRef::from_object_name(&parse_object_name("cat.sch.t"));
+        assert_eq!(r.catalog.as_deref(), Some("cat"));
+        assert_eq!(r.schema.as_deref(), Some("sch"));
+        assert_eq!(r.table, "t");
+        assert_eq!(r.fqn(), "cat.sch.t");
+    }
+
+    #[test]
+    fn parse_backtick_quoted_drops_quotes_in_fqn() {
+        let r = TableRef::from_object_name(&parse_object_name("`my-cat`.`my sch`.`weird table`"));
+        assert_eq!(r.catalog.as_deref(), Some("my-cat"));
+        assert_eq!(r.schema.as_deref(), Some("my sch"));
+        assert_eq!(r.table, "weird table");
+        // fqn normalises to unquoted dotted form — callers can compare directly
+        // against TableSpec.fqn keys produced from DESCRIBE output.
+        assert_eq!(r.fqn(), "my-cat.my sch.weird table");
+    }
+
+    #[test]
+    fn dotted_string_matches_object_name_parsing() {
+        let from_name = TableRef::from_object_name(&parse_object_name("cat.sch.t"));
+        let from_str = TableRef::from_dotted("cat.sch.t");
+        assert_eq!(from_name.fqn(), from_str.fqn());
+        assert_eq!(from_name.catalog, from_str.catalog);
+        assert_eq!(from_name.schema, from_str.schema);
+        assert_eq!(from_name.table, from_str.table);
+    }
+
+    #[test]
+    fn path_read_uses_basename_and_path_prefix_in_fqn() {
+        let r = TableRef::from_path("s3://my-bucket/warehouse/events/");
+        assert!(r.is_path_read);
+        assert_eq!(r.table, "events");
+        assert_eq!(r.fqn(), "path:s3://my-bucket/warehouse/events/");
+    }
+
+    #[test]
+    fn temp_view_is_marked() {
+        let r = TableRef::temp_view("live_foo");
+        assert!(r.is_temp_view);
+        assert_eq!(r.table, "live_foo");
+        assert_eq!(r.fqn(), "live_foo");
+    }
+
+    #[test]
+    fn pytable_ref_materialises_fqn_at_construction() {
+        let r = TableRef::from_dotted("a.b.c");
+        let py: PyTableRef = r.into();
+        assert_eq!(py.fqn, "a.b.c");
     }
 }

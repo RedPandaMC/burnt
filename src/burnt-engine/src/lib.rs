@@ -12,6 +12,7 @@ pub mod ingestion;
 pub(crate) mod json_py;
 pub(crate) mod parse;
 pub mod plan_parser;
+pub mod resolved;
 pub mod rules;
 mod semantic;
 pub mod session;
@@ -21,10 +22,14 @@ use detect::detect_mode_from_source;
 use graph::{Graph, PyGraph, PipelineGraph, PyPipeline};
 use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
+use resolved::python::{
+    resolve_graph, PyNodeOverlay, PyPlanSubtree, PyPlanSubtreeNode, PyResolvedGraph,
+    PyStageObservation, PyTableSpec,
+};
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode,
-    PyPipelineTable, RuleEntry,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode, PyPipelineTable,
+    PyTableRef, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -223,6 +228,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(session_start, m)?)?;
     m.add_function(wrap_pyfunction!(session_collect, m)?)?;
     m.add_function(wrap_pyfunction!(parse_physical_plan_py, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_graph, m)?)?;
 
     m.add_class::<SessionStatePy>()?;
     m.add_class::<PyPlanNode>()?;
@@ -230,7 +236,14 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPipeline>()?;
     m.add_class::<PyNode>()?;
     m.add_class::<PyEdge>()?;
+    m.add_class::<PyTableRef>()?;
     m.add_class::<PyPipelineTable>()?;
+    m.add_class::<PyResolvedGraph>()?;
+    m.add_class::<PyNodeOverlay>()?;
+    m.add_class::<PyStageObservation>()?;
+    m.add_class::<PyPlanSubtree>()?;
+    m.add_class::<PyPlanSubtreeNode>()?;
+    m.add_class::<PyTableSpec>()?;
     m.add_class::<types::Finding>()?;
     m.add_class::<rules::PyRuleInfo>()?;
     m.add_class::<Cell>()?;
