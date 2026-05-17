@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use sqlparser::ast::{Join, Query, SetExpr, Statement, TableFactor, TableWithJoins};
+use sqlparser::ast::{Expr, Join, Query, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::DatabricksDialect;
 use sqlparser::parser::Parser;
 
+use crate::resolved::ast_shape::{
+    AstNode, AstShape, SqlExpr, SqlStatementKind, SqlStatementNode,
+};
 use crate::types::{Edge, Node, OperationKind, ScalingBehavior, TableRef};
 
 /// Walk a SQL string and collect every distinct table reference it touches.
@@ -95,7 +98,18 @@ impl SqlGraphBuilder {
         };
 
         for (i, stmt) in statements.iter().enumerate() {
+            let stmt_start = self.nodes.len();
             self.process_statement(stmt, i as u32);
+            // Attach the per-statement AstShape to every node this
+            // statement created. Sharing one shape across siblings is
+            // cheap (Clone-friendly) and gives rules a consistent
+            // "this is a SELECT from cat.s.t WHERE …" view regardless of
+            // which physical node they matched.
+            if let Some(shape) = extract_statement_ast(stmt, i as u32) {
+                for node in &mut self.nodes[stmt_start..] {
+                    node.ast = Some(AstShape::new(AstNode::SqlStatement(shape.clone())));
+                }
+            }
         }
 
         // Create edges between table definitions and references
@@ -462,6 +476,175 @@ impl Default for SqlGraphBuilder {
     }
 }
 
+// ---------------------------------------------------------------------------
+// AstShape extraction for SQL statements.
+//
+// Builds the structured AstShape::SqlStatement payload from a sqlparser
+// `Statement`. WHERE predicates are decomposed into `SqlExpr` variants so
+// BQ-family rules can match them via the DSL without touching sqlparser
+// at rule-execution time.
+// ---------------------------------------------------------------------------
+
+fn extract_statement_ast(stmt: &Statement, statement_index: u32) -> Option<SqlStatementNode> {
+    let line = statement_index + 1;
+    match stmt {
+        Statement::Query(query) => Some(SqlStatementNode {
+            kind: SqlStatementKind::Select,
+            from: collect_from_fqns(query),
+            target: None,
+            predicates: collect_predicates(query),
+            line,
+        }),
+        Statement::CreateTable(create) => Some(SqlStatementNode {
+            kind: SqlStatementKind::CreateTable,
+            from: create
+                .query
+                .as_deref()
+                .map(collect_from_fqns)
+                .unwrap_or_default(),
+            target: Some(create.name.to_string()),
+            predicates: create
+                .query
+                .as_deref()
+                .map(collect_predicates)
+                .unwrap_or_default(),
+            line,
+        }),
+        Statement::CreateView(create_view) => Some(SqlStatementNode {
+            kind: SqlStatementKind::CreateView,
+            from: collect_from_fqns(&create_view.query),
+            target: Some(create_view.name.to_string()),
+            predicates: collect_predicates(&create_view.query),
+            line,
+        }),
+        Statement::Insert(insert) => {
+            let target = if let sqlparser::ast::TableObject::TableName(name) = &insert.table {
+                Some(name.to_string())
+            } else {
+                None
+            };
+            Some(SqlStatementNode {
+                kind: SqlStatementKind::Insert,
+                from: insert
+                    .source
+                    .as_deref()
+                    .map(collect_from_fqns)
+                    .unwrap_or_default(),
+                target,
+                predicates: insert
+                    .source
+                    .as_deref()
+                    .map(collect_predicates)
+                    .unwrap_or_default(),
+                line,
+            })
+        }
+        Statement::Merge {
+            table: target,
+            source,
+            ..
+        } => {
+            let target_fqn = if let TableFactor::Table { name, .. } = target {
+                Some(name.to_string())
+            } else {
+                None
+            };
+            let source_fqn = if let TableFactor::Table { name, .. } = source {
+                Some(name.to_string())
+            } else {
+                None
+            };
+            Some(SqlStatementNode {
+                kind: SqlStatementKind::Merge,
+                from: source_fqn.into_iter().collect(),
+                target: target_fqn,
+                predicates: Vec::new(),
+                line,
+            })
+        }
+        Statement::Explain { statement, .. } => extract_statement_ast(statement, statement_index),
+        _ => None,
+    }
+}
+
+fn collect_from_fqns(query: &Query) -> Vec<String> {
+    let mut out = Vec::new();
+    if let SetExpr::Select(select) = &*query.body {
+        for table in &select.from {
+            if let TableFactor::Table { name, .. } = &table.relation {
+                out.push(name.to_string());
+            }
+            for join in &table.joins {
+                if let TableFactor::Table { name, .. } = &join.relation {
+                    out.push(name.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn collect_predicates(query: &Query) -> Vec<SqlExpr> {
+    let mut out: Vec<SqlExpr> = Vec::new();
+    if let SetExpr::Select(select) = &*query.body {
+        if let Some(where_expr) = &select.selection {
+            out.push(convert_sql_expr(where_expr));
+        }
+        if let Some(having) = &select.having {
+            out.push(convert_sql_expr(having));
+        }
+    }
+    out
+}
+
+/// Best-effort conversion from `sqlparser::ast::Expr` into our narrower
+/// `SqlExpr`. Anything we don't model yet falls through to
+/// `SqlExpr::Other(rendered_text)` so rules can still pattern-match via
+/// regex if needed.
+fn convert_sql_expr(expr: &Expr) -> SqlExpr {
+    match expr {
+        Expr::InList {
+            expr: lhs,
+            list,
+            negated,
+        } => SqlExpr::InList {
+            lhs: lhs.to_string(),
+            items: list.iter().map(|e| e.to_string()).collect(),
+            negated: *negated,
+        },
+        Expr::InSubquery {
+            expr: lhs,
+            subquery,
+            negated,
+        } => SqlExpr::InSubquery {
+            lhs: lhs.to_string(),
+            subquery: subquery.to_string(),
+            negated: *negated,
+        },
+        Expr::BinaryOp { left, op, right } => {
+            let op_str = op.to_string();
+            // Logical combinators get their own variant for tree walking;
+            // everything else is a Comparison.
+            match op_str.as_str() {
+                "AND" | "OR" => SqlExpr::Logical {
+                    op: op_str,
+                    lhs: Box::new(convert_sql_expr(left)),
+                    rhs: Box::new(convert_sql_expr(right)),
+                },
+                _ => SqlExpr::Comparison {
+                    lhs: left.to_string(),
+                    op: op_str,
+                    rhs: right.to_string(),
+                },
+            }
+        }
+        Expr::UnaryOp { op, expr: inner } if op.to_string() == "NOT" => {
+            SqlExpr::Not(Box::new(convert_sql_expr(inner)))
+        }
+        other => SqlExpr::Other(other.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,5 +790,116 @@ WHEN MATCHED THEN UPDATE SET t.x = s.x";
         let fqns: Vec<String> = refs.iter().map(|t| t.fqn()).collect();
         assert!(fqns.contains(&"dst".to_string()));
         assert!(fqns.contains(&"origin".to_string()));
+    }
+
+    // ----- SQL AstShape coverage -----
+    use crate::resolved::ast_shape::{AstNode, SqlExpr, SqlStatementKind};
+
+    fn first_ast(source: &str) -> AstNode {
+        let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
+        nodes
+            .into_iter()
+            .find(|n| n.ast.is_some())
+            .expect("a node should have an ast")
+            .ast
+            .unwrap()
+            .root
+    }
+
+    #[test]
+    fn select_emits_sql_statement_with_from_fqns() {
+        let ast = first_ast("SELECT * FROM cat.s.t JOIN sch.u");
+        match ast {
+            AstNode::SqlStatement(s) => {
+                assert_eq!(s.kind, SqlStatementKind::Select);
+                assert!(s.from.contains(&"cat.s.t".to_string()));
+                assert!(s.from.contains(&"sch.u".to_string()));
+                assert!(s.target.is_none());
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ctas_emits_target_table() {
+        let ast = first_ast("CREATE TABLE out AS SELECT * FROM src");
+        match ast {
+            AstNode::SqlStatement(s) => {
+                assert_eq!(s.kind, SqlStatementKind::CreateTable);
+                assert_eq!(s.target.as_deref(), Some("out"));
+                assert!(s.from.contains(&"src".to_string()));
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn where_not_in_subquery_extracted_as_predicate() {
+        let ast = first_ast("SELECT * FROM users WHERE id NOT IN (SELECT id FROM banned)");
+        match ast {
+            AstNode::SqlStatement(s) => {
+                assert!(
+                    s.predicates.iter().any(|p| matches!(
+                        p,
+                        SqlExpr::InSubquery { negated: true, .. }
+                    )),
+                    "expected NOT IN subquery, got {:?}",
+                    s.predicates
+                );
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn where_comparison_extracted_as_predicate() {
+        let ast = first_ast("SELECT * FROM users WHERE age > 18");
+        match ast {
+            AstNode::SqlStatement(s) => {
+                let cmp = s
+                    .predicates
+                    .iter()
+                    .find_map(|p| match p {
+                        SqlExpr::Comparison { lhs, op, rhs } => {
+                            Some((lhs.clone(), op.clone(), rhs.clone()))
+                        }
+                        _ => None,
+                    })
+                    .expect("expected a Comparison predicate");
+                assert_eq!(cmp.0, "age");
+                assert_eq!(cmp.1, ">");
+                assert_eq!(cmp.2, "18");
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn where_and_combinator_becomes_logical() {
+        let ast = first_ast("SELECT * FROM users WHERE age > 18 AND active = true");
+        match ast {
+            AstNode::SqlStatement(s) => {
+                assert!(s
+                    .predicates
+                    .iter()
+                    .any(|p| matches!(p, SqlExpr::Logical { op, .. } if op == "AND")));
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn merge_emits_target_and_source_in_ast() {
+        let source = "MERGE INTO target_tbl t USING src_tbl s ON s.id = t.id \
+                      WHEN MATCHED THEN UPDATE SET t.x = s.x";
+        let ast = first_ast(source);
+        match ast {
+            AstNode::SqlStatement(s) => {
+                assert_eq!(s.kind, SqlStatementKind::Merge);
+                assert_eq!(s.target.as_deref(), Some("target_tbl"));
+                assert!(s.from.contains(&"src_tbl".to_string()));
+            }
+            other => panic!("expected SqlStatement, got {:?}", other),
+        }
     }
 }
