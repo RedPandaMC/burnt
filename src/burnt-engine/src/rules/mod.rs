@@ -9,6 +9,7 @@ mod context;
 pub(crate) mod context_structs;
 mod dataflow;
 pub(crate) mod finding;
+pub mod graph_dsl;
 mod notebook_queries;
 mod query;
 mod registry {
