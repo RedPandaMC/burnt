@@ -49,6 +49,9 @@ name = "bitflags"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bumpalo"
@@ -60,10 +63,12 @@ checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 name = "burnt-engine"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "insta",
  "pyo3",
  "pyo3-build-config",
  "rayon",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
