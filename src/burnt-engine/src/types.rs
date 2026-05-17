@@ -434,6 +434,33 @@ pub struct CompiledRule {
     pub has_context: bool,
     #[serde(default)]
     pub has_dataflow: bool,
+    /// True iff the TOML carries a `[graph]` block. When set, the new
+    /// graph-DSL pipeline runs against this rule alongside (during
+    /// the migration bridge) or instead of (post-cutover) the legacy
+    /// `[query]` / `[context]` / `[dataflow]` paths.
+    #[serde(default)]
+    pub has_graph: bool,
+    /// `[graph].detect` S-expression source.
+    #[serde(default)]
+    pub graph_detect: String,
+    /// `[graph].exclude` S-expression source, if any.
+    #[serde(default)]
+    pub graph_exclude: Option<String>,
+    /// `[graph.finding].severity`. Overrides `severity` when set.
+    #[serde(default)]
+    pub graph_finding_severity: Option<String>,
+    /// `[graph.finding].confidence`. Default is "high" when unset.
+    #[serde(default)]
+    pub graph_finding_confidence: Option<String>,
+    /// `[graph.finding].message`. Defaults to `description`.
+    #[serde(default)]
+    pub graph_finding_message: Option<String>,
+    /// `[graph.finding].suggestion`. Defaults to `suggestion`.
+    #[serde(default)]
+    pub graph_finding_suggestion: Option<String>,
+    /// `[graph.finding].line` — capture-ref like "@call.line".
+    #[serde(default)]
+    pub graph_finding_line: Option<String>,
 }
 
 impl AnalysisMode {

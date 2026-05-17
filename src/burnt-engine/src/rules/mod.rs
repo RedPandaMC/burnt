@@ -10,6 +10,7 @@ pub(crate) mod context_structs;
 mod dataflow;
 pub(crate) mod finding;
 pub mod graph_dsl;
+pub mod graph_pipeline;
 mod notebook_queries;
 mod query;
 mod registry {
@@ -80,6 +81,12 @@ impl RulePipeline {
 
         let mut dataflow_findings = self.execute_dataflow_rules(source, language);
         findings.append(&mut dataflow_findings);
+
+        // Fourth pass: graph-DSL rules. Coexists with the three legacy
+        // passes for the migration bridge state; commit 12 deletes the
+        // others and makes this the only path.
+        let mut graph_findings = graph_pipeline::run_graph_rules(source, language, &self.rules);
+        findings.append(&mut graph_findings);
 
         findings
     }
