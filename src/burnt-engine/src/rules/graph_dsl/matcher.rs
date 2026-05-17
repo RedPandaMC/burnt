@@ -847,6 +847,77 @@ mod tests {
     }
 
     #[test]
+    fn not_receiver_of_filters_call_chains() {
+        // BP008 shape: collect() preceded by limit() is *not* flagged.
+        // collect() alone is flagged.
+        let resolved = build_resolved_for_test(mk_graph(vec![
+            mk_call_node("safe", vec!["df", "limit", "collect"], 1),
+            mk_call_node("risky", vec!["df", "collect"], 2),
+        ]));
+        let pattern = parse_pattern(
+            r#"(op:Action
+                 (ast/Call :method "collect" @call)
+                 (#not-receiver-of @call "limit"))"#,
+        )
+        .unwrap();
+        let matches = run_pattern(&pattern, None, &resolved);
+        let anchors: Vec<String> = matches
+            .iter()
+            .map(|m| m.anchor.as_str().to_string())
+            .collect();
+        assert_eq!(anchors.len(), 1);
+        assert!(anchors.contains(&"risky".to_string()));
+    }
+
+    #[test]
+    fn kwargs_missing_detects_absent_options() {
+        // BP021 shape: spark.read.jdbc(...) without partitionColumn/lowerBound/...
+        let mut with_options = mk_call_node("ok", vec!["spark", "read", "jdbc"], 1);
+        if let Some(shape) = with_options.ast.as_mut() {
+            if let AstNode::Call(c) = &mut shape.root {
+                c.kwargs.push((
+                    "partitionColumn".into(),
+                    crate::resolved::ast_shape::AstArg::Identifier("id".into()),
+                ));
+            }
+        }
+        let missing_options = mk_call_node("flagged", vec!["spark", "read", "jdbc"], 2);
+
+        let resolved = build_resolved_for_test(mk_graph(vec![with_options, missing_options]));
+        let pattern = parse_pattern(
+            r#"(op:Action
+                 (ast/Call :method "jdbc" @call)
+                 (#kwargs/missing @call ["partitionColumn"]))"#,
+        )
+        .unwrap();
+        let matches = run_pattern(&pattern, None, &resolved);
+        let anchors: Vec<String> = matches
+            .iter()
+            .map(|m| m.anchor.as_str().to_string())
+            .collect();
+        assert_eq!(anchors.len(), 1);
+        assert!(anchors.contains(&"flagged".to_string()));
+    }
+
+    #[test]
+    fn exists_with_nested_pattern() {
+        let resolved = build_resolved_for_test(mk_graph(vec![
+            mk_call_node("a", vec!["df", "collect"], 1),
+            mk_call_node("b", vec!["df", "write"], 2),
+        ]));
+        // Use #exists to assert a Write op exists in the graph.
+        let pattern = parse_pattern(
+            r#"(op:Action
+                 (ast/Call :method "collect")
+                 (#exists (op:Action (ast/Call :method "write"))))"#,
+        )
+        .unwrap();
+        let matches = run_pattern(&pattern, None, &resolved);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].anchor.as_str(), "a");
+    }
+
+    #[test]
     fn edge_pattern_binds_endpoints() {
         let mut graph = mk_graph(vec![
             mk_node("a", OperationKind::Read, 1),

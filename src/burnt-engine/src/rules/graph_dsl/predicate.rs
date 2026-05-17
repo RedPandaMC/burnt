@@ -151,15 +151,22 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
     m.insert("when", pred_when);
 
     // ------------------------------------------------------------------
-    // Expansion ideas (§B+) — full impls land in commit 8 along with
-    // matcher support. Registered as stubs that return Bool(false) so
-    // the registry is complete from this commit on.
+    // Traversal subjects — return CaptureValue::List of related nodes.
+    // ------------------------------------------------------------------
+    m.insert("descendants", pred_descendants);
+    m.insert("ancestors", pred_ancestors);
+    m.insert("siblings", pred_siblings);
+    m.insert("receiver-of", pred_receiver_of);
+    m.insert("callees-of", pred_callees_of);
+
+    // ------------------------------------------------------------------
+    // Expansion ideas (§B+) — full implementations below.
     // ------------------------------------------------------------------
     m.insert("fires-rule", pred_stub_false);
-    m.insert("prop", pred_stub_false);
-    m.insert("not-receiver-of", pred_stub_false);
-    m.insert("kwargs/missing", pred_stub_false);
-    m.insert("kwargs/has", pred_stub_false);
+    m.insert("prop", pred_prop);
+    m.insert("not-receiver-of", pred_not_receiver_of);
+    m.insert("kwargs/missing", pred_kwargs_missing);
+    m.insert("kwargs/has", pred_kwargs_has);
 
     m
 }
@@ -204,7 +211,12 @@ fn evaluate_inner(arg: &PredArg, ctx: &MatchCtx) -> PredResult {
             Some(cv) => PredResult::Bool(captured_truthy(&cv)),
             None => PredResult::Bool(false),
         },
-        PredArg::Pattern(_) => PredResult::Skip,
+        // Run the matcher on the nested pattern. Pattern-as-arg is
+        // truthy iff at least one match exists in the resolved graph.
+        PredArg::Pattern(p) => {
+            let matches = crate::rules::graph_dsl::matcher::run_pattern(p, None, ctx.resolved);
+            PredResult::Bool(!matches.is_empty())
+        }
     }
 }
 
@@ -446,18 +458,13 @@ fn pred_all(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(subject) = first_value(args, ctx) else {
         return PredResult::Bool(true);
     };
-    // The matcher attaches a per-item capture under `it` for the inner
-    // predicate; if no inner predicate, treat as "subject not empty".
-    let inner = args.get(1);
     if subject.iter_items().next().is_none() {
         return PredResult::Bool(false);
     }
+    let inner = args.get(1);
     for item in subject.iter_items() {
-        let mut captures = ctx.captures.clone();
-        captures.insert("it".into(), item.clone());
-        let inner_ctx = MatchCtx::new(ctx.resolved, ctx.captures);
         let pass = match inner {
-            Some(a) => evaluate_inner(a, &inner_ctx).as_bool(),
+            Some(a) => evaluate_inner_with_it(a, ctx, item),
             None => captured_truthy(item),
         };
         if !pass {
@@ -473,17 +480,13 @@ fn pred_any(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     };
     let inner = args.get(1);
     for item in subject.iter_items() {
-        let mut captures = ctx.captures.clone();
-        captures.insert("it".into(), item.clone());
-        let inner_ctx = MatchCtx::new(ctx.resolved, ctx.captures);
         let pass = match inner {
-            Some(a) => evaluate_inner(a, &inner_ctx).as_bool(),
+            Some(a) => evaluate_inner_with_it(a, ctx, item),
             None => captured_truthy(item),
         };
         if pass {
             return PredResult::Bool(true);
         }
-        let _ = captures; // consume for the unused-variable lint
     }
     PredResult::Bool(false)
 }
@@ -492,15 +495,65 @@ fn pred_none(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     PredResult::Bool(!pred_any(args, ctx).as_bool())
 }
 
-fn pred_exists(_args: &[PredArg], _ctx: &MatchCtx) -> PredResult {
-    // Graph-wide existence — full implementation in commit 7 once the
-    // matcher exposes a node-walker callable from predicates. Stubbed
-    // to false; the matcher overrides this entry when wired.
-    PredResult::Bool(false)
+/// Evaluate `inner` in a child context that binds `@it` to the current
+/// quantifier item. Used by `#all`, `#any`, `#none` so the inner
+/// predicate can refer back to the loop variable.
+fn evaluate_inner_with_it(inner: &PredArg, ctx: &MatchCtx, item: &CaptureValue) -> bool {
+    let mut child = ctx.captures.clone();
+    child.insert("it".into(), item.clone());
+    let child_ctx = MatchCtx::new(ctx.resolved, &child);
+    evaluate_inner(inner, &child_ctx).as_bool()
 }
 
-fn pred_exists_here(_args: &[PredArg], _ctx: &MatchCtx) -> PredResult {
-    PredResult::Bool(false)
+fn pred_exists(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#exists <pattern>) — true iff the pattern matches at least one
+    // anchor in the graph. Predicate arg is parsed by the parser as
+    // PredArg::Pattern, so evaluate_inner already handles the heavy
+    // lifting via run_pattern.
+    let Some(arg) = args.first() else {
+        return PredResult::Bool(false);
+    };
+    PredResult::Bool(evaluate_inner(arg, ctx).as_bool())
+}
+
+fn pred_exists_here(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#exists-here <pattern>) — same as #exists but constrained to the
+    // current anchor's neighbourhood (ancestors ∪ descendants ∪ self).
+    // Today's approximation: any anchor whose StaticNodeId is in the
+    // current node's descendants or ancestors.
+    let Some(arg) = args.first() else {
+        return PredResult::Bool(false);
+    };
+    let Some(CaptureValue::Node(cur)) = ctx.captures.get("__current") else {
+        // No current anchor — degrade to graph-wide existence.
+        return PredResult::Bool(evaluate_inner(arg, ctx).as_bool());
+    };
+    let neighbourhood: std::collections::HashSet<String> = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == cur.as_str())
+        .map(|n| {
+            n.scope
+                .ancestors
+                .iter()
+                .chain(n.scope.descendants.iter())
+                .map(|id| id.as_str().to_string())
+                .chain(std::iter::once(cur.as_str().to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let PredArg::Pattern(p) = arg else {
+        return PredResult::Bool(evaluate_inner(arg, ctx).as_bool());
+    };
+    let matches = crate::rules::graph_dsl::matcher::run_pattern(p, None, ctx.resolved);
+    PredResult::Bool(
+        matches
+            .iter()
+            .any(|m| neighbourhood.contains(m.anchor.as_str())),
+    )
 }
 
 fn pred_unique(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
@@ -837,11 +890,238 @@ fn parse_severity(v: &CaptureValue) -> Option<Severity> {
 }
 
 // ----------------------------------------------------------------------
-// Stubs (filled in commit 7's matcher / commit 8 expansion ideas)
+// Traversal subjects — value-returning predicates that yield a list of
+// related nodes. Used as the subject in quantifiers (#all / #any / etc.).
+// ----------------------------------------------------------------------
+
+fn extract_node_id(v: &CaptureValue) -> Option<crate::resolved::ids::StaticNodeId> {
+    match v {
+        CaptureValue::Node(id) => Some(id.clone()),
+        _ => None,
+    }
+}
+
+fn current_or_arg_node(args: &[PredArg], ctx: &MatchCtx) -> Option<crate::resolved::ids::StaticNodeId> {
+    if let Some(v) = first_value(args, ctx).and_then(|v| extract_node_id(&v)) {
+        return Some(v);
+    }
+    ctx.captures.get("__current").and_then(extract_node_id)
+}
+
+fn pred_descendants(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(id) = current_or_arg_node(args, ctx) else {
+        return PredResult::Value(CaptureValue::List(Vec::new()));
+    };
+    let list = crate::rules::graph_dsl::traversal::descendants_of(ctx.resolved, &id);
+    PredResult::Value(CaptureValue::List(list))
+}
+
+fn pred_ancestors(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(id) = current_or_arg_node(args, ctx) else {
+        return PredResult::Value(CaptureValue::List(Vec::new()));
+    };
+    let list = crate::rules::graph_dsl::traversal::ancestors_of(ctx.resolved, &id);
+    PredResult::Value(CaptureValue::List(list))
+}
+
+fn pred_siblings(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(id) = current_or_arg_node(args, ctx) else {
+        return PredResult::Value(CaptureValue::List(Vec::new()));
+    };
+    let list = crate::rules::graph_dsl::traversal::siblings_of(ctx.resolved, &id);
+    PredResult::Value(CaptureValue::List(list))
+}
+
+fn pred_receiver_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#receiver-of @call) → returns the dotted receiver chain as a
+    // string, or Nil if the capture isn't a Call.
+    let Some(cap) = first_value(args, ctx) else {
+        return PredResult::Value(CaptureValue::Nil);
+    };
+    let arg = match cap {
+        CaptureValue::AstArg(a) => *a,
+        // Receiver-of on a Node falls back to the node's AST Call shape.
+        CaptureValue::Node(id) => {
+            let Some(node) = ctx
+                .resolved
+                .graph()
+                .nodes
+                .iter()
+                .find(|n| n.id == id.as_str())
+            else {
+                return PredResult::Value(CaptureValue::Nil);
+            };
+            match node.ast.as_ref().map(|s| &s.root) {
+                Some(crate::resolved::ast_shape::AstNode::Call(c)) => {
+                    crate::resolved::ast_shape::AstArg::Call(Box::new(c.clone()))
+                }
+                _ => return PredResult::Value(CaptureValue::Nil),
+            }
+        }
+        _ => return PredResult::Value(CaptureValue::Nil),
+    };
+    match crate::rules::graph_dsl::traversal::receiver_of_call(&arg) {
+        Some(s) => PredResult::Value(CaptureValue::String(std::sync::Arc::from(s))),
+        None => PredResult::Value(CaptureValue::Nil),
+    }
+}
+
+fn pred_callees_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(cap) = first_value(args, ctx) else {
+        return PredResult::Value(CaptureValue::List(Vec::new()));
+    };
+    let arg = match cap {
+        CaptureValue::AstArg(a) => *a,
+        CaptureValue::Node(id) => match ctx
+            .resolved
+            .graph()
+            .nodes
+            .iter()
+            .find(|n| n.id == id.as_str())
+            .and_then(|n| n.ast.as_ref())
+            .map(|s| &s.root)
+        {
+            Some(crate::resolved::ast_shape::AstNode::Call(c)) => {
+                crate::resolved::ast_shape::AstArg::Call(Box::new(c.clone()))
+            }
+            _ => return PredResult::Value(CaptureValue::List(Vec::new())),
+        },
+        _ => return PredResult::Value(CaptureValue::List(Vec::new())),
+    };
+    let list = crate::rules::graph_dsl::traversal::callees_of_call(&arg);
+    PredResult::Value(CaptureValue::List(list))
+}
+
+// ----------------------------------------------------------------------
+// §B+ predicates — full implementations
 // ----------------------------------------------------------------------
 
 fn pred_stub_false(_args: &[PredArg], _ctx: &MatchCtx) -> PredResult {
     PredResult::Bool(false)
+}
+
+/// `(#not-receiver-of @call "method")` — true iff the call's receiver
+/// is *not* a method whose name matches. Used by BP008-style rules
+/// that check `.collect()` isn't preceded by `.limit()`.
+fn pred_not_receiver_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(cap) = first_value(args, ctx) else {
+        return PredResult::Bool(true);
+    };
+    let Some(method_name) = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| v.as_str_value())
+    else {
+        return PredResult::Bool(true);
+    };
+
+    let chain: Vec<String> = match cap {
+        CaptureValue::AstArg(arg) => match *arg {
+            crate::resolved::ast_shape::AstArg::Call(c) => c.method_chain.clone(),
+            _ => return PredResult::Bool(true),
+        },
+        CaptureValue::Node(id) => ctx
+            .resolved
+            .graph()
+            .nodes
+            .iter()
+            .find(|n| n.id == id.as_str())
+            .and_then(|n| n.ast.as_ref())
+            .and_then(|s| match &s.root {
+                crate::resolved::ast_shape::AstNode::Call(c) => Some(c.method_chain.clone()),
+                _ => None,
+            })
+            .unwrap_or_default(),
+        _ => return PredResult::Bool(true),
+    };
+
+    if chain.len() < 2 {
+        return PredResult::Bool(true);
+    }
+    // The receiver methods are everything except the leaf.
+    let receivers = &chain[..chain.len() - 1];
+    PredResult::Bool(!receivers.iter().any(|m| m == &method_name))
+}
+
+/// `(#kwargs/missing @call ["a" "b" "c"])` — true iff *none* of the
+/// listed kwarg names appear in the call. Useful for "required option
+/// missing" checks like BP021's JDBC partition options.
+fn pred_kwargs_missing(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    kwargs_set_check(args, ctx, |present, required| !required.iter().any(|r| present.contains(r)))
+}
+
+/// `(#kwargs/has @call ["a" "b"])` — true iff *all* listed kwargs appear.
+fn pred_kwargs_has(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    kwargs_set_check(args, ctx, |present, required| {
+        required.iter().all(|r| present.contains(r))
+    })
+}
+
+fn kwargs_set_check(
+    args: &[PredArg],
+    ctx: &MatchCtx,
+    f: impl Fn(&std::collections::HashSet<String>, &[String]) -> bool,
+) -> PredResult {
+    let Some(cap) = first_value(args, ctx) else {
+        return PredResult::Bool(false);
+    };
+    let names = match cap {
+        CaptureValue::AstArg(arg) => match *arg {
+            crate::resolved::ast_shape::AstArg::Call(c) => {
+                crate::rules::graph_dsl::traversal::kwarg_names(
+                    &crate::resolved::ast_shape::AstNode::Call(*c),
+                )
+            }
+            _ => return PredResult::Bool(false),
+        },
+        CaptureValue::Node(id) => ctx
+            .resolved
+            .graph()
+            .nodes
+            .iter()
+            .find(|n| n.id == id.as_str())
+            .and_then(|n| n.ast.as_ref())
+            .map(|s| crate::rules::graph_dsl::traversal::kwarg_names(&s.root))
+            .unwrap_or_default(),
+        _ => return PredResult::Bool(false),
+    };
+    let present: std::collections::HashSet<String> = names.into_iter().collect();
+    let Some(list_arg) = args.get(1).and_then(|a| resolve_arg(a, ctx)) else {
+        return PredResult::Bool(false);
+    };
+    let required: Vec<String> = match list_arg {
+        CaptureValue::List(items) => items
+            .iter()
+            .filter_map(|v| v.as_str_value())
+            .collect(),
+        other => other.as_str_value().into_iter().collect(),
+    };
+    PredResult::Bool(f(&present, &required))
+}
+
+/// `(#prop "description" <inner-predicate>)` — invariant check. The
+/// description is preserved on the FindingMutation as a message-suffix
+/// hint so the rule author can drop the property text into the
+/// emitted message via `{prop.description}`. Returns SetFinding when
+/// the inner predicate is false (the *invariant fails*) so the rule
+/// fires on violations rather than on passes.
+fn pred_prop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let description = args
+        .first()
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| v.as_str_value())
+        .unwrap_or_default();
+    let inner_ok = args
+        .get(1)
+        .is_some_and(|a| evaluate_inner(a, ctx).as_bool());
+    if inner_ok {
+        return PredResult::Bool(true);
+    }
+    let mut m = FindingMutation::default();
+    if !description.is_empty() {
+        m.message_suffix = Some(format!("invariant '{description}' failed"));
+    }
+    PredResult::SetFinding(m)
 }
 
 // ----------------------------------------------------------------------

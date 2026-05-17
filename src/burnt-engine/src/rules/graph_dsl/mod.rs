@@ -29,6 +29,7 @@ mod lexer;
 pub mod matcher;
 pub mod parser;
 pub mod predicate;
+pub mod traversal;
 pub mod value;
 
 pub use context::{FindingMutation, MatchCtx};
