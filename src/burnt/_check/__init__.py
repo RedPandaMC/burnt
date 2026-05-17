@@ -146,11 +146,34 @@ def _read_source(target: str) -> str:
     return ""
 
 
+def _spark_session_for(session: Any) -> Any:
+    """Return an active SparkSession to power table-spec enrichment.
+
+    Two paths:
+
+    1. The session object itself exposes ``.spark`` — tests and
+       integration code can attach the handle directly.
+    2. Fall back to ``burnt._session._get_spark_session`` which uses
+       ``pyspark.sql.SparkSession.getActiveSession()``. Returns ``None``
+       silently when pyspark isn't importable or no session is active.
+    """
+    explicit = getattr(session, "spark", None)
+    if explicit is not None:
+        return explicit
+    try:
+        from burnt._session import _get_spark_session
+
+        return _get_spark_session()
+    except Exception:
+        return None
+
+
 def _merge_runtime(result: CheckResult, session: Any) -> None:
     """Tag findings with actual runtime metrics from a session.
 
     Sole consumer of the ResolvedGraph: imports ``_resolve_graph``
-    directly from the Rust engine and feeds the resolved graph into
+    directly from the Rust engine, attaches a table-spec overlay when a
+    SparkSession is reachable, and feeds the resolved graph into
     ``estimate()``. The graph itself stays canonical; runtime overlays
     ride on the resolved graph instead.
     """
@@ -159,7 +182,10 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
 
     # Firewall: _resolve_graph is engine-internal. Imported here and
     # nowhere else in the codebase.
+    import contextlib
+
     from burnt._engine import _resolve_graph
+    from burnt.graph.enrich import DescribeTableSource, enrich_table_specs
     from burnt.graph.estimate import estimate
 
     graph = result.graph
@@ -167,6 +193,35 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
         return
 
     resolved = _resolve_graph(graph, session)
+
+    # Third overlay: table-spec enrichment. Only runs when a SparkSession
+    # is reachable; the dbruntime / pyspark discovery is reused from
+    # burnt._session.
+    spark = _spark_session_for(session)
+    if spark is not None:
+        with contextlib.suppress(Exception):
+            specs = enrich_table_specs(resolved, source=DescribeTableSource(spark))
+            if specs:
+                # PyTableSpec round-trip: enrich returns Python TableSpecs;
+                # set_table_specs wants PyTableSpec on the Rust side.
+                from burnt._engine import TableSpec as PyTableSpec
+
+                converted: dict[str, Any] = {
+                    fqn: PyTableSpec(
+                        fqn=s.fqn,
+                        size_bytes=s.size_bytes,
+                        num_files=s.num_files,
+                        num_partitions=s.num_partitions,
+                        row_count=s.row_count,
+                        file_format=s.file_format,
+                        location=s.location,
+                        is_managed=s.is_managed,
+                        partition_columns=list(s.partition_columns),
+                    )
+                    for fqn, s in specs.items()
+                }
+                resolved.set_table_specs(converted)
+
     estimate_obj = estimate(graph, session, resolved=resolved)
     result.resolved = resolved
 

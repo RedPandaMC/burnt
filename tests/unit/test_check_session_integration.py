@@ -132,3 +132,91 @@ def test_session_with_empty_stages_uses_scaling_fallback(tmp_path: Path) -> None
     assert result.estimate.coverage_ratio == 0.0
     assert result.compute_seconds is not None
     assert result.compute_seconds > 0.0
+
+
+def test_check_result_exposes_resolved_graph_when_session_present(
+    tmp_path: Path,
+) -> None:
+    """After a session-attached run, CheckResult.resolved is the same
+    PyResolvedGraph the estimator consumed. Downstream consumers
+    (display, future rule layer) read it instead of reaching for
+    _resolve_graph themselves."""
+    src = 'df = spark.read.table("orders")\nresult = df.collect()\n'
+    fpath = _write_source(tmp_path, src)
+    session = _FakeSession(
+        stages=[
+            {
+                "stageId": 1,
+                "name": "collect at nb.py:2",
+                "executorRunTime": 5000,
+                "inputBytes": 1_000_000_000,
+            }
+        ]
+    )
+    result = run(path=str(fpath), session=session)
+
+    assert result.resolved is not None
+    assert hasattr(result.resolved, "overlay")
+    assert hasattr(result.resolved, "node_ids")
+    # At least one node attached a stage — provenance bits reflect it.
+    saw_stage = False
+    for nid in result.resolved.node_ids():
+        ov = result.resolved.overlay(nid)
+        if ov.stages:
+            saw_stage = True
+            assert ov.provenance & 0b100  # STAGE bit
+            break
+    assert saw_stage, "session was attached but no stage landed on any node"
+
+
+def test_table_spec_overlay_attached_when_fake_spark_provided(tmp_path: Path) -> None:
+    """A session with a .spark attribute (SparkSession-shaped) drives
+    DescribeTableSource through _merge_runtime. Verify the resulting
+    table_spec(...) call returns the expected payload on the resolved
+    graph."""
+    src = 'df = spark.read.table("cat.s.t")\n'
+    fpath = _write_source(tmp_path, src)
+
+    class _FakeRow:
+        def __init__(self, col_name: str, data_type: str = "") -> None:
+            self.col_name = col_name
+            self.data_type = data_type
+
+        def __getitem__(self, key: str) -> object:
+            return getattr(self, key)
+
+    class _FakeSparkDF:
+        def __init__(self, rows: list[_FakeRow]) -> None:
+            self._rows = rows
+
+        def collect(self) -> list[_FakeRow]:
+            return self._rows
+
+    class _FakeSpark:
+        def __init__(self) -> None:
+            self.issued: list[str] = []
+
+        def sql(self, q: str) -> _FakeSparkDF:
+            self.issued.append(q)
+            return _FakeSparkDF(
+                [
+                    _FakeRow("# Detailed Table Information"),
+                    _FakeRow("Type", "MANAGED"),
+                    _FakeRow("Provider", "delta"),
+                    _FakeRow("Statistics", "1073741824 bytes"),
+                ]
+            )
+
+    fake_spark = _FakeSpark()
+    session = _FakeSession(stages=[])
+    session.spark = fake_spark  # type: ignore[attr-defined]
+
+    result = run(path=str(fpath), session=session)
+
+    assert result.resolved is not None
+    spec = result.resolved.table_spec("cat.s.t")
+    assert spec is not None
+    assert spec.size_bytes == 1_073_741_824
+    assert spec.file_format == "delta"
+    # The DESCRIBE was issued exactly once for this fqn.
+    assert any("DESCRIBE TABLE EXTENDED cat.s.t" in q for q in fake_spark.issued)
