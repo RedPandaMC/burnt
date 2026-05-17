@@ -23,8 +23,8 @@ use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode,
-    PyPipelineTable, RuleEntry,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode, PyPipelineTable,
+    PyTableRef, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -230,6 +230,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPipeline>()?;
     m.add_class::<PyNode>()?;
     m.add_class::<PyEdge>()?;
+    m.add_class::<PyTableRef>()?;
     m.add_class::<PyPipelineTable>()?;
     m.add_class::<types::Finding>()?;
     m.add_class::<rules::PyRuleInfo>()?;
