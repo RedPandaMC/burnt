@@ -47,6 +47,10 @@ path = "../../tests/unit/rules/test_context_rules.rs"
 name = "test_dataflow_rules"
 path = "../../tests/unit/rules/test_dataflow_rules.rs"
 
+[[test]]
+name = "resolved_graph"
+path = "tests/resolved_graph.rs"
+
 [profile.release]
 opt-level = 3
 lto = true
