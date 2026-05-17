@@ -342,6 +342,7 @@ mod tests {
 
     fn mk_node(id: &str, line: u32) -> Node {
         Node {
+            ast: None,
             id: id.to_string(),
             kind: OperationKind::Read,
             scaling_type: ScalingBehavior::Linear,

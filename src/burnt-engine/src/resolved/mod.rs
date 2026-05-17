@@ -37,6 +37,7 @@
 //!
 //! The Rust core is PyO3-free; `cargo test` runs without `maturin develop`.
 
+pub mod ast_shape;
 pub mod error;
 pub mod ids;
 pub mod merge;
@@ -48,6 +49,10 @@ use std::collections::HashMap;
 use crate::graph::Graph;
 use crate::types::TableRef;
 
+pub use ast_shape::{
+    AssignmentNode, AstArg, AstNode, AstShape, CallNode, ComprehensionKind, DecoratorNode,
+    FStringPart, FunctionDefNode, LitKind, SqlExpr, SqlStatementKind, SqlStatementNode,
+};
 pub use error::ResolveError;
 pub use ids::{PlanNodeId, SqlExecId, StageId, StaticNodeId};
 pub use merge::{PlanBundle, RawStage, ResolvedGraphBuilder};
@@ -190,6 +195,7 @@ mod tests {
             estimated_cost_usd: None,
             line_number: Some(line),
             source_code: None,
+            ast: None,
         }
     }
 

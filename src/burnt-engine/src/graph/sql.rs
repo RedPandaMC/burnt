@@ -427,6 +427,7 @@ impl SqlGraphBuilder {
             estimated_cost_usd: None,
             line_number: Some(line),
             source_code,
+            ast: None,
         };
 
         self.nodes.push(node);

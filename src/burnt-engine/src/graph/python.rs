@@ -183,6 +183,7 @@ impl PythonGraphBuilder {
             estimated_cost_usd: None,
             line_number: Some(line),
             source_code,
+            ast: None,
         });
 
         node_id

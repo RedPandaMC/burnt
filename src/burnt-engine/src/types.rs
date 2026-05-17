@@ -258,6 +258,12 @@ pub struct Node {
     pub estimated_cost_usd: Option<f64>,
     pub line_number: Option<u32>,
     pub source_code: Option<String>,
+    /// Symbolic AST captured at parse time. The tree-sitter Tree this came
+    /// from is discarded after the builder finishes — `ast` is the only
+    /// AST surface rules will ever see. `None` only while builders catch
+    /// up to populating every shape (transitional).
+    #[serde(default)]
+    pub ast: Option<crate::resolved::AstShape>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -501,6 +507,62 @@ impl From<TableRef> for PyTableRef {
     }
 }
 
+/// PyO3 read-only handle on an `AstShape`.
+///
+/// Designed for debugging and rule-author tooling — full structured access
+/// to the AST tree from Python would require a recursive pyclass forest
+/// PyO3 doesn't bridge cheaply. Instead we expose:
+///
+/// - `root_kind() -> str` — discriminator on the root variant.
+/// - `as_json() -> str` — the full shape serialised for inspection.
+/// - `method_chain() -> list[str] | None` — convenience when the root is a `Call`.
+///
+/// The DSL matcher consumes the Rust-side `AstShape` directly; this class
+/// exists for tests and for users writing migration scripts in Python.
+#[pyclass(name = "AstShape")]
+#[derive(Clone)]
+pub struct PyAstShape {
+    inner: crate::resolved::AstShape,
+}
+
+#[pymethods]
+impl PyAstShape {
+    fn root_kind(&self) -> &'static str {
+        match &self.inner.root {
+            crate::resolved::AstNode::Call(_) => "Call",
+            crate::resolved::AstNode::Decorator(_) => "Decorator",
+            crate::resolved::AstNode::Assignment(_) => "Assignment",
+            crate::resolved::AstNode::FunctionDef(_) => "FunctionDef",
+            crate::resolved::AstNode::SqlStatement(_) => "SqlStatement",
+            crate::resolved::AstNode::SqlExpression(_) => "SqlExpression",
+        }
+    }
+
+    /// Returns the dotted method chain when the root is a `Call`, otherwise `None`.
+    fn method_chain(&self) -> Option<Vec<String>> {
+        if let crate::resolved::AstNode::Call(c) = &self.inner.root {
+            Some(c.method_chain.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Full JSON dump of the AST shape — for tests and debugging.
+    fn as_json(&self) -> String {
+        serde_json::to_string(&self.inner).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("AstShape(root={})", self.root_kind())
+    }
+}
+
+impl From<crate::resolved::AstShape> for PyAstShape {
+    fn from(s: crate::resolved::AstShape) -> Self {
+        Self { inner: s }
+    }
+}
+
 #[pyclass]
 #[derive(Clone)]
 pub struct PyNode {
@@ -526,6 +588,8 @@ pub struct PyNode {
     pub line_number: Option<u32>,
     #[pyo3(get)]
     pub source_code: Option<String>,
+    #[pyo3(get)]
+    pub ast: Option<PyAstShape>,
 }
 
 impl From<Node> for PyNode {
@@ -542,6 +606,7 @@ impl From<Node> for PyNode {
             estimated_cost_usd: n.estimated_cost_usd,
             line_number: n.line_number,
             source_code: n.source_code,
+            ast: n.ast.map(PyAstShape::from),
         }
     }
 }
