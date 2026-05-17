@@ -29,6 +29,7 @@ class CheckResult(BaseModel):
     compute_seconds: float | None = None
     estimate: Any = None  # PyEstimate from providers backend
     graph: Any = None  # PyGraph or PyPipeline from Rust engine
+    resolved: Any = None  # PyResolvedGraph (Rust) — static + stage + plan overlays
     raw: Any = None  # Original AnalysisResultPy
 
     def display(self) -> None:
@@ -148,46 +149,44 @@ def _read_source(target: str) -> str:
 def _merge_runtime(result: CheckResult, session: Any) -> None:
     """Tag findings with actual runtime metrics from a session.
 
-    The graph here may be either the Rust ``PyGraph`` (from
-    ``analyze_file``/``analyze_source``) or the pure-Python ``PyGraph``.
-    Both expose the same ``.nodes`` / ``.edges`` duck-typed surface, so
-    ``enrich_graph`` and ``estimate`` consume them uniformly without
-    mutating node fields.
+    Sole consumer of the ResolvedGraph: imports ``_resolve_graph``
+    directly from the Rust engine and feeds the resolved graph into
+    ``estimate()``. The graph itself stays canonical; runtime overlays
+    ride on the resolved graph instead.
     """
     if not hasattr(session, "stages"):
         return
 
-    from burnt.graph.enrich import enrich_graph
+    # Firewall: _resolve_graph is engine-internal. Imported here and
+    # nowhere else in the codebase.
+    from burnt._engine import _resolve_graph
     from burnt.graph.estimate import estimate
 
     graph = result.graph
-    observed = enrich_graph(graph, session=session) if graph is not None else {}
-    estimate = (
-        estimate(graph, session, observed_input_bytes=observed)
-        if graph is not None
-        else None
-    )
+    if graph is None:
+        return
 
-    if estimate is None or not estimate.breakdown:
-        # No graph or no nodes — fall back to a flat sum so the
-        # CheckResult surface stays populated.
+    resolved = _resolve_graph(graph, session)
+    estimate_obj = estimate(graph, session, resolved=resolved)
+    result.resolved = resolved
+
+    if estimate_obj is None or not estimate_obj.breakdown:
         result.compute_seconds = sum(
             s.get("executorRunTime", 0) / 1000.0 for s in session.stages
         )
         return
 
-    result.estimate = estimate
-    result.compute_seconds = sum(estimate.breakdown.values())
+    result.estimate = estimate_obj
+    result.compute_seconds = sum(estimate_obj.breakdown.values())
 
     line_to_compute = {
-        n.line_number: estimate.breakdown.get(n.id, 0.0)
+        n.line_number: estimate_obj.breakdown.get(n.id, 0.0)
         for n in (graph.nodes or [])
         if getattr(n, "line_number", None) is not None
     }
     for finding in result.findings:
         if finding.line_number is None:
             continue
-        # Match within ±5 lines, same window the estimator uses.
         best = None
         for line, seconds in line_to_compute.items():
             delta = abs(line - finding.line_number)
@@ -198,11 +197,7 @@ def _merge_runtime(result: CheckResult, session: Any) -> None:
         if best is not None:
             finding.compute_seconds = best[1]
 
-    # Re-sort: highest compute seconds first; findings with no compute
-    # info sink to the bottom while preserving their original order.
-    result.findings.sort(
-        key=lambda f: -(f.compute_seconds or 0.0),
-    )
+    result.findings.sort(key=lambda f: -(f.compute_seconds or 0.0))
 
 
 __all__ = ["CheckResult", "Finding", "run"]

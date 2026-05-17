@@ -330,29 +330,46 @@ impl PyResolvedGraph {
 /// Construct a `ResolvedGraph` from a `PyGraph` and (optionally) a session.
 /// Exported with a leading underscore by intent: every other consumer
 /// reads `CheckResult.resolved` instead.
+///
+/// Accepts either a real `SessionStatePy` (production path) or any
+/// duck-typed object exposing `.stages` and `.plan_bundles` attributes
+/// (test path — `_FakeSession` in `tests/unit/test_check_session_integration`
+/// is the canonical example).
 #[pyfunction]
 #[pyo3(name = "_resolve_graph", signature = (graph, session=None))]
 pub fn resolve_graph(
+    py: Python<'_>,
     graph: &PyGraph,
-    session: Option<&SessionStatePy>,
+    session: Option<&Bound<'_, PyAny>>,
 ) -> PyResolvedGraph {
-    // Step 1: reconstruct a domain Graph from the PyGraph snapshot.
     let domain = py_graph_to_domain(graph);
-
-    // Step 2: pull stages and plan bundles from the session, if attached.
-    let (raw_stages, plan_bundles) = match session {
-        Some(state) if state.active => extract_session_inputs(state),
-        _ => (Vec::new(), Vec::new()),
+    let (stage_values, bundle_values) = match session {
+        None => (Vec::new(), Vec::new()),
+        Some(s) => extract_session_values(py, s),
     };
 
-    // Step 3: build (merge logic lands in the next commit; today this
-    // routes all signals to `unmatched` and gives every node a
-    // STATIC-only overlay).
+    let mut raw_stages = Vec::with_capacity(stage_values.len());
+    for v in &stage_values {
+        if let Ok(s) = RawStage::try_from_json(v) {
+            raw_stages.push(s);
+        }
+    }
+
+    let mut plan_bundles = Vec::with_capacity(bundle_values.len());
+    for v in &bundle_values {
+        if let Some(exec_id) = v.get("sqlExecId").and_then(|x| x.as_i64()) {
+            let nodes = parse_plan_nodes(v.get("planNodes"));
+            plan_bundles.push(PlanBundle {
+                sql_exec_id: SqlExecId::new(exec_id),
+                plan_nodes: nodes,
+            });
+        }
+    }
+
     let resolved = ResolvedGraphBuilder::new(domain)
         .with_stages(raw_stages)
         .with_plan_bundles(plan_bundles)
         .build();
-
     PyResolvedGraph { inner: resolved }
 }
 
@@ -438,25 +455,64 @@ fn parse_scaling(s: &str) -> crate::types::ScalingBehavior {
     }
 }
 
-fn extract_session_inputs(state: &SessionStatePy) -> (Vec<RawStage>, Vec<PlanBundle>) {
-    let mut stages = Vec::new();
-    let mut bundles = Vec::new();
-    for v in state.raw_collected() {
-        if v.get("stageId").is_some() {
-            if let Ok(s) = RawStage::try_from_json(v) {
-                stages.push(s);
-            }
-        } else if v.get("planNodes").is_some() {
-            if let Some(exec_id) = v.get("sqlExecId").and_then(|x| x.as_i64()) {
-                let nodes = parse_plan_nodes(v.get("planNodes"));
-                bundles.push(PlanBundle {
-                    sql_exec_id: SqlExecId::new(exec_id),
-                    plan_nodes: nodes,
-                });
+/// Pull stages and plan bundles out of a session-shaped Python object as
+/// `serde_json::Value`s, ready for the typed adapter constructors.
+///
+/// Two paths:
+/// 1. `SessionStatePy` downcast — uses `raw_collected()` directly. This is
+///    the production path; no JSON round-trip.
+/// 2. Duck-typed fallback — looks for `.stages` and `.plan_bundles`
+///    attributes (lists of dicts), serialises via Python's `json.dumps`
+///    and parses to `Value`. This supports `_FakeSession`-style tests
+///    without forcing them to construct a real `SessionStatePy`.
+fn extract_session_values(
+    py: Python<'_>,
+    session: &Bound<'_, PyAny>,
+) -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    if let Ok(state_cell) = session.downcast::<SessionStatePy>() {
+        let state = state_cell.borrow();
+        let mut stages = Vec::new();
+        let mut bundles = Vec::new();
+        for v in state.raw_collected() {
+            if v.get("stageId").is_some() {
+                stages.push(v.clone());
+            } else if v.get("planNodes").is_some() {
+                bundles.push(v.clone());
             }
         }
+        return (stages, bundles);
     }
+
+    let stages = pyattr_to_values(py, session, "stages");
+    let bundles = pyattr_to_values(py, session, "plan_bundles");
     (stages, bundles)
+}
+
+/// Serialise `session.<attr>` to JSON via Python's `json.dumps`, then parse
+/// back to a `Vec<serde_json::Value>`. Failure at any step yields an empty
+/// Vec — duck-typed sessions that don't expose the attribute simply
+/// contribute no runtime data.
+fn pyattr_to_values(
+    py: Python<'_>,
+    session: &Bound<'_, PyAny>,
+    attr: &str,
+) -> Vec<serde_json::Value> {
+    let Ok(attr_val) = session.getattr(attr) else {
+        return Vec::new();
+    };
+    if attr_val.is_none() {
+        return Vec::new();
+    }
+    let Ok(json_module) = py.import_bound("json") else {
+        return Vec::new();
+    };
+    let Ok(dumped) = json_module.call_method1("dumps", (attr_val,)) else {
+        return Vec::new();
+    };
+    let Ok(as_string) = dumped.extract::<String>() else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<serde_json::Value>>(&as_string).unwrap_or_default()
 }
 
 fn parse_plan_nodes(value: Option<&serde_json::Value>) -> Vec<PlanNode> {
