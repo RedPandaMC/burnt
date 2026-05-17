@@ -407,12 +407,14 @@ fn py_graph_to_domain(py_graph: &PyGraph) -> crate::graph::Graph {
             estimated_cost_usd: n.estimated_cost_usd,
             line_number: n.line_number,
             source_code: n.source_code.clone(),
-            // The PyNode snapshot doesn't currently carry the AST overlay
-            // back across the boundary. Builders populate `ast` on the
-            // Rust side; reconstituting from a PyGraph (used only when
-            // crossing PyO3 in the test harness) loses it. The matcher
-            // tolerates `None` here — affected paths short-circuit.
+            // The PyNode snapshot doesn't currently carry the AST / scope
+            // overlays back across the boundary. Builders populate them on
+            // the Rust side; reconstituting from a PyGraph (used only when
+            // crossing PyO3 in the test harness) loses both. The matcher
+            // tolerates this — affected predicates short-circuit when
+            // ast / scope are empty defaults.
             ast: None,
+            scope: crate::resolved::ScopeFacts::default(),
         })
         .collect();
 

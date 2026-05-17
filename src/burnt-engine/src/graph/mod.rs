@@ -26,25 +26,29 @@ impl Graph {
     pub fn from_python(source: &str) -> Result<Self, PyErr> {
         let (nodes, edges, findings) = PythonGraphBuilder::new().build_from_source(source);
 
-        Ok(Graph {
+        let mut graph = Graph {
             nodes,
             edges,
             findings,
             mode: "python".to_string(),
             confidence: "low".to_string(),
-        })
+        };
+        crate::resolved::populate_dag_facts(&mut graph);
+        Ok(graph)
     }
 
     pub fn from_sql(source: &str) -> Result<Self, PyErr> {
         let (nodes, edges) = SqlGraphBuilder::new().build_from_source(source);
 
-        Ok(Graph {
+        let mut graph = Graph {
             nodes,
             edges,
             findings: Vec::new(),
             mode: "sql".to_string(),
             confidence: "low".to_string(),
-        })
+        };
+        crate::resolved::populate_dag_facts(&mut graph);
+        Ok(graph)
     }
 }
 

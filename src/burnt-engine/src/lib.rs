@@ -29,7 +29,7 @@ use resolved::python::{
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
     AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode, PyPipelineTable,
-    PyAstShape, PyTableRef, RuleEntry,
+    PyAstShape, PyScopeFacts, PyTableRef, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -238,6 +238,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEdge>()?;
     m.add_class::<PyTableRef>()?;
     m.add_class::<PyAstShape>()?;
+    m.add_class::<PyScopeFacts>()?;
     m.add_class::<PyPipelineTable>()?;
     m.add_class::<PyResolvedGraph>()?;
     m.add_class::<PyNodeOverlay>()?;

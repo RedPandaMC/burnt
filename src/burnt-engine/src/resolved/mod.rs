@@ -43,6 +43,7 @@ pub mod ids;
 pub mod merge;
 pub mod overlay;
 pub mod python;
+pub mod scope_facts;
 
 use std::collections::HashMap;
 
@@ -57,6 +58,7 @@ pub use error::ResolveError;
 pub use ids::{PlanNodeId, SqlExecId, StageId, StaticNodeId};
 pub use merge::{PlanBundle, RawStage, ResolvedGraphBuilder};
 pub use overlay::{NodeOverlay, PlanSubtree, Provenance, StageObservation, Unmatched};
+pub use scope_facts::{populate_dag_facts, Namespace, ScopeFacts};
 
 /// Lightweight Python-side `TableSpec` payload received via PyO3.
 ///
@@ -196,6 +198,7 @@ mod tests {
             line_number: Some(line),
             source_code: None,
             ast: None,
+            scope: crate::resolved::ScopeFacts::default(),
         }
     }
 

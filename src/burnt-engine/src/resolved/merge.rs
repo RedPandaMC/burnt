@@ -343,6 +343,7 @@ mod tests {
     fn mk_node(id: &str, line: u32) -> Node {
         Node {
             ast: None,
+            scope: crate::resolved::ScopeFacts::default(),
             id: id.to_string(),
             kind: OperationKind::Read,
             scaling_type: ScalingBehavior::Linear,

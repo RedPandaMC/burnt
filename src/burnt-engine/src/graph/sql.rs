@@ -428,6 +428,7 @@ impl SqlGraphBuilder {
             line_number: Some(line),
             source_code,
             ast: None,
+            scope: crate::resolved::ScopeFacts::default(),
         };
 
         self.nodes.push(node);

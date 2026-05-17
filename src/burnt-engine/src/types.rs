@@ -264,6 +264,11 @@ pub struct Node {
     /// up to populating every shape (transitional).
     #[serde(default)]
     pub ast: Option<crate::resolved::AstShape>,
+    /// Scope facts (namespace, bindings, DAG ancestry, source order)
+    /// consumed by DSL predicates that today's Context/Dataflow rules
+    /// reach for via side channels.
+    #[serde(default)]
+    pub scope: crate::resolved::ScopeFacts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -563,6 +568,94 @@ impl From<crate::resolved::AstShape> for PyAstShape {
     }
 }
 
+/// PyO3 read-only handle on a `ScopeFacts` payload.
+///
+/// Exposes the fields rule authors and debugging tooling reach for from
+/// Python. The DSL matcher works against the Rust-side `ScopeFacts`
+/// directly.
+#[pyclass(name = "ScopeFacts")]
+#[derive(Clone)]
+pub struct PyScopeFacts {
+    inner: crate::resolved::ScopeFacts,
+}
+
+#[pymethods]
+impl PyScopeFacts {
+    /// Namespace name as a string (or `None` if unresolved). User-defined
+    /// namespaces surface as `"user:<name>"` so callers can distinguish
+    /// them from built-ins without an enum import.
+    #[getter]
+    fn namespace(&self) -> Option<String> {
+        use crate::resolved::Namespace;
+        self.inner.namespace.as_ref().map(|ns| match ns {
+            Namespace::Spark => "spark".into(),
+            Namespace::Dlt => "dlt".into(),
+            Namespace::Dp => "dp".into(),
+            Namespace::PandasOnSpark => "pandas_on_spark".into(),
+            Namespace::UserDefined(name) => format!("user:{name}"),
+            Namespace::Unknown => "unknown".into(),
+        })
+    }
+
+    /// `{var_name: static_node_id}` — bindings live in this scope.
+    #[getter]
+    fn bindings(&self) -> std::collections::HashMap<String, String> {
+        self.inner
+            .bindings
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+            .collect()
+    }
+
+    #[getter]
+    fn reads(&self) -> Vec<String> {
+        self.inner.reads.clone()
+    }
+
+    #[getter]
+    fn writes(&self) -> Vec<String> {
+        self.inner.writes.clone()
+    }
+
+    #[getter]
+    fn source_order(&self) -> u32 {
+        self.inner.source_order
+    }
+
+    #[getter]
+    fn ancestors(&self) -> Vec<String> {
+        self.inner
+            .ancestors
+            .iter()
+            .map(|x| x.as_str().to_string())
+            .collect()
+    }
+
+    #[getter]
+    fn descendants(&self) -> Vec<String> {
+        self.inner
+            .descendants
+            .iter()
+            .map(|x| x.as_str().to_string())
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ScopeFacts(namespace={:?}, source_order={}, descendants={})",
+            self.namespace(),
+            self.inner.source_order,
+            self.inner.descendants.len()
+        )
+    }
+}
+
+impl From<crate::resolved::ScopeFacts> for PyScopeFacts {
+    fn from(s: crate::resolved::ScopeFacts) -> Self {
+        Self { inner: s }
+    }
+}
+
 #[pyclass]
 #[derive(Clone)]
 pub struct PyNode {
@@ -590,6 +683,8 @@ pub struct PyNode {
     pub source_code: Option<String>,
     #[pyo3(get)]
     pub ast: Option<PyAstShape>,
+    #[pyo3(get)]
+    pub scope: PyScopeFacts,
 }
 
 impl From<Node> for PyNode {
@@ -607,6 +702,7 @@ impl From<Node> for PyNode {
             line_number: n.line_number,
             source_code: n.source_code,
             ast: n.ast.map(PyAstShape::from),
+            scope: PyScopeFacts::from(n.scope),
         }
     }
 }
