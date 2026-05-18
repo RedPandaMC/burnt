@@ -66,7 +66,11 @@ pub use scope_facts::{populate_dag_facts, Namespace, ScopeFacts};
 /// Owned by the Python enrichment layer (`DESCRIBE TABLE EXTENDED`); attached
 /// to a resolved graph through [`ResolvedGraph::with_table_specs`] so all
 /// three signals (static / plan / stage / table-spec) live in one type.
-#[derive(Debug, Clone)]
+///
+/// The `schema` and `table_properties` fields are populated by the Rust-side
+/// [`CatalogClient`] enrichment pass (`run_graph_rules_with_catalog`) and are
+/// not exposed to Python — the Python layer only supplies the size/count fields.
+#[derive(Debug, Clone, Default)]
 pub struct TableSpec {
     pub fqn: String,
     pub size_bytes: Option<u64>,
@@ -77,6 +81,10 @@ pub struct TableSpec {
     pub location: Option<String>,
     pub is_managed: Option<bool>,
     pub partition_columns: Vec<String>,
+    /// Column schema fetched from the Unity Catalog REST API.
+    pub schema: Option<crate::catalog::TableSchema>,
+    /// Delta / Hive table properties fetched from the Unity Catalog REST API.
+    pub table_properties: std::collections::HashMap<String, String>,
 }
 
 /// Canonical static graph fused with runtime overlays.

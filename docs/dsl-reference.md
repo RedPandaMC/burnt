@@ -267,6 +267,8 @@ detect = """
 | `(#table-spec-size-gt @n N)` | True iff the TableSpec overlay on `@n` estimates more than N bytes |
 | `(#arg-is-dynamic @n :arg/N)` | True iff the Nth positional argument is a dynamically-constructed string — f-string, binary concatenation, `.format()`, `%`-format, or bare identifier |
 | `(#arg-kind-of @n :arg/N)` | Returns the argument variant name as a string: `"FString"`, `"BinaryOp"`, `"DotFormat"`, `"PercentFormat"`, `"Literal"`, `"Identifier"`, `"Call"`, `"Attribute"`, `"Unknown"` |
+| `(#table-has-property @n "key")` | True iff any table referenced by `@n` has `"key"` in its catalog table properties (requires `run_rules_with_catalog` — returns false without catalog enrichment) |
+| `(#join-type-mismatch @n)` | True iff the join node `@n` pulls from two tables that share a column name but with different data types in the catalog schema (requires `run_rules_with_catalog`) |
 
 ```toml
 # Fires when spark.sql() receives any dynamically-constructed argument
@@ -276,6 +278,47 @@ detect = """
   (#arg-is-dynamic @n :arg/0))
 """
 ```
+
+```toml
+# BJ001 — fires when the catalog reports a join-column type mismatch
+# Requires requires_catalog = true and run_rules_with_catalog()
+detect = """
+(op:Shuffle @n
+  (ast/Call :method "join")
+  (#join-type-mismatch @n))
+"""
+```
+
+---
+
+## Catalog-Backed Rules
+
+Rules that need runtime table metadata (schemas, properties) set
+`requires_catalog = true` in their TOML. They are invisible to the
+standard static-only `run_rules` path and only fire when called through
+`run_rules_with_catalog(source, catalog_url=..., catalog_token=...)`.
+
+The Python API:
+
+```python
+import burnt._engine as e
+
+# Standard path — no catalog needed
+findings = e.run_rules(source, "python")
+
+# Catalog path — fetches schemas from Unity Catalog before running rules
+findings = e.run_rules_with_catalog(
+    source,
+    language="python",
+    catalog_url="https://adb-xxx.azuredatabricks.net",
+    catalog_token="dapi...",
+)
+```
+
+The catalog client hits `GET /api/2.1/unity-catalog/tables/{fqn}` for each
+distinct table referenced in the graph, caching per analysis run.
+Results are stored in `TableSpec.schema` and `TableSpec.table_properties`
+and are consumed by `#table-has-property` and `#join-type-mismatch`.
 
 ---
 

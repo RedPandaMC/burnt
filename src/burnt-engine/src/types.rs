@@ -445,6 +445,13 @@ pub struct CompiledRule {
     /// `[graph.finding].line` — capture-ref like "@call.line".
     #[serde(default)]
     pub graph_finding_line: Option<String>,
+    /// Whether this rule requires catalog enrichment to fire.
+    ///
+    /// Rules with `requires_catalog = true` in their TOML are skipped by the
+    /// standard `run_graph_rules` path and only evaluated when a
+    /// [`CatalogClient`] is available via `run_graph_rules_with_catalog`.
+    #[serde(default)]
+    pub has_catalog: bool,
 }
 
 impl AnalysisMode {

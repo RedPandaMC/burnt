@@ -183,6 +183,12 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
     m.insert("arg-is-dynamic", pred_arg_is_dynamic);
     m.insert("arg-kind-of", pred_arg_kind_of);
 
+    // ------------------------------------------------------------------
+    // Catalog-enriched predicates (Issue #72)
+    // ------------------------------------------------------------------
+    m.insert("table-has-property", pred_table_has_property);
+    m.insert("join-type-mismatch", pred_join_type_mismatch);
+
     m
 }
 
@@ -1385,6 +1391,78 @@ fn arg_at_index(
         .unwrap_or(0);
 
     call_node.args.get(idx).map(|a| Box::new(a.clone()))
+}
+
+// ----------------------------------------------------------------------
+// Catalog-enriched predicates (Issue #72)
+// ----------------------------------------------------------------------
+
+fn pred_table_has_property(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#table-has-property @n "delta.feature.clustering")
+    // True iff any table referenced by @n has the given key in its table_properties.
+    // Returns false when no catalog enrichment has been run (table_properties is empty).
+    let node_id = match first_value(args, ctx) {
+        Some(CaptureValue::Node(id)) => id,
+        _ => return PredResult::Bool(false),
+    };
+    let key = match args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)) {
+        Some(k) => k,
+        None => return PredResult::Bool(false),
+    };
+    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+        return PredResult::Bool(false);
+    };
+    for tref in &node.tables_referenced {
+        if let Some(spec) = ctx.resolved.table_spec(&tref.fqn()) {
+            if spec.table_properties.contains_key(&key) {
+                return PredResult::Bool(true);
+            }
+        }
+    }
+    PredResult::Bool(false)
+}
+
+fn pred_join_type_mismatch(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#join-type-mismatch @n)
+    // True iff the join node @n pulls from two tables that share a column name
+    // but with differing data types in the catalog schema.
+    // Returns false when fewer than two schemas are available — the predicate
+    // is a no-op when catalog enrichment has not run.
+    let node_id = match first_value(args, ctx) {
+        Some(CaptureValue::Node(id)) => id,
+        _ => return PredResult::Bool(false),
+    };
+    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+        return PredResult::Bool(false);
+    };
+    let schemas: Vec<_> = node
+        .tables_referenced
+        .iter()
+        .filter_map(|tref| {
+            ctx.resolved
+                .table_spec(&tref.fqn())
+                .and_then(|s| s.schema.as_ref())
+        })
+        .collect();
+
+    if schemas.len() < 2 {
+        return PredResult::Bool(false);
+    }
+
+    for i in 0..schemas.len() {
+        for j in (i + 1)..schemas.len() {
+            for col_a in &schemas[i].columns {
+                if let Some(col_b) = schemas[j].column(&col_a.name) {
+                    let type_a = col_a.data_type.to_ascii_uppercase();
+                    let type_b = col_b.data_type.to_ascii_uppercase();
+                    if type_a != type_b {
+                        return PredResult::Bool(true);
+                    }
+                }
+            }
+        }
+    }
+    PredResult::Bool(false)
 }
 
 // ----------------------------------------------------------------------

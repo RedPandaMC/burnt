@@ -81,6 +81,11 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         })
         .unwrap_or_default();
 
+    let requires_catalog: bool = rule
+        .get("requires_catalog")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let pass_tests: Vec<String> = value
         .get("tests")
         .and_then(|t| t.get("pass"))
@@ -170,6 +175,7 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
     let suggestion_escaped = escape(suggestion);
 
     let has_graph_bool = if has_graph { "true" } else { "false" };
+    let has_catalog_bool = if requires_catalog { "true" } else { "false" };
 
     fn opt_string_literal(opt: Option<&str>) -> String {
         match opt {
@@ -199,6 +205,7 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
             category: \"{category}\".to_string(),\n\
             tags: {tags},\n\
             has_graph: {has_graph_bool},\n\
+            has_catalog: {has_catalog_bool},\n\
             graph_detect: \"{graph_detect}\".to_string(),\n\
             graph_exclude: {graph_exclude},\n\
             graph_finding_severity: {graph_severity},\n\

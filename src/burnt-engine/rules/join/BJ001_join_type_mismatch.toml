@@ -1,0 +1,28 @@
+[rule]
+id               = "join_type_mismatch"
+code             = "BJ001"
+severity         = "warning"
+language         = "python"
+requires_catalog = true
+description      = "Join on columns of differing types — implicit cast may silently change values or degrade performance"
+suggestion       = "Cast both join columns to the same type before joining, e.g. col('id').cast('long')"
+category         = "Join"
+tags             = ["join", "schema", "type-safety", "catalog"]
+platform         = "all"
+
+[tests]
+# No unit-test cases: the rule requires catalog enrichment (table schemas) to
+# fire and cannot be exercised by the generated static-only test harness.
+pass = []
+fail = []
+
+[graph]
+detect = """
+(op:Shuffle @n
+  (ast/Call :method "join")
+  (#join-type-mismatch @n))
+"""
+
+[graph.finding]
+confidence = "medium"
+message    = "Join columns have mismatched data types — implicit cast may silently truncate values or force a full shuffle"

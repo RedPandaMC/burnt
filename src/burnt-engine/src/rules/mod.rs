@@ -122,6 +122,10 @@ pub fn list_all() -> Vec<RuleEntry> {
     registry::load_registry()
 }
 
+pub fn load_all_compiled() -> Vec<CompiledRule> {
+    registry::load_compiled_rules()
+}
+
 #[pyfunction]
 pub fn get_registry_count() -> usize {
     registry::load_registry().len()
