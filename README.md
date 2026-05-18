@@ -52,7 +52,7 @@ Auto-detected. One command.
 
 ### Static Lint
 
-Runs offline — zero credentials, no Spark required. 43 rules fire immediately.
+Runs offline — zero credentials, no Spark required. 110 rules fire immediately.
 
 ```bash
 burnt check ./notebooks/pipeline.py
@@ -122,12 +122,12 @@ Inside Databricks:
 %pip install burnt
 ```
 
-> **Current status (v0.2.0-dev):** Static lint (43 rules), PyGraph, REST session
+> **Current status (v0.3.0):** Static lint (110 rules), PyGraph, REST session
 > enrichment, and four pricing backends (Azure, AWS, GCP, on-prem) are fully operational.
 
 ### Install matrix
 
-| Install | Lint (43 rules) | Compute-seconds | Dollars | System tables |
+| Install | Lint (110 rules) | Compute-seconds | Dollars | System tables |
 |---------|:--------------:|:---------------:|:-------:|:-------------:|
 | `pip install burnt` | ✅ + `--fix` + `--diff` | ✅ | ❌ | ❌ |
 | `+ [azure-databricks]` | ✅ | ✅ | ✅ Azure DBU + VM retail prices | ✅ workspace API |
@@ -173,7 +173,7 @@ burnt check ./notebooks/ --unsafe-fixes
 # Diff-aware lint — only files changed since main
 burnt check ./notebooks/ --diff main
 
-burnt rules                     # Browse all 43 rules (interactive TUI)
+burnt rules                     # Browse all 110 rules (interactive TUI)
 burnt init                      # Generate burnt.toml
 burnt doctor                    # Check config, Spark availability, system-table access
 burnt cache clear               # Clear the analysis cache
@@ -214,9 +214,12 @@ enabled = true   # set false to skip system-table queries entirely
 
 ---
 
-## 43 Rules
+## 110 Rules
 
-Six categories. Three implementation tiers.
+Eight categories covering performance, SQL quality, Delta, DLT/SDP pipelines, streaming,
+security, Unity Catalog governance, and notebook style. Every rule is a graph-DSL
+pattern — see [`docs/anti-pattern-rules.md`](docs/anti-pattern-rules.md) for the complete
+index, and [`docs/dsl-reference.md`](docs/dsl-reference.md) for the pattern language.
 
 ```
 ─── Performance (BP*)  ────────────────────────────────────────────────────
@@ -227,43 +230,36 @@ Six categories. Three implementation tiers.
  warning BP014  crossJoin — O(n×m) row explosion; add an explicit join key
  warning BP020  withColumn() inside a loop — O(n²) Catalyst plan analysis
  warning BP023  Window.orderBy() without partitionBy() — unintended global sort
- warning BP030  cache() without unpersist() — leaked cached RDD
- warning BP032  repeated actions without cache — recomputes the same DAG
+ + 60 more BP*, BNT*, BO*, BC*, AQE, caching, RDD, Photon, Pandas-on-Spark rules
 
 ─── SQL Quality (BQ*, SQ*)  ───────────────────────────────────────────────
  warning BQ001  NOT IN with subquery — drops rows silently when subquery returns NULL
  warning BQ002  UNION without ALL — expensive dedup sort; use UNION ALL if safe
- warning BQ003  COUNT(DISTINCT) at scale — consider approx_count_distinct()
- warning BQ004  correlated subquery — re-executed once per outer row
+ error   BQ004  correlated subquery — re-executed once per outer row
  warning SQ001  SELECT * — schema drift silently breaks downstream consumers
- warning SQ002  CROSS JOIN — explicit cartesian product without a condition
  warning BP013  ORDER BY without LIMIT — sorts the full dataset before any filtering
 
 ─── Delta / Lakehouse (BD*)  ──────────────────────────────────────────────
  warning BD001  VACUUM called too frequently — imposes unnecessary read overhead
- info    BD002  OPTIMIZE without ZORDER — add ZORDER on your most-filtered column
+ warning BD010  mode('overwrite') without replaceWhere — full table replacement
+ warning BD016  .write inside a loop — one small file per iteration
+ + 9 more BD* rules covering OPTIMIZE, MERGE, CONVERT TO DELTA, Liquid Clustering
 
 ─── DLT / SDP Pipelines (SDP*)  ───────────────────────────────────────────
  warning SDP001  table missing @expect — no data quality contract
- warning SDP002  incremental table without primary key — causes full reprocessing
  warning SDP003  streaming source without schema — breaks on schema evolution
- warning SDP004  materialized view forces full refresh — consider incremental
- info    SDP005  table without comment — undocumented in the data catalog
+ + 4 more SDP* rules
 
-─── Notebook Style (BNT_*)  ───────────────────────────────────────────────
- info  BNT_N01  generic variable name (df, df1, df2) — use a descriptive name
- info  BNT_I01  from pyspark.sql.functions import * — shadows built-ins (max, min, sum)
- info  BNT_C01  bare DataFrame reference without action — possible stale reference
+─── Streaming (BS*)  ──────────────────────────────────────────────────────
+ error   BS001  writeStream without checkpointLocation — loses progress on restart
+ warning BS003  event-time aggregation without watermark — unbounded state
 
-─── Notebook Structure (BB*, BN*)  ────────────────────────────────────────
- warning BB001  notebook missing cluster tag — cost attribution broken
- warning BN001  %run target does not exist
- warning BN003  circular %run — notebook calls itself
+─── Security & Governance (BT*, BU*)  ─────────────────────────────────────
+ error   BT002  hardcoded AWS/Databricks credentials in source
+ error   BT003  JDBC URL with embedded password
+ error   BU003  hardcoded DBFS/cloud storage paths (deprecated on Databricks)
+ warning BU001  two-part table name omits Unity Catalog prefix
 ```
-
-**Tier 1** — TOML pattern + tree-sitter query; no Rust required to contribute.  
-**Tier 2** — Rust context-aware checks.  
-**Tier 3** — Rust semantic/dataflow analysis.
 
 Run `burnt rules` for the full list with descriptions, examples, and fix suggestions.
 
@@ -275,8 +271,8 @@ Run `burnt rules` for the full list with descriptions, examples, and fix suggest
 CLI: burnt check                 Notebook: burnt.check()
       │                                │
    Rust engine (PyO3)          Rust engine (same)
-   43 rules, PyGraph         + REST API enrichment
-   tree-sitter Py/SQL/DLT      + providers/ (optional)
+   110 rules, PyGraph        + REST API enrichment
+   graph-DSL over AST          + providers/ (optional)
                                      │
                            ┌─────────┴──────────┐
                            │                    │
@@ -285,7 +281,7 @@ CLI: burnt check                 Notebook: burnt.check()
                     [gcp-databricks]
 ```
 
-**Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, PyGraph builder, 43 rules.  
+**Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, graph-DSL rule engine, 110 rules.  
 **Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `ProviderBackend` (providers/), Rich display, typer CLI.  
 **Core install:** zero cloud SDK, zero credentials required.
 
@@ -293,18 +289,15 @@ CLI: burnt check                 Notebook: burnt.check()
 
 ## Contributing
 
-### Adding a Tier 1 rule — no Rust required
+### Adding a rule
 
-1. Create `src/burnt-engine/rules/{performance,sql,delta,sdp,notebook,style}/BXXX_rule_name.toml`
-2. Add a fixture in `tests/fixtures/tier1/`
-3. Run `cargo test tier1_rules`
-4. Open a PR
+1. Create `src/burnt-engine/rules/{performance,sql,delta,sdp,notebook,style,streaming,governance}/BXXX_rule_name.toml`
+2. Write a `[graph]` DSL block — see [`docs/dsl-reference.md`](docs/dsl-reference.md)
+3. Add `pass` / `fail` test cases in `[tests]`
+4. Run `cargo test -p burnt-engine`
+5. Open a PR
 
-See [`docs/writing-rules.md`](docs/writing-rules.md) for the full rule format, including the `[fix]` section for autofix-capable rules.
-
-### Adding a Tier 2 / Tier 3 rule
-
-Tier 2 (context-aware) and Tier 3 (semantic/dataflow) rules are written in Rust. See `src/burnt-engine/src/rules/context.rs` and `src/burnt-engine/src/rules/dataflow.rs` for examples.
+No Rust required for standard rules. Complex predicates that need new engine capabilities go in `src/burnt-engine/src/rules/graph_dsl/predicate.rs`.
 
 ---
 
