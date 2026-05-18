@@ -9,12 +9,6 @@ category = "BestPractice"
 tags = ["python", "databricks", "magic"]
 platform = "databricks"
 
-[query]
-detect = """
-((comment) @c
- (#match? @c "^# MAGIC (run|sql|md)( |$)"))
-"""
-
 [tests]
 pass = [
     "# MAGIC %python",
@@ -26,3 +20,9 @@ fail = [
     "# MAGIC md",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "^# MAGIC (run|sql|md)( |$)"))
+"""

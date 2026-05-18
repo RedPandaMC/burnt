@@ -9,5 +9,16 @@ category = "Notebook"
 tags = ["notebook", "structure", "maintainability"]
 platform = "all"
 
-[context]
-type = "large_notebook"
+[tests]
+pass = [
+    "# %%\ncell1\n# %%\ncell2",
+]
+fail = [
+    "# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n# %%\nc\n",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?:[^\\n]*\\n){100,}"))
+"""

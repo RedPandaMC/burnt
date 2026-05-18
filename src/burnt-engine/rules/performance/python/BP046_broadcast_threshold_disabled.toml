@@ -9,23 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "config", "aqe"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (attribute
-      object: (identifier)
-      attribute: (identifier) @conf)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (string) @key
-    (string) @val)
-  (#eq? @conf "conf")
-  (#eq? @method "set")
-  (#match? @key "autoBroadcastJoinThreshold")
-  (#match? @val "-1"))
-"""
-
 [tests]
 pass = [
     "spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", \"52428800\")",

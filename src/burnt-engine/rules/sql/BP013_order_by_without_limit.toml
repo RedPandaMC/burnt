@@ -9,5 +9,17 @@ category = "BestPractice"
 tags = ["sql", "performance", "sort"]
 platform = "all"
 
-[context]
-type = "order_by_without_limit"
+[tests]
+pass = [
+    "SELECT id FROM users ORDER BY name LIMIT 100",
+]
+fail = [
+    "SELECT id FROM users ORDER BY name",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bORDER\\s+BY\\b")
+  (#not (#match? @src "(?i)\\bLIMIT\\b")))
+"""

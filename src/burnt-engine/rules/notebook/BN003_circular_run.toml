@@ -9,5 +9,16 @@ category = "Notebook"
 tags = ["notebook", "structure", "correctness"]
 platform = "databricks"
 
-[context]
-type = "circular_run"
+[tests]
+pass = [
+    "# %run ./utils/helpers",
+]
+fail = [
+    "dbutils.notebook.run('./current_notebook')",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "dbutils\\.notebook\\.run\\s*\\("))
+"""

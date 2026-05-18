@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["python", "style", "readability"]
 platform = "all"
 
-[context]
-type = "long_line"
-
 [tests]
 pass = [
     "x = 1  # short line",
@@ -21,3 +18,9 @@ fail = [
     "very_long_variable_name_that_exceeds_the_limit = some_function_call_with_many_arguments(argument_one, argument_two, argument_three, argument_four)",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src ".{121,}"))
+"""

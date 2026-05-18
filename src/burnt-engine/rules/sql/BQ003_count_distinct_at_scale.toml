@@ -9,15 +9,6 @@ category = "SqlQuality"
 tags = ["sql", "performance", "aggregation"]
 platform = "all"
 
-[query]
-detect = """
-(invocation
-  (object_reference
-    name: (identifier) @fn)
-  (keyword_distinct)
-  (#match? @fn "(?i)^count$"))
-"""
-
 [tests]
 pass = [
     "SELECT COUNT(id) FROM users",
@@ -27,3 +18,9 @@ fail = [
     "SELECT COUNT(DISTINCT id) FROM users",
     "SELECT count(distinct id) FROM users",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bCOUNT\\s*\\(\\s*DISTINCT\\b"))
+"""

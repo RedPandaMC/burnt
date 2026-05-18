@@ -16,16 +16,6 @@ category = "SqlQuality"
 tags = ["sql", "correctness", "null-safety"]
 platform = "all"
 
-[query]
-detect = """
-; Match NOT IN with a subquery on the right side
-; Simple pattern: binary_expression with operator NOT IN and right child is a subquery
-(binary_expression
-  (not_in)
-  (subquery))
-"""
-
-
 [tests]
 pass = [
     "SELECT * FROM a WHERE id IN (SELECT id FROM b)",
@@ -33,3 +23,9 @@ pass = [
 fail = [
     "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)NOT\\s+IN\\s*\\(\\s*SELECT"))
+"""

@@ -9,12 +9,6 @@ category = "Security"
 tags = ["security", "credentials", "jdbc"]
 platform = "all"
 
-[query]
-detect = """
-((string) @s
- (#match? @s "jdbc:.*password="))
-"""
-
 [tests]
 pass = [
     "url = 'jdbc:postgresql://host:5432/db'",
@@ -24,3 +18,9 @@ fail = [
     "url = 'jdbc:postgresql://host:5432/db?user=admin&password=secret'",
     "url = 'jdbc:sqlserver://server;database=db;password=abc123'",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "jdbc:[^\\s]*password="))
+"""

@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "delta", "write", "performance"]
 platform = "delta"
 
-[context]
-type = "overwrite_without_replace_where"
-
 [tests]
 pass = [
     "df.write.format('delta').option('replaceWhere', \"date='2024-01'\").mode('overwrite').save(path)",
@@ -21,3 +18,10 @@ fail = [
     "df.write.format('delta').mode('overwrite').save(path)",
     "df.write.format('delta').mode('overwrite').saveAsTable('events')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.mode\\s*\\([^)]*overwrite")
+  (#not (#match? @src "replaceWhere")))
+"""

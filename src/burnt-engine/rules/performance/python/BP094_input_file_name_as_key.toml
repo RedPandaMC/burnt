@@ -9,9 +9,6 @@ category = "Correctness"
 tags = ["pyspark", "join", "partition", "correctness", "determinism"]
 platform = "all"
 
-[context]
-type = "input_file_name_as_key"
-
 [tests]
 pass = [
     "df.withColumn('source_file', input_file_name())",
@@ -21,3 +18,10 @@ fail = [
     "df.withColumn('file_key', input_file_name()).join(other, 'file_key')",
     "df.withColumn('fname', input_file_name()).write.partitionBy('fname').save(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "input_file_name\\s*\\(")
+  (#match? @src "(?:\\.join\\s*\\(|\\.partitionBy\\s*\\()"))
+"""

@@ -104,16 +104,21 @@ pub fn run_graph_rules(
 }
 
 fn lang_matches(rule_lang: &str, source_lang: &str) -> bool {
-    rule_lang == "any" || rule_lang == source_lang
+    if rule_lang == "any" {
+        return true;
+    }
+    let rl = rule_lang.to_ascii_lowercase();
+    let sl = source_lang.to_ascii_lowercase();
+    rl == sl || (rl == "notebook" && sl == "python")
 }
 
 fn resolve_for_source(source: &str, language: &str) -> Option<ResolvedGraph> {
-    let graph = match language {
-        "python" | "py" => crate::graph::Graph::from_python(source).ok()?,
+    let graph = match language.to_ascii_lowercase().as_str() {
+        "python" | "py" | "notebook" => crate::graph::Graph::from_python(source).ok()?,
         "sql" => crate::graph::Graph::from_sql(source).ok()?,
         _ => return None,
     };
-    Some(ResolvedGraphBuilder::new(graph).build())
+    Some(ResolvedGraphBuilder::new(graph).with_source(source).build())
 }
 
 fn build_finding(rule: &CompiledRule, m: &DslMatch, resolved: &ResolvedGraph) -> Finding {
@@ -231,7 +236,6 @@ fn mutation_confidence(m: &FindingMutation) -> Option<Confidence> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::QueryPattern;
 
     fn make_rule(
         code: &str,
@@ -247,10 +251,7 @@ mod tests {
             description: format!("test rule {code}"),
             suggestion: "fix it".into(),
             category: "Test".into(),
-            patterns: Vec::<QueryPattern>::new(),
             tags: Vec::new(),
-            has_context: false,
-            has_dataflow: false,
             has_graph: true,
             graph_detect: detect.into(),
             graph_exclude: exclude.map(String::from),

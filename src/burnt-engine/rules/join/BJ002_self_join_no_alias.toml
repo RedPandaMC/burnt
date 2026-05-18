@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "join", "correctness"]
 platform = "all"
 
-[context]
-type = "self_join_no_alias"
-
 [tests]
 pass = [
     "left = df.alias('left')\nright = df.alias('right')\nleft.join(right, left.id == right.parent_id)",
@@ -21,3 +18,10 @@ fail = [
     "df.join(df, df.parent_id == df.id)",
     "employees.join(employees, employees.manager_id == employees.id)",
 ]
+
+[graph]
+detect = """
+(op:Shuffle @n
+  (ast/Call :method "join")
+  (#self-join? @n))
+"""

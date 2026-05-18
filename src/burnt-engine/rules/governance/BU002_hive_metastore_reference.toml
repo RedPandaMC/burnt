@@ -9,12 +9,6 @@ category = "Governance"
 tags = ["unity-catalog", "governance", "delta"]
 platform = "databricks"
 
-[query]
-detect = """
-((string) @s
- (#match? @s "hive_metastore"))
-"""
-
 [tests]
 pass = [
     "spark.read.table(\"my_catalog.my_schema.my_table\")",

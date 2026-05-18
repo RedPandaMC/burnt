@@ -9,9 +9,6 @@ category = "SqlQuality"
 tags = ["sql", "performance", "subquery"]
 platform = "all"
 
-[context]
-type = "correlated_subquery"
-
 [tests]
 pass = [
     "SELECT id FROM users WHERE status = 'active'",
@@ -22,3 +19,9 @@ fail = [
     "SELECT * FROM orders WHERE id NOT IN (SELECT order_id FROM items WHERE items.customer_id = orders.id)",
     "SELECT id FROM a WHERE val NOT IN (SELECT val FROM b WHERE b.group_id = a.group_id)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)NOT\\s+IN\\s*\\(\\s*SELECT.*WHERE"))
+"""

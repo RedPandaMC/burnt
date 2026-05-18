@@ -9,20 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "delta", "io"]
 platform = "delta"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @opt)
-  arguments: (argument_list
-    (string) @key
-    (string) @val)
-  (#eq? @opt "option")
-  (#match? @key "mergeSchema")
-  (#match? @val "true"))
-"""
-
 [tests]
 pass = [
     "df = spark.read.format(\"delta\").load(path)",
@@ -31,3 +17,9 @@ pass = [
 fail = [
     "df = spark.read.option(\"mergeSchema\", \"true\").format(\"delta\").load(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)mergeSchema[^\\n]*true"))
+"""

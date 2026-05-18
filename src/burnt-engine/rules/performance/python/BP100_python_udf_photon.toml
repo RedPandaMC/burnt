@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "udf", "photon", "databricks"]
 platform = "databricks"
 
-[context]
-type = "python_udf_photon"
-
 [tests]
 pass = [
     "df.select(upper(col('name')))",
@@ -21,3 +18,9 @@ fail = [
     "@udf(returnType=StringType())\ndef my_udf(x): return x.upper()",
     "my_fn = udf(lambda x: x * 2, IntegerType())",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?:@udf\\b|\\.udf\\.register\\s*\\(|\\budf\\s*\\()"))
+"""

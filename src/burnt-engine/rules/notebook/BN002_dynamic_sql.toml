@@ -9,5 +9,19 @@ category = "Notebook"
 tags = ["notebook", "security", "sql"]
 platform = "databricks"
 
-[context]
-type = "dynamic_sql"
+[tests]
+pass = [
+    "spark.sql('SELECT * FROM events WHERE date = :date')",
+]
+fail = [
+    "spark.sql(f'SELECT * FROM events WHERE date = {date}')",
+    "spark.sql('SELECT * FROM ' + table_name)",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#or
+    (#match? @src "spark\\.sql\\s*\\(\\s*f")
+    (#match? @src "spark\\.sql\\s*\\([^)]*\\+")))
+"""

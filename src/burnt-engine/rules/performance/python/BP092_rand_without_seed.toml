@@ -9,17 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "correctness"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @fn)
-  arguments: (argument_list) @args
-  (#match? @fn "^rand[n]?$")
-  (#not-match? @args "[a-zA-Z_]"))
-"""
-
 [tests]
 pass = [
     "F.rand(seed=42)",
@@ -29,3 +18,9 @@ fail = [
     "F.rand()",
     "F.randn()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\b(?:F\\.)?rand[n]?\\s*\\(\\s*\\)"))
+"""

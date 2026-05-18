@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["delta", "performance", "sql"]
 platform = "delta"
 
-[context]
-type = "merge_without_partition_predicate"
-
 [tests]
 pass = [
     "MERGE INTO target USING source ON target.date = source.date AND target.id = source.id WHEN MATCHED THEN UPDATE SET *",
@@ -19,3 +16,10 @@ pass = [
 fail = [
     "MERGE INTO events USING updates ON events.id = updates.id WHEN MATCHED THEN UPDATE SET *",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bMERGE\\s+INTO\\b")
+  (#not (#match? @src "(?i)\\bAND\\b")))
+"""

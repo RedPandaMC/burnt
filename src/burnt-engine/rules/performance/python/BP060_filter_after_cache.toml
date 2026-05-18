@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "cache", "filter", "performance"]
 platform = "all"
 
-[dataflow]
-type = "filter_after_cache"
-
 [tests]
 pass = [
     "cached_df = df.filter(col('x') > 10).cache()\nresult = cached_df.collect()",
@@ -20,3 +17,9 @@ fail = [
     "cached_df = df.cache()\nresult = cached_df.filter(col('x') > 10).collect()",
     "big_df = spark.read.parquet(path).cache()\nbig_df.filter('date > 2024').show()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.cache\\s*\\(\\s*\\)(?s:.*)\\.(?:filter|where)\\s*\\("))
+"""
