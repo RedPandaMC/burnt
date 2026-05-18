@@ -33,3 +33,11 @@ pass = [
 fail = [
     "spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", \"-1\")",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "set" :arg/0 @k :arg/1 @v)
+  (#eq? @k "spark.sql.autoBroadcastJoinThreshold")
+  (#eq? @v "-1"))
+"""

@@ -21,3 +21,10 @@ fail = [
     "df.writeStream.format('delta').start()",
     "df.writeStream.outputMode('append').format('delta').start()",
 ]
+
+[graph]
+detect = """
+(op:Write
+  (ast/Call :method "start")
+  (#not (#exists (op:Write (ast/Call :method "option" :arg/0 @k) (#eq? @k "checkpointLocation")))))
+"""

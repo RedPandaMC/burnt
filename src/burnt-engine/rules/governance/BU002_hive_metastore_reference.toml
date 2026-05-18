@@ -23,3 +23,13 @@ fail = [
     "spark.read.table(\"hive_metastore.default.orders\")",
     "df.write.saveAsTable(\"hive_metastore.analytics.results\")",
 ]
+
+[graph]
+detect = """
+(op:Any
+  (ast/Call :arg/0 @arg)
+  (#or
+    (#eq? (#method-of @__current) "table")
+    (#eq? (#method-of @__current) "saveAsTable"))
+  (#starts-with @arg "hive_metastore."))
+"""

@@ -29,3 +29,9 @@ pass = [
 fail = [
     "dbutils.fs.mount('s3://my-bucket', '/mnt/mydata')",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "mount"))
+"""

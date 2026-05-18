@@ -36,3 +36,9 @@ fail = [
     "df1.crossJoin(df2)",
 ]
 
+
+[graph]
+detect = """
+(op:Shuffle
+  (ast/Call :method "crossJoin"))
+"""

@@ -29,3 +29,10 @@ pass = [
 fail = [
     "df.writeStream.outputMode('complete').start()",
 ]
+
+[graph]
+detect = """
+(op:Write
+  (ast/Call :method "outputMode" :arg/0 @m)
+  (#eq? @m "complete"))
+"""

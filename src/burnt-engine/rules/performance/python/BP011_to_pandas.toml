@@ -49,3 +49,14 @@ fail = [
     "df.to_pandas()",
 ]
 
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call @call)
+  (#or
+    (#eq? (#method-of @__current) "toPandas")
+    (#eq? (#method-of @__current) "to_pandas"))
+  (#not-receiver-of @call "limit")
+  (#not-receiver-of @call "take"))
+"""

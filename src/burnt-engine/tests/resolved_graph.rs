@@ -24,6 +24,8 @@ fn read_node(id: &str, line: u32) -> Node {
         estimated_cost_usd: None,
         line_number: Some(line),
         source_code: None,
+        ast: None,
+        scope: Default::default(),
     }
 }
 

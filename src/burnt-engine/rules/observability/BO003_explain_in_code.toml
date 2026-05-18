@@ -27,3 +27,9 @@ fail = [
     "df.explain(True)",
     "df.explain(mode='extended')",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "explain"))
+"""

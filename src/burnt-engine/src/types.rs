@@ -258,6 +258,17 @@ pub struct Node {
     pub estimated_cost_usd: Option<f64>,
     pub line_number: Option<u32>,
     pub source_code: Option<String>,
+    /// Symbolic AST captured at parse time. The tree-sitter Tree this came
+    /// from is discarded after the builder finishes — `ast` is the only
+    /// AST surface rules will ever see. `None` only while builders catch
+    /// up to populating every shape (transitional).
+    #[serde(default)]
+    pub ast: Option<crate::resolved::AstShape>,
+    /// Scope facts (namespace, bindings, DAG ancestry, source order)
+    /// consumed by DSL predicates that today's Context/Dataflow rules
+    /// reach for via side channels.
+    #[serde(default)]
+    pub scope: crate::resolved::ScopeFacts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -423,6 +434,33 @@ pub struct CompiledRule {
     pub has_context: bool,
     #[serde(default)]
     pub has_dataflow: bool,
+    /// True iff the TOML carries a `[graph]` block. When set, the new
+    /// graph-DSL pipeline runs against this rule alongside (during
+    /// the migration bridge) or instead of (post-cutover) the legacy
+    /// `[query]` / `[context]` / `[dataflow]` paths.
+    #[serde(default)]
+    pub has_graph: bool,
+    /// `[graph].detect` S-expression source.
+    #[serde(default)]
+    pub graph_detect: String,
+    /// `[graph].exclude` S-expression source, if any.
+    #[serde(default)]
+    pub graph_exclude: Option<String>,
+    /// `[graph.finding].severity`. Overrides `severity` when set.
+    #[serde(default)]
+    pub graph_finding_severity: Option<String>,
+    /// `[graph.finding].confidence`. Default is "high" when unset.
+    #[serde(default)]
+    pub graph_finding_confidence: Option<String>,
+    /// `[graph.finding].message`. Defaults to `description`.
+    #[serde(default)]
+    pub graph_finding_message: Option<String>,
+    /// `[graph.finding].suggestion`. Defaults to `suggestion`.
+    #[serde(default)]
+    pub graph_finding_suggestion: Option<String>,
+    /// `[graph.finding].line` — capture-ref like "@call.line".
+    #[serde(default)]
+    pub graph_finding_line: Option<String>,
 }
 
 impl AnalysisMode {
@@ -501,6 +539,150 @@ impl From<TableRef> for PyTableRef {
     }
 }
 
+/// PyO3 read-only handle on an `AstShape`.
+///
+/// Designed for debugging and rule-author tooling — full structured access
+/// to the AST tree from Python would require a recursive pyclass forest
+/// PyO3 doesn't bridge cheaply. Instead we expose:
+///
+/// - `root_kind() -> str` — discriminator on the root variant.
+/// - `as_json() -> str` — the full shape serialised for inspection.
+/// - `method_chain() -> list[str] | None` — convenience when the root is a `Call`.
+///
+/// The DSL matcher consumes the Rust-side `AstShape` directly; this class
+/// exists for tests and for users writing migration scripts in Python.
+#[pyclass(name = "AstShape")]
+#[derive(Clone)]
+pub struct PyAstShape {
+    inner: crate::resolved::AstShape,
+}
+
+#[pymethods]
+impl PyAstShape {
+    fn root_kind(&self) -> &'static str {
+        match &self.inner.root {
+            crate::resolved::AstNode::Call(_) => "Call",
+            crate::resolved::AstNode::Decorator(_) => "Decorator",
+            crate::resolved::AstNode::Assignment(_) => "Assignment",
+            crate::resolved::AstNode::FunctionDef(_) => "FunctionDef",
+            crate::resolved::AstNode::SqlStatement(_) => "SqlStatement",
+            crate::resolved::AstNode::SqlExpression(_) => "SqlExpression",
+        }
+    }
+
+    /// Returns the dotted method chain when the root is a `Call`, otherwise `None`.
+    fn method_chain(&self) -> Option<Vec<String>> {
+        if let crate::resolved::AstNode::Call(c) = &self.inner.root {
+            Some(c.method_chain.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Full JSON dump of the AST shape — for tests and debugging.
+    fn as_json(&self) -> String {
+        serde_json::to_string(&self.inner).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("AstShape(root={})", self.root_kind())
+    }
+}
+
+impl From<crate::resolved::AstShape> for PyAstShape {
+    fn from(s: crate::resolved::AstShape) -> Self {
+        Self { inner: s }
+    }
+}
+
+/// PyO3 read-only handle on a `ScopeFacts` payload.
+///
+/// Exposes the fields rule authors and debugging tooling reach for from
+/// Python. The DSL matcher works against the Rust-side `ScopeFacts`
+/// directly.
+#[pyclass(name = "ScopeFacts")]
+#[derive(Clone)]
+pub struct PyScopeFacts {
+    inner: crate::resolved::ScopeFacts,
+}
+
+#[pymethods]
+impl PyScopeFacts {
+    /// Namespace name as a string (or `None` if unresolved). User-defined
+    /// namespaces surface as `"user:<name>"` so callers can distinguish
+    /// them from built-ins without an enum import.
+    #[getter]
+    fn namespace(&self) -> Option<String> {
+        use crate::resolved::Namespace;
+        self.inner.namespace.as_ref().map(|ns| match ns {
+            Namespace::Spark => "spark".into(),
+            Namespace::Dlt => "dlt".into(),
+            Namespace::Dp => "dp".into(),
+            Namespace::PandasOnSpark => "pandas_on_spark".into(),
+            Namespace::UserDefined(name) => format!("user:{name}"),
+            Namespace::Unknown => "unknown".into(),
+        })
+    }
+
+    /// `{var_name: static_node_id}` — bindings live in this scope.
+    #[getter]
+    fn bindings(&self) -> std::collections::HashMap<String, String> {
+        self.inner
+            .bindings
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+            .collect()
+    }
+
+    #[getter]
+    fn reads(&self) -> Vec<String> {
+        self.inner.reads.clone()
+    }
+
+    #[getter]
+    fn writes(&self) -> Vec<String> {
+        self.inner.writes.clone()
+    }
+
+    #[getter]
+    fn source_order(&self) -> u32 {
+        self.inner.source_order
+    }
+
+    #[getter]
+    fn ancestors(&self) -> Vec<String> {
+        self.inner
+            .ancestors
+            .iter()
+            .map(|x| x.as_str().to_string())
+            .collect()
+    }
+
+    #[getter]
+    fn descendants(&self) -> Vec<String> {
+        self.inner
+            .descendants
+            .iter()
+            .map(|x| x.as_str().to_string())
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ScopeFacts(namespace={:?}, source_order={}, descendants={})",
+            self.namespace(),
+            self.inner.source_order,
+            self.inner.descendants.len()
+        )
+    }
+}
+
+impl From<crate::resolved::ScopeFacts> for PyScopeFacts {
+    fn from(s: crate::resolved::ScopeFacts) -> Self {
+        Self { inner: s }
+    }
+}
+
 #[pyclass]
 #[derive(Clone)]
 pub struct PyNode {
@@ -526,6 +708,10 @@ pub struct PyNode {
     pub line_number: Option<u32>,
     #[pyo3(get)]
     pub source_code: Option<String>,
+    #[pyo3(get)]
+    pub ast: Option<PyAstShape>,
+    #[pyo3(get)]
+    pub scope: PyScopeFacts,
 }
 
 impl From<Node> for PyNode {
@@ -542,6 +728,8 @@ impl From<Node> for PyNode {
             estimated_cost_usd: n.estimated_cost_usd,
             line_number: n.line_number,
             source_code: n.source_code,
+            ast: n.ast.map(PyAstShape::from),
+            scope: PyScopeFacts::from(n.scope),
         }
     }
 }

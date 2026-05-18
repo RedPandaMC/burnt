@@ -30,3 +30,9 @@ fail = [
     "df.rdd.map(lambda r: r['a'] * 2)",
     "result = df.rdd.map(transform_fn).toDF()",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "map"))
+"""

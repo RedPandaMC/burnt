@@ -9,6 +9,8 @@ mod context;
 pub(crate) mod context_structs;
 mod dataflow;
 pub(crate) mod finding;
+pub mod graph_dsl;
+pub mod graph_pipeline;
 mod notebook_queries;
 mod query;
 mod registry {
@@ -80,6 +82,12 @@ impl RulePipeline {
         let mut dataflow_findings = self.execute_dataflow_rules(source, language);
         findings.append(&mut dataflow_findings);
 
+        // Fourth pass: graph-DSL rules. Coexists with the three legacy
+        // passes for the migration bridge state; commit 12 deletes the
+        // others and makes this the only path.
+        let mut graph_findings = graph_pipeline::run_graph_rules(source, language, &self.rules);
+        findings.append(&mut graph_findings);
+
         findings
     }
 
@@ -87,6 +95,13 @@ impl RulePipeline {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
+            // Migration gating: rules that own a [graph] block fire only
+            // through the graph_pipeline pass below. The legacy [query]
+            // entry stays in the TOML during the bridge state but is
+            // skipped here to avoid duplicate findings.
+            if rule.has_graph {
+                continue;
+            }
             if lang_matches(&rule.language, language) {
                 if let Ok(Some((line, col))) = self.test_rule_patterns(source, language, rule) {
                     findings.push(TypesFinding {
@@ -115,6 +130,9 @@ impl RulePipeline {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
+            if rule.has_graph {
+                continue;
+            }
             if rule.has_context && lang_matches(&rule.language, language) {
                 findings.extend(context::analyze_context_for_rule(
                     &rule.code, source, tracker,
@@ -129,6 +147,9 @@ impl RulePipeline {
         let mut findings = Vec::new();
 
         for rule in &self.rules {
+            if rule.has_graph {
+                continue;
+            }
             if rule.has_dataflow && lang_matches(&rule.language, language) {
                 findings.extend(dataflow::check_dataflow_rules(&rule.code, source));
             }
@@ -296,8 +317,12 @@ mod tests {
 
     #[test]
     fn test_rule_pipeline_fires_bp008() {
+        // BP008 has migrated to the [graph] block, so it now fires through
+        // graph_pipeline rather than execute_pattern_rules. The pipeline
+        // entry point execute() composes all passes — verify BP008 still
+        // surfaces end-to-end.
         let pipeline = RulePipeline::new();
-        let findings = pipeline.execute_pattern_rules("df.collect()", "python");
+        let findings = pipeline.execute("df.collect()", "python");
         assert!(findings.iter().any(|f| f.code == "BP008"));
     }
 }

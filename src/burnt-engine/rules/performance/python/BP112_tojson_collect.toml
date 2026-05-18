@@ -21,3 +21,12 @@ fail = [
     "rows = df.toJSON().collect()",
     "data = df.select('id').toJSON().collect()",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "collect" @call)
+  (#or
+    (#exists (op:Action (ast/Call :method "toJSON")))
+    (#exists (op:Any (ast/Call :method "toJSON")))))
+"""

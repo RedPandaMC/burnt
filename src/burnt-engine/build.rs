@@ -61,6 +61,7 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
     let query = value.get("query");
     let context = value.get("context");
     let dataflow = value.get("dataflow");
+    let graph = value.get("graph");
 
     let id = rule.get("id")?.as_str()?.to_string();
     let code = rule.get("code")?.as_str()?.to_string();
@@ -123,13 +124,45 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         None
     };
 
-    if !has_query && context.is_none() && dataflow.is_none() {
+    if !has_query && context.is_none() && dataflow.is_none() && graph.is_none() {
         eprintln!(
-            "Warning: Rule {} has no queries, context, or dataflow - skipping",
+            "Warning: Rule {} has no queries, context, dataflow, or graph - skipping",
             code
         );
         return None;
     }
+
+    let graph_detect: Option<String> = graph
+        .and_then(|g| g.get("detect"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string());
+    let graph_exclude: Option<String> = graph
+        .and_then(|g| g.get("exclude"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string());
+    let has_graph = graph_detect.is_some();
+
+    let graph_finding = graph.and_then(|g| g.get("finding"));
+    let graph_finding_severity: Option<String> = graph_finding
+        .and_then(|f| f.get("severity"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let graph_finding_confidence: Option<String> = graph_finding
+        .and_then(|f| f.get("confidence"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let graph_finding_message: Option<String> = graph_finding
+        .and_then(|f| f.get("message"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let graph_finding_suggestion: Option<String> = graph_finding
+        .and_then(|f| f.get("suggestion"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let graph_finding_line: Option<String> = graph_finding
+        .and_then(|f| f.get("line"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let severity_variant = match severity.to_lowercase().as_str() {
         "error" => "Error",
@@ -171,6 +204,24 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
 
     let has_context = if context.is_some() { "true" } else { "false" };
     let has_dataflow = if dataflow.is_some() { "true" } else { "false" };
+    let has_graph_bool = if has_graph { "true" } else { "false" };
+
+    fn opt_string_literal(opt: Option<&str>) -> String {
+        match opt {
+            Some(s) => format!(
+                "Some(\"{}\".to_string())",
+                s.replace('\\', "\\\\").replace('"', "\\\"")
+            ),
+            None => "None".to_string(),
+        }
+    }
+    let graph_detect_literal = escape(graph_detect.as_deref().unwrap_or(""));
+    let graph_exclude_literal = opt_string_literal(graph_exclude.as_deref());
+    let graph_severity_literal = opt_string_literal(graph_finding_severity.as_deref());
+    let graph_confidence_literal = opt_string_literal(graph_finding_confidence.as_deref());
+    let graph_message_literal = opt_string_literal(graph_finding_message.as_deref());
+    let graph_suggestion_literal = opt_string_literal(graph_finding_suggestion.as_deref());
+    let graph_line_literal = opt_string_literal(graph_finding_line.as_deref());
 
     let rule_code = format!(
         "CompiledRule {{\n\
@@ -185,11 +236,26 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
             patterns: {patterns},\n\
             has_context: {has_context},\n\
             has_dataflow: {has_dataflow},\n\
+            has_graph: {has_graph_bool},\n\
+            graph_detect: \"{graph_detect}\".to_string(),\n\
+            graph_exclude: {graph_exclude},\n\
+            graph_finding_severity: {graph_severity},\n\
+            graph_finding_confidence: {graph_confidence},\n\
+            graph_finding_message: {graph_message},\n\
+            graph_finding_suggestion: {graph_suggestion},\n\
+            graph_finding_line: {graph_line},\n\
         }}",
         desc = desc_escaped,
         suggestion = suggestion_escaped,
         tags = tags_str,
         patterns = patterns_str,
+        graph_detect = graph_detect_literal,
+        graph_exclude = graph_exclude_literal,
+        graph_severity = graph_severity_literal,
+        graph_confidence = graph_confidence_literal,
+        graph_message = graph_message_literal,
+        graph_suggestion = graph_suggestion_literal,
+        graph_line = graph_line_literal,
     );
 
     Some((rule_code, test_case))
