@@ -1,0 +1,8 @@
+---
+source: "../../tests/unit/rules/test_context_rules.rs"
+assertion_line: 172
+expression: snapshot_data
+---
+findings: []
+rule: BU001
+triggered: false

@@ -1,0 +1,10 @@
+---
+source: "../../tests/unit/rules/test_context_rules.rs"
+assertion_line: 104
+expression: snapshot_data
+---
+findings:
+  - code: BD010
+    message: "mode('overwrite') on a Delta table replaces the entire table — use replaceWhere to scope the overwrite to a partition"
+rule: BD010
+triggered: true
