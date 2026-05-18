@@ -28,3 +28,9 @@ fail = [
     "df.show(20)",
     "df.show(truncate=False)",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "show"))
+"""

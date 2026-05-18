@@ -131,6 +131,18 @@ impl PythonGraphBuilder {
             } else if call_text.contains(".collect")
                 || call_text.contains(".take")
                 || call_text.contains(".show")
+                || call_text.contains(".toPandas")
+                || call_text.contains(".to_pandas")
+                || call_text.contains(".toJSON")
+                || call_text.contains(".count(")
+                || call_text.contains(".count ")
+                || call_text.contains(".first(")
+                || call_text.contains(".head(")
+                || call_text.contains(".explain")
+                || call_text.contains(".foreach")
+                || call_text.contains(".foreachPartition")
+                || call_text.contains(".reduce(")
+                || call_text.contains(".aggregate(")
             {
                 (
                     OperationKind::Action,
@@ -139,7 +151,20 @@ impl PythonGraphBuilder {
                     false,
                     true,
                 )
-            } else if call_text.contains(".groupBy") || call_text.contains(".join") {
+            } else if call_text.contains(".groupBy")
+                || call_text.contains(".join")
+                || call_text.contains(".crossJoin")
+                || call_text.contains(".union")
+                || call_text.contains(".repartition")
+                || call_text.contains(".coalesce")
+                || call_text.contains(".orderBy")
+                || call_text.contains(".sort")
+                || call_text.contains(".window")
+                || call_text.contains(".distinct")
+                || call_text.contains(".dropDuplicates")
+                || call_text.contains(".intersect")
+                || call_text.contains(".except")
+            {
                 (
                     OperationKind::Shuffle,
                     ScalingBehavior::LinearWithCliff,
@@ -149,12 +174,46 @@ impl PythonGraphBuilder {
                 )
             } else if call_text.contains(".select")
                 || call_text.contains(".filter")
+                || call_text.contains(".where")
                 || call_text.contains(".withColumn")
+                || call_text.contains(".withColumns")
+                || call_text.contains(".drop(")
+                || call_text.contains(".alias")
+                || call_text.contains(".cast(")
+                || call_text.contains(".limit")
+                || call_text.contains(".sample")
+                || call_text.contains(".na.")
+                || call_text.contains(".fillna")
+                || call_text.contains(".dropna")
+                || call_text.contains(".replace")
             {
                 (
                     OperationKind::Transform,
                     ScalingBehavior::Linear,
                     true,
+                    false,
+                    false,
+                )
+            } else if call_text.contains(".cache")
+                || call_text.contains(".persist")
+                || call_text.contains(".unpersist")
+                || call_text.contains(".checkpoint")
+            {
+                (
+                    OperationKind::Maintenance,
+                    ScalingBehavior::Linear,
+                    false,
+                    false,
+                    false,
+                )
+            } else if call_text.contains(".udf(")
+                || call_text.contains(".pandas_udf")
+                || call_text.contains("udf(")
+            {
+                (
+                    OperationKind::UdfCall,
+                    ScalingBehavior::Linear,
+                    false,
                     false,
                     false,
                 )

@@ -89,12 +89,18 @@ fn match_pattern_at_root(pattern: &Pattern, resolved: &ResolvedGraph) -> Vec<Dsl
 }
 
 fn match_op_pattern(pattern: &Pattern, resolved: &ResolvedGraph) -> Vec<DslMatch> {
-    let target_kind = parse_op_kind(&pattern.head.kind);
+    // `op:Any` is a wildcard — matches every node regardless of kind.
+    // Useful for rules that want to drill into the AST shape without
+    // committing to a specific OperationKind classification.
+    let is_any = pattern.head.kind == "Any";
+    let target_kind = if is_any { None } else { parse_op_kind(&pattern.head.kind) };
     let mut out = Vec::new();
     for node in &resolved.graph().nodes {
-        if let Some(ref k) = target_kind {
-            if &node.kind != k {
-                continue;
+        if !is_any {
+            if let Some(ref k) = target_kind {
+                if &node.kind != k {
+                    continue;
+                }
             }
         }
         let mut captures: CaptureMap = CaptureMap::new();

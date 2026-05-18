@@ -40,3 +40,10 @@ fail = [
     "df.repartition(1, 'col')",
 ]
 
+
+[graph]
+detect = """
+(op:Shuffle
+  (ast/Call :method "repartition" :arg/0 @n)
+  (#eq? @n 1))
+"""

@@ -182,7 +182,16 @@ fn first_value<'a>(args: &'a [PredArg], ctx: &MatchCtx) -> Option<CaptureValue> 
 fn resolve_arg(arg: &PredArg, ctx: &MatchCtx) -> Option<CaptureValue> {
     match arg {
         PredArg::Value(v) => resolve_value(v, ctx),
-        _ => None,
+        // Allow (#method-of @x) and other value-extracting predicates
+        // to appear anywhere a value is expected. The matcher dispatches
+        // them through the registry; if they return a Value, we surface
+        // it; if Bool, we lift to CaptureValue::Bool.
+        PredArg::Predicate(p) => match evaluate_predicate(p, ctx) {
+            PredResult::Value(v) => Some(v),
+            PredResult::Bool(b) => Some(CaptureValue::Bool(b)),
+            _ => None,
+        },
+        PredArg::Pattern(_) => None,
     }
 }
 
@@ -1038,9 +1047,19 @@ fn pred_not_receiver_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     if chain.len() < 2 {
         return PredResult::Bool(true);
     }
-    // The receiver methods are everything except the leaf.
+    // Receiver tokens — everything before the leaf. When the receiver is
+    // itself a nested call expression (e.g. `df.limit(100)`), the chain
+    // element holds the raw source text; check whether the method name
+    // appears as a dotted method call inside it.
     let receivers = &chain[..chain.len() - 1];
-    PredResult::Bool(!receivers.iter().any(|m| m == &method_name))
+    let dotted = format!(".{method_name}(");
+    let bare = format!("{method_name}(");
+    let found = receivers.iter().any(|m| {
+        m == &method_name
+            || m.contains(&dotted)
+            || m.starts_with(&bare)
+    });
+    PredResult::Bool(!found)
 }
 
 /// `(#kwargs/missing @call ["a" "b" "c"])` — true iff *none* of the

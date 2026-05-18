@@ -44,3 +44,11 @@ fail = [
     "df.count()",
 ]
 
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "count" @call)
+  (#not-receiver-of @call "filter")
+  (#not-receiver-of @call "where"))
+"""

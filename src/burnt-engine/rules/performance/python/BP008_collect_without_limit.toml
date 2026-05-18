@@ -48,3 +48,11 @@ fail = [
     "df.collect()",
 ]
 
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "collect" @call)
+  (#not-receiver-of @call "limit")
+  (#not-receiver-of @call "take"))
+"""
