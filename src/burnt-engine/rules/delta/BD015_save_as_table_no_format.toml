@@ -27,3 +27,10 @@ fail = [
     "df.write.saveAsTable('mydb.mytable')",
     "df.write.mode('overwrite').saveAsTable('events')",
 ]
+
+[graph]
+detect = """
+(op:Write
+  (ast/Call :method "saveAsTable" @call)
+  (#not-receiver-of @call "format"))
+"""

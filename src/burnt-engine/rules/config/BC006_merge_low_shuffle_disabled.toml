@@ -33,3 +33,11 @@ pass = [
 fail = [
     "spark.conf.set(\"spark.databricks.delta.merge.enableLowShuffle\", \"false\")",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "set" :arg/0 @k :arg/1 @v)
+  (#eq? @k "spark.databricks.delta.merge.enableLowShuffle")
+  (#eq? @v "false"))
+"""

@@ -33,3 +33,10 @@ pass = [
 fail = [
     "spark.conf.set(\"spark.databricks.delta.schema.autoMerge.enabled\", \"true\")",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "set" :arg/0 @k)
+  (#eq? @k "spark.databricks.delta.schema.autoMerge.enabled"))
+"""

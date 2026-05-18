@@ -143,6 +143,13 @@ impl PythonGraphBuilder {
                 || call_text.contains(".foreachPartition")
                 || call_text.contains(".reduce(")
                 || call_text.contains(".aggregate(")
+                || call_text.contains(".conf.set")
+                || call_text.contains("spark.conf.set")
+                || call_text.contains(".createDataFrame")
+                || call_text.contains("spark.table(")
+                || call_text.contains(".saveAsTable")
+                || call_text.contains(".start(")
+                || call_text.contains("dbutils.")
             {
                 (
                     OperationKind::Action,
@@ -202,6 +209,16 @@ impl PythonGraphBuilder {
                 (
                     OperationKind::Maintenance,
                     ScalingBehavior::Linear,
+                    false,
+                    false,
+                    false,
+                )
+            } else if call_text.contains(".rdd") {
+                // .rdd access triggers a serialization fall-back; rules
+                // like BNT-A04 target it.
+                (
+                    OperationKind::Action,
+                    ScalingBehavior::StepFailure,
                     false,
                     false,
                     false,

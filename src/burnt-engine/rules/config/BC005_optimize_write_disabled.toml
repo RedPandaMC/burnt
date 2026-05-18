@@ -33,3 +33,11 @@ pass = [
 fail = [
     "spark.conf.set(\"spark.databricks.delta.optimizeWrite.enabled\", \"false\")",
 ]
+
+[graph]
+detect = """
+(op:Action
+  (ast/Call :method "set" :arg/0 @k :arg/1 @v)
+  (#eq? @k "spark.databricks.delta.optimizeWrite.enabled")
+  (#eq? @v "false"))
+"""
