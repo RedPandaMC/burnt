@@ -9,12 +9,6 @@ category = "Security"
 tags = ["security", "credentials", "jdbc"]
 platform = "all"
 
-[query]
-detect = """
-((string) @s
- (#match? @s "jdbc:.*password="))
-"""
-
 [tests]
 pass = [
     "url = 'jdbc:postgresql://host:5432/db'",

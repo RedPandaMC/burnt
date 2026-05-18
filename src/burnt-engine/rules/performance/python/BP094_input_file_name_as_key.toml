@@ -9,9 +9,6 @@ category = "Correctness"
 tags = ["pyspark", "join", "partition", "correctness", "determinism"]
 platform = "all"
 
-[context]
-type = "input_file_name_as_key"
-
 [tests]
 pass = [
     "df.withColumn('source_file', input_file_name())",

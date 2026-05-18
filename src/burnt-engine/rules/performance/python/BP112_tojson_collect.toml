@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "collect", "performance", "driver"]
 platform = "all"
 
-[context]
-type = "tojson_collect"
-
 [tests]
 pass = [
     "df.write.format('json').save(path)",

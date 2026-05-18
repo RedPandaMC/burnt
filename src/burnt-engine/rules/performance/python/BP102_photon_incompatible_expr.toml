@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "photon", "xml", "databricks"]
 platform = "databricks"
 
-[context]
-type = "photon_incompatible_expr"
-
 [tests]
 pass = [
     "df.select(from_json(col('data'), schema))",

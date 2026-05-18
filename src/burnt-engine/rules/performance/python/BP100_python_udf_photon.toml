@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "udf", "photon", "databricks"]
 platform = "databricks"
 
-[context]
-type = "python_udf_photon"
-
 [tests]
 pass = [
     "df.select(upper(col('name')))",

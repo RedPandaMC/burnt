@@ -16,9 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "memory", "caching"]
 platform = "all"
 
-[dataflow]
-type = "cache_lifecycle"
-
 [tests]
 pass = [
     "cached_df = df.cache()\nresult1 = cached_df.collect()\nresult2 = cached_df.count()\ncached_df.unpersist()",

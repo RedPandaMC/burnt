@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "delta", "write"]
 platform = "all"
 
-[context]
-type = "csv_json_analytical_write"
-
 [tests]
 pass = [
     "df.write.format('delta').save('/data/output')",

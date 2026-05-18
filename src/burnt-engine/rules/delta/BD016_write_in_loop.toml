@@ -9,32 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "delta", "loop", "performance"]
 platform = "all"
 
-[query]
-detect = """
-(for_statement
-  body: (block
-    (expression_statement
-      (call
-        function: (attribute
-          object: (attribute
-            object: (_)
-            attribute: (identifier) @write)
-          attribute: (_))
-        (#eq? @write "write")))))
-
-(for_statement
-  body: (block
-    (expression_statement
-      (assignment
-        right: (call
-          function: (attribute
-            object: (attribute
-              object: (_)
-              attribute: (identifier) @write2)
-            attribute: (_))
-          (#eq? @write2 "write"))))))
-"""
-
 [tests]
 pass = [
     "df.write.format('delta').save('/data/output')",

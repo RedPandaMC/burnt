@@ -16,33 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "udf", "performance"]
 platform = "all"
 
-[query]
-detect = """
-; Detects @udf decorator
-(decorator
-  (attribute
-    object: (identifier) @obj
-    attribute: (identifier) @attr)
-  (#eq? @obj "udf"))
-
-; Detects udf() function call
-(call
-  function: (identifier) @fn
-  (#eq? @fn "udf"))
-
-; Detects spark.udf.register() or similar module.udf.register() patterns
-(call
-  function: (attribute
-    object: (attribute
-      object: (identifier) @module
-      attribute: (identifier) @sub_attr)
-    attribute: (identifier) @register_fn)
-  (#eq? @module "spark")
-  (#eq? @sub_attr "udf")
-  (#eq? @register_fn "register"))
-"""
-
-
 [tests]
 pass = [
     "@pandas_udf(StringType()) def foo(s): return s",

@@ -9,9 +9,6 @@ category = "Governance"
 tags = ["unity-catalog", "governance", "sql"]
 platform = "databricks"
 
-[context]
-type = "two_part_table_name"
-
 [tests]
 pass = [
     "SELECT * FROM my_catalog.my_schema.my_table",

@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "structure"]
 platform = "databricks"
 
-[context]
-type = "missing_run_target"
-
 [tests]
 pass = [
     "# %run ./utils/helpers",

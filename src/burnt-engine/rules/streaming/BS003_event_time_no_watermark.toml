@@ -9,9 +9,6 @@ category = "Streaming"
 tags = ["pyspark", "streaming", "performance"]
 platform = "all"
 
-[context]
-type = "event_time_no_watermark"
-
 [tests]
 pass = [
     "df.withWatermark('timestamp', '5 minutes').groupBy(window('timestamp', '1 hour')).agg(count('*'))",

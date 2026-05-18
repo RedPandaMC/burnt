@@ -9,12 +9,6 @@ category = "Governance"
 tags = ["unity-catalog", "governance", "security"]
 platform = "databricks"
 
-[query]
-detect = """
-((string) @s
- (#match? @s "(dbfs:/(mnt|FileStore)|s3a?://|abfss://|gs://|wasbs?://)"))
-"""
-
 [tests]
 pass = [
     "path = '/Volumes/my_catalog/my_schema/my_volume/data'",

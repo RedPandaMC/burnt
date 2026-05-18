@@ -9,13 +9,6 @@ category = "NotebookStyle"
 tags = ["python", "style", "naming"]
 platform = "all"
 
-[query]
-detect = """
-(assignment
-  left: (identifier) @var
-  (#match? @var "^df[0-9]*$"))
-"""
-
 [tests]
 pass = [
     "orders_df = spark.read.table('orders')",

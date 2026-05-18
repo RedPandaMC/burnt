@@ -16,18 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "udf", "arrow"]
 platform = "all"
 
-[query]
-detect = """
-; Detects f.pandas_udf() call
-(call
-  function: (attribute
-    object: (identifier) @mod
-    attribute: (identifier) @udf_fn)
-  (#eq? @mod "f")
-  (#eq? @udf_fn "pandas_udf"))
-"""
-
-
 [tests]
 pass = [
     "df.select(count('id')).show()",

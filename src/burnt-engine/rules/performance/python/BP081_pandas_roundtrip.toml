@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "pandas", "performance"]
 platform = "all"
 
-[context]
-type = "pandas_roundtrip"
-
 [tests]
 pass = [
     "result = df.toPandas()",

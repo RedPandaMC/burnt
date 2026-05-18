@@ -9,19 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "shuffle"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (call
-      function: (attribute
-        object: (_)
-        attribute: (identifier) @inner))
-    attribute: (identifier) @outer)
-  (#eq? @inner @outer)
-  (#match? @inner "^(distinct|sort|orderBy|order_by)$"))
-"""
-
 [tests]
 pass = [
     "df.distinct().sort('id')",

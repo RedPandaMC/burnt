@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "cache", "filter", "performance"]
 platform = "all"
 
-[dataflow]
-type = "filter_after_cache"
-
 [tests]
 pass = [
     "cached_df = df.filter(col('x') > 10).cache()\nresult = cached_df.collect()",

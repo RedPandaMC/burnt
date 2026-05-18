@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "security", "sql"]
 platform = "databricks"
 
-[context]
-type = "dynamic_sql"
-
 [tests]
 pass = [
     "spark.sql('SELECT * FROM events WHERE date = :date')",

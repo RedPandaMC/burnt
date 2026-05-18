@@ -9,14 +9,6 @@ category = "NotebookStyle"
 tags = ["python", "style", "correctness"]
 platform = "all"
 
-[query]
-detect = """
-(subscript
-  value: (identifier) @obj
-  subscript: (string)
-  (#match? @obj "^df"))
-"""
-
 [tests]
 pass = [
     "result = F.col('column')",

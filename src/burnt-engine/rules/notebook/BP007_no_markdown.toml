@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "style", "documentation"]
 platform = "all"
 
-[context]
-type = "no_markdown"
-
 [tests]
 pass = [
     "# %md\n## My Section\nThis notebook loads data.",

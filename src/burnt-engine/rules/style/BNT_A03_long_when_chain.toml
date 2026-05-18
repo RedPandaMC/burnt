@@ -9,23 +9,6 @@ category = "Style"
 tags = ["pyspark", "style", "readability"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (call
-      function: (attribute
-        object: (call
-          function: (attribute
-            object: (_)
-            attribute: (identifier) @w3)
-          (#eq? @w3 "when"))
-        attribute: (identifier) @w2)
-      (#eq? @w2 "when"))
-    attribute: (identifier) @w1)
-  (#eq? @w1 "when"))
-"""
-
 [tests]
 pass = [
     "F.when(col('a') == 1, 'x').otherwise('y')",

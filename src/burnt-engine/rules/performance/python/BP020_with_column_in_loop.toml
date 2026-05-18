@@ -16,26 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "catalyst", "loop"]
 platform = "all"
 
-[query]
-detect = """
-(for_statement
-  body: (block
-    (expression_statement
-      (assignment
-        right: (call
-          function: (attribute
-            attribute: (identifier) @method)
-          (#eq? @method "withColumn"))))))
-
-(for_statement
-  body: (block
-    (expression_statement
-      (call
-        function: (attribute
-          attribute: (identifier) @method)
-        (#eq? @method "withColumn")))))
-"""
-
 [tests]
 pass = [
     "df.withColumns({'a': col('a') * 2, 'b': col('b') + 1})",

@@ -9,18 +9,6 @@ category = "Streaming"
 tags = ["pyspark", "streaming", "performance"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (string) @mode)
-  (#eq? @method "outputMode")
-  (#match? @mode "complete"))
-"""
-
 [tests]
 pass = [
     "df.writeStream.outputMode('append').start()",

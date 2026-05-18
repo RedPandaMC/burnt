@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "style", "structure"]
 platform = "databricks"
 
-[context]
-type = "missing_cell_type"
-
 [tests]
 pass = [
     "# %python\ndf = spark.read.table('events')",

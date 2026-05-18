@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "cost", "governance"]
 platform = "databricks"
 
-[context]
-type = "cluster_tag"
-
 [tests]
 pass = [
     "cluster_tags = {'team': 'data-eng', 'project': 'etl'}",

@@ -9,18 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "join", "correctness"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    . (_) .
-    (string) @cond)
-  (#eq? @method "join"))
-"""
-
 [tests]
 pass = [
     "df.join(other, col('df.id') == col('other.id'), 'left')",

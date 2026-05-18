@@ -9,19 +9,6 @@ category = "Performance"
 tags = ["pyspark", "join", "aqe", "broadcast"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @fn)
-  (#eq? @fn "broadcast"))
-
-(call
-  function: (identifier) @fn
-  (#eq? @fn "broadcast"))
-"""
-
 [tests]
 pass = [
     "df.join(other, 'id', 'left')",

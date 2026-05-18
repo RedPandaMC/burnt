@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["delta", "performance", "sql"]
 platform = "delta"
 
-[context]
-type = "optimize_without_where"
-
 [tests]
 pass = [
     "OPTIMIZE events WHERE date >= '2024-01-01'",

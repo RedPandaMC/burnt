@@ -9,14 +9,6 @@ category = "Performance"
 tags = ["pyspark", "performance", "rdd", "photon"]
 platform = "all"
 
-[query]
-detect = """
-((attribute
-  object: (_)
-  attribute: (identifier) @attr)
- (#eq? @attr "rdd"))
-"""
-
 [tests]
 pass = [
     "df.select(col('a'))",

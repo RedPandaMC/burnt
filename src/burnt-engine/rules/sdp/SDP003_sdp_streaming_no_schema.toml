@@ -9,16 +9,6 @@ category = "SDP"
 tags = ["sdp", "streaming", "schema"]
 platform = "databricks"
 
-[query]
-detect = """
-; Detect .readStream attribute access (streaming source without schema check)
-(attribute
-  object: (_) @obj
-  attribute: (identifier) @attr
-  (#eq? @attr "readStream"))
-"""
-
-
 [tests]
 pass = [
     "spark.read.format('delta').load(path)",

@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "streaming", "schema", "performance"]
 platform = "all"
 
-[context]
-type = "readstream_no_schema"
-
 [tests]
 pass = [
     "spark.readStream.schema(my_schema).format('json').load(path)",

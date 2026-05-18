@@ -9,9 +9,6 @@ category = "Correctness"
 tags = ["pyspark", "join", "correctness", "determinism"]
 platform = "all"
 
-[context]
-type = "monotonically_increasing_id_join"
-
 [tests]
 pass = [
     "df.withColumn('id', col('business_key'))",

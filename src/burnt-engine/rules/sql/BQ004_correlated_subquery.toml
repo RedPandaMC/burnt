@@ -9,9 +9,6 @@ category = "SqlQuality"
 tags = ["sql", "performance", "subquery"]
 platform = "all"
 
-[context]
-type = "correlated_subquery"
-
 [tests]
 pass = [
     "SELECT id FROM users WHERE status = 'active'",

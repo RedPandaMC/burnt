@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["python", "style", "readability"]
 platform = "all"
 
-[context]
-type = "long_line"
-
 [tests]
 pass = [
     "x = 1  # short line",

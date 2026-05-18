@@ -9,17 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "correctness", "performance"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list) @args
-  (#eq? @method "dropDuplicates")
-  (#not-match? @args "[a-zA-Z_]"))
-"""
-
 [tests]
 pass = [
     "df.dropDuplicates(subset=['id', 'email'])",

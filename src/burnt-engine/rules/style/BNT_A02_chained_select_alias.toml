@@ -9,9 +9,6 @@ category = "Style"
 tags = ["pyspark", "style", "readability"]
 platform = "all"
 
-[dataflow]
-type = "chained_select_alias"
-
 [tests]
 pass = [
     "df.select(col('a'), col('b'))",

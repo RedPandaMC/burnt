@@ -9,17 +9,6 @@ category = "Style"
 tags = ["pyspark", "style", "correctness"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (list_splat))
-  (#eq? @method "toDF"))
-"""
-
 [tests]
 pass = [
     "df.toDF('a', 'b', 'c')",

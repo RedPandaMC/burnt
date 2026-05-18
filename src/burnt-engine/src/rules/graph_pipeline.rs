@@ -236,7 +236,6 @@ fn mutation_confidence(m: &FindingMutation) -> Option<Confidence> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::QueryPattern;
 
     fn make_rule(
         code: &str,
@@ -252,10 +251,7 @@ mod tests {
             description: format!("test rule {code}"),
             suggestion: "fix it".into(),
             category: "Test".into(),
-            patterns: Vec::<QueryPattern>::new(),
             tags: Vec::new(),
-            has_context: false,
-            has_dataflow: false,
             has_graph: true,
             graph_detect: detect.into(),
             graph_exclude: exclude.map(String::from),

@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "caching"]
 platform = "all"
 
-[dataflow]
-type = "repeated_actions"
-
 [tests]
 pass = [
     "cached_df = df.cache()\nresult = cached_df.collect()\ncached_df.unpersist()",

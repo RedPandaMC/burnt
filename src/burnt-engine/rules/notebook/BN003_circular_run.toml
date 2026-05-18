@@ -9,9 +9,6 @@ category = "Notebook"
 tags = ["notebook", "structure", "correctness"]
 platform = "databricks"
 
-[context]
-type = "circular_run"
-
 [tests]
 pass = [
     "# %run ./utils/helpers",

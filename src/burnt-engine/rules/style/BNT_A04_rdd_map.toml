@@ -9,18 +9,6 @@ category = "Style"
 tags = ["pyspark", "performance", "rdd"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (attribute
-      object: (_)
-      attribute: (identifier) @rdd)
-    attribute: (identifier) @map)
-  (#eq? @rdd "rdd")
-  (#eq? @map "map"))
-"""
-
 [tests]
 pass = [
     "df.select(col('a') * 2)",

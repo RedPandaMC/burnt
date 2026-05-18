@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["python", "style", "readability"]
 platform = "all"
 
-[context]
-type = "cell_no_comment"
-
 [tests]
 pass = [
     "# %%\n# This cell loads data\ndf = spark.read.table('orders')\n# %%\n# This cell filters\nfiltered = df.filter(col('id') > 0)",

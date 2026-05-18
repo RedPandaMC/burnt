@@ -9,20 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "correctness", "io"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (keyword_argument
-      name: (identifier) @kw
-      value: (true)))
-  (#match? @method "^(csv|json)$")
-  (#eq? @kw "inferSchema"))
-"""
-
 [tests]
 pass = [
     "df = spark.read.schema(schema).csv(path)",

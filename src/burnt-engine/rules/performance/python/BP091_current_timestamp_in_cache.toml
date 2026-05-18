@@ -9,9 +9,6 @@ category = "Correctness"
 tags = ["pyspark", "cache", "correctness", "determinism"]
 platform = "all"
 
-[context]
-type = "current_timestamp_in_cache"
-
 [tests]
 pass = [
     "df.withColumn('ts', lit('2024-01-01')).cache()",

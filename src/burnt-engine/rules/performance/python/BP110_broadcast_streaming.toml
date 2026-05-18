@@ -9,9 +9,6 @@ category = "Correctness"
 tags = ["pyspark", "streaming", "broadcast", "correctness"]
 platform = "all"
 
-[context]
-type = "broadcast_streaming"
-
 [tests]
 pass = [
     "df.join(broadcast(small_static_df), 'id')",

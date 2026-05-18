@@ -9,17 +9,6 @@ category = "Testing"
 tags = ["pyspark", "testing", "hygiene"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (list))
-  (#eq? @method "createDataFrame"))
-"""
-
 [tests]
 pass = [
     "spark.read.table('catalog.schema.events')",

@@ -9,22 +9,6 @@ category = "Config"
 tags = ["pyspark", "sql", "correctness", "config"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (attribute
-      object: (identifier)
-      attribute: (identifier) @conf)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (string) @key
-    (_))
-  (#eq? @conf "conf")
-  (#eq? @method "set")
-  (#match? @key "spark\\.sql\\.legacy\\."))
-"""
-
 [tests]
 pass = [
     "spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")",

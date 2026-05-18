@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "withColumn", "performance"]
 platform = "all"
 
-[context]
-type = "single_withcolumn"
-
 [tests]
 pass = [
     "df.withColumns({'a': col('x') + 1, 'b': col('y') * 2})",

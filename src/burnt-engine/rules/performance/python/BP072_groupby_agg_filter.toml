@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "groupby", "filter", "performance"]
 platform = "all"
 
-[context]
-type = "groupby_agg_filter"
-
 [tests]
 pass = [
     "df.filter('age > 18').groupBy('dept').agg(count('*'))",

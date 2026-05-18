@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["delta", "performance", "sql"]
 platform = "databricks"
 
-[context]
-type = "too_many_cluster_keys"
-
 [tests]
 pass = [
     "CREATE TABLE t (a INT, b STRING) CLUSTER BY (a, b)",

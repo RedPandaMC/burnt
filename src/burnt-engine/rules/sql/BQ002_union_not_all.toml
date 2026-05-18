@@ -9,22 +9,6 @@ category = "SqlQuality"
 tags = ["sql", "performance", "dedup"]
 platform = "all"
 
-[query]
-detect = """
-; Detect UNION without ALL
-(union
-  operator: (operator) @op
-  (#eq? @op "UNION"))
-
-; Also detect set operation without ALL
-(set_operation
-  operator: (identifier) @op
-  (#eq? @op "UNION")
-  (keyword) @all
-  (#not-eq? @all "ALL"))
-"""
-
-
 [tests]
 pass = [
     "SELECT a FROM t UNION ALL SELECT a FROM s",

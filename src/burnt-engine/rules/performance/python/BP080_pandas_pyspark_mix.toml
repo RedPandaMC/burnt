@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "pandas", "performance"]
 platform = "all"
 
-[context]
-type = "pandas_pyspark_mix"
-
 [tests]
 pass = [
     "import pyspark.pandas as ps\ndf = ps.read_csv('data.csv')",

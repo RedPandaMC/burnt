@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "delta", "write", "databricks"]
 platform = "databricks"
 
-[context]
-type = "parquet_write_databricks"
-
 [tests]
 pass = [
     "df.write.format('delta').save(path)",

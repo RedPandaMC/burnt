@@ -9,15 +9,6 @@ category = "SqlQuality"
 tags = ["sql", "join", "cartesian"]
 platform = "all"
 
-[query]
-detect = """
-; Detect cross join (JOIN without ON clause)
-(join
-  condition: (nil) @no_condition
-  (#eq? @no_condition "nil"))
-"""
-
-
 [graph]
 detect = """
 (fact:source @src

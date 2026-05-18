@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "window", "shuffle"]
 platform = "all"
 
-[context]
-type = "window_partition"
-
 [tests]
 pass = [
     "window_spec = Window.orderBy('date').partitionBy('user_id')",

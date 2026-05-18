@@ -9,9 +9,6 @@ category = "Streaming"
 tags = ["pyspark", "streaming", "delta", "join"]
 platform = "all"
 
-[context]
-type = "stream_static_join_non_delta"
-
 [tests]
 pass = [
     "stream_df = spark.readStream.format('delta').load(path)\nstream_df.join(spark.read.format('delta').load(lookup_path), 'id')",

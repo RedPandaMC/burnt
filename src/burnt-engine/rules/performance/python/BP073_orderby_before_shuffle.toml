@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "orderby", "shuffle", "performance"]
 platform = "all"
 
-[context]
-type = "orderby_before_shuffle"
-
 [tests]
 pass = [
     "df.groupBy('dept').agg(count('*')).orderBy('count(1)')",
