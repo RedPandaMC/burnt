@@ -265,6 +265,17 @@ detect = """
 | `(#has-provenance @n "tag")` | True iff `@n`'s provenance tag matches |
 | `(#observed-bytes-gt @n N)` | True iff the observed byte count on `@n` exceeds N bytes |
 | `(#table-spec-size-gt @n N)` | True iff the TableSpec overlay on `@n` estimates more than N bytes |
+| `(#arg-is-dynamic @n :arg/N)` | True iff the Nth positional argument is a dynamically-constructed string — f-string, binary concatenation, `.format()`, `%`-format, or bare identifier |
+| `(#arg-kind-of @n :arg/N)` | Returns the argument variant name as a string: `"FString"`, `"BinaryOp"`, `"DotFormat"`, `"PercentFormat"`, `"Literal"`, `"Identifier"`, `"Call"`, `"Attribute"`, `"Unknown"` |
+
+```toml
+# Fires when spark.sql() receives any dynamically-constructed argument
+detect = """
+(op:Read @n
+  (ast/Call :method "sql")
+  (#arg-is-dynamic @n :arg/0))
+"""
+```
 
 ---
 

@@ -177,6 +177,12 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
     m.insert("shares-receiver", pred_shares_receiver_impl);
     m.insert("self-join?", pred_self_join);
 
+    // ------------------------------------------------------------------
+    // Dynamic-argument predicates (Issue #53)
+    // ------------------------------------------------------------------
+    m.insert("arg-is-dynamic", pred_arg_is_dynamic);
+    m.insert("arg-kind-of", pred_arg_kind_of);
+
     m
 }
 
@@ -1293,6 +1299,92 @@ fn pred_prop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         m.message_suffix = Some(format!("invariant '{description}' failed"));
     }
     PredResult::SetFinding(m)
+}
+
+// ----------------------------------------------------------------------
+// Dynamic-argument predicates
+// ----------------------------------------------------------------------
+
+/// `(#arg-is-dynamic @node :arg/0)` — true iff the Nth positional argument
+/// of the call node is a dynamically-constructed string (f-string, binary
+/// concatenation, .format(), %-format) or a bare identifier (variable
+/// reference that may carry a dynamic value at runtime).
+///
+/// Use this to detect `spark.sql(f"SELECT FROM {t}")` at the AST level
+/// rather than with a fragile source-text regex.
+fn pred_arg_is_dynamic(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    use crate::resolved::ast_shape::AstArg;
+    let arg = arg_at_index(args, ctx);
+    PredResult::Bool(matches!(
+        arg.as_deref(),
+        Some(
+            AstArg::FString { .. }
+                | AstArg::BinaryOp { .. }
+                | AstArg::DotFormat { .. }
+                | AstArg::PercentFormat { .. }
+                | AstArg::Identifier(_)
+        )
+    ))
+}
+
+/// `(#arg-kind-of @node :arg/0)` — returns the kind string of the Nth
+/// positional argument ("FString", "BinaryOp", "Literal", "Identifier",
+/// "DotFormat", "PercentFormat", "Call", "Attribute", "Unknown", …).
+///
+/// Used with `#eq?` to test specific argument shapes:
+/// `(#eq? (#arg-kind-of @n :arg/0) "FString")`
+fn pred_arg_kind_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    match arg_at_index(args, ctx) {
+        Some(arg) => {
+            let kind = crate::rules::graph_dsl::value::ast_arg_kind(&arg);
+            PredResult::Value(CaptureValue::String(std::sync::Arc::from(kind)))
+        }
+        None => PredResult::Value(CaptureValue::Nil),
+    }
+}
+
+/// Extract the `AstArg` at the positional index specified by the second
+/// argument (`@node` is first, `:arg/N` is second). The node is resolved
+/// from either a captured `Node` or `AstArg::Call` capture value.
+///
+/// Returns `None` when the node cannot be found or the index is out of range.
+fn arg_at_index(
+    args: &[PredArg],
+    ctx: &MatchCtx,
+) -> Option<Box<crate::resolved::ast_shape::AstArg>> {
+    use crate::resolved::ast_shape::{AstArg, AstNode};
+
+    let cap = first_value(args, ctx)?;
+    let call_node = match cap {
+        CaptureValue::Node(id) => {
+            let node = ctx
+                .resolved
+                .graph()
+                .nodes
+                .iter()
+                .find(|n| n.id == id.as_str())?;
+            match node.ast.as_ref().map(|s| &s.root) {
+                Some(AstNode::Call(c)) => c.clone(),
+                _ => return None,
+            }
+        }
+        CaptureValue::AstArg(a) => match *a {
+            AstArg::Call(c) => *c,
+            _ => return None,
+        },
+        _ => return None,
+    };
+
+    // Parse `:arg/N` from second predicate argument.
+    let idx: usize = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| v.as_str_value())
+        .as_deref()
+        .and_then(|s| s.trim_start_matches(":arg/").parse().ok())
+        .unwrap_or(0);
+
+    call_node.args.get(idx).map(|a| Box::new(a.clone()))
 }
 
 // ----------------------------------------------------------------------

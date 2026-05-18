@@ -1,27 +1,33 @@
 [rule]
-id = "dynamic_sql"
-code = "BN002"
-severity = "warning"
-language = "notebook"
-description = "Dynamic SQL construction detected - potential SQL injection risk"
-suggestion = "Use parameterized queries instead of string concatenation"
-category = "Notebook"
-tags = ["notebook", "security", "sql"]
-platform = "databricks"
+id          = "dynamic_sql"
+code        = "BN002"
+severity    = "warning"
+language    = "python"
+description = "Dynamic SQL construction passed to spark.sql() — query cannot be analysed statically and may be injectable"
+suggestion  = "Use a literal SQL string or parameterised query; avoid f-strings, concatenation, and .format()"
+category    = "Security"
+tags        = ["security", "sql", "dynamic", "injection"]
+platform    = "all"
 
 [tests]
 pass = [
     "spark.sql('SELECT * FROM events WHERE date = :date')",
+    "spark.sql(\"SELECT id FROM users LIMIT 100\")",
 ]
 fail = [
-    "spark.sql(f'SELECT * FROM events WHERE date = {date}')",
+    "spark.sql(f'SELECT * FROM {table}')",
     "spark.sql('SELECT * FROM ' + table_name)",
+    "spark.sql(query.format(table=t))",
+    "spark.sql(q % table)",
 ]
 
 [graph]
 detect = """
-(fact:source @src
-  (#or
-    (#match? @src "spark\\.sql\\s*\\(\\s*f")
-    (#match? @src "spark\\.sql\\s*\\([^)]*\\+")))
+(op:Read @n
+  (ast/Call :method "sql")
+  (#arg-is-dynamic @n :arg/0))
 """
+
+[graph.finding]
+confidence = "high"
+message    = "spark.sql() receives a dynamically-constructed string — the query cannot be statically analysed and may allow SQL injection"
