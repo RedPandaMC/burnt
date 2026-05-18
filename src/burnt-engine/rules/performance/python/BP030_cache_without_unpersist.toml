@@ -27,3 +27,10 @@ fail = [
     "cached_df = df.cache()\nresult = cached_df.collect()",
 ]
 
+
+[graph]
+detect = """
+(op:Maintenance
+  (ast/Call :method "cache")
+  (#not (#exists (op:Maintenance (ast/Call :method "unpersist")))))
+"""
