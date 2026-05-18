@@ -1,0 +1,12 @@
+---
+source: "../../tests/unit/rules/test_context_rules.rs"
+assertion_line: 132
+expression: snapshot_data
+---
+findings:
+  - code: BS001
+    message: writeStream without checkpointLocation loses all progress on restart — the stream reprocesses from the beginning
+  - code: BS001
+    message: writeStream without checkpointLocation loses all progress on restart — the stream reprocesses from the beginning
+rule: BS001
+triggered: true

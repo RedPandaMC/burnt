@@ -16,29 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "memory", "driver-bound"]
 platform = "all"
 
-[query]
-detect = """
-; Detect pandas DataFrame conversion
-(call
-  function: (attribute
-    object: (_) @df
-    attribute: (identifier) @method)
-  (#any-of? @method "toPandas" "to_pandas" "topandas"))
-"""
-exclude = """
-; Detects df.limit().toPandas() or df.take().toPandas() pattern (should be excluded)
-(call
-  function: (attribute
-    object: (call
-      function: (attribute
-        object: (_) @df
-        attribute: (identifier) @limit_method))
-    attribute: (identifier) @to_pandas_method)
-  (#any-of? @limit_method "limit" "take")
-  (#any-of? @to_pandas_method "toPandas" "to_pandas" "topandas"))
-"""
-
-
 [tests]
 pass = [
     "df.limit(100).toPandas()",

@@ -9,11 +9,6 @@ category = "Delta"
 tags = ["delta", "maintenance", "sql"]
 platform = "delta"
 
-[query]
-detect = """
-(keyword_vacuum) @vac
-"""
-
 [tests]
 pass = [
     "SELECT id FROM users WHERE status = 'active'",
@@ -23,3 +18,9 @@ fail = [
     "VACUUM my_table",
     "VACUUM my_table RETAIN 168 HOURS",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bVACUUM\\b"))
+"""

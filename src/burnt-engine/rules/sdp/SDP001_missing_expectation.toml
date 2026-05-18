@@ -16,19 +16,6 @@ category = "SDP"
 tags = ["sdp", "data-quality", "declarative"]
 platform = "databricks"
 
-[query]
-detect = """
-; Detects @dlt.table() decorator
-(decorator
-  (call
-    function: (attribute
-      object: (identifier) @module
-      attribute: (identifier) @func)
-    (#eq? @module "dlt")
-    (#eq? @func "table")))
-"""
-
-
 [tests]
 pass = [
     "def foo(): pass",
@@ -36,3 +23,9 @@ pass = [
 fail = [
     "@dlt.table()\ndef foo(): pass",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "@dlt\\.table\\s*\\("))
+"""

@@ -58,9 +58,6 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
     let value: toml::Value = toml::from_str(content).ok()?;
 
     let rule = value.get("rule")?;
-    let query = value.get("query");
-    let context = value.get("context");
-    let dataflow = value.get("dataflow");
     let graph = value.get("graph");
 
     let id = rule.get("id")?.as_str()?.to_string();
@@ -84,17 +81,10 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         })
         .unwrap_or_default();
 
-    let detect_pattern: Option<String> = query
-        .and_then(|q| q.get("detect"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string());
-
-    let exclude_pattern: Option<String> = query
-        .and_then(|q| q.get("exclude"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string());
-
-    let has_query = detect_pattern.is_some();
+    let requires_catalog: bool = rule
+        .get("requires_catalog")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let pass_tests: Vec<String> = value
         .get("tests")
@@ -124,11 +114,8 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         None
     };
 
-    if !has_query && context.is_none() && dataflow.is_none() && graph.is_none() {
-        eprintln!(
-            "Warning: Rule {} has no queries, context, dataflow, or graph - skipping",
-            code
-        );
+    if graph.is_none() {
+        eprintln!("Warning: Rule {} has no [graph] block - skipping", code);
         return None;
     }
 
@@ -174,21 +161,6 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         s.replace('\\', "\\\\").replace('"', "\\\"")
     }
 
-    let mut pattern_entries: Vec<String> = Vec::new();
-    if let Some(p) = &detect_pattern {
-        let esc = escape(p);
-        pattern_entries.push(format!(
-            "QueryPattern {{ match_pattern: \"{esc}\".to_string(), is_negative: false }}"
-        ));
-    }
-    if let Some(p) = &exclude_pattern {
-        let esc = escape(p);
-        pattern_entries.push(format!(
-            "QueryPattern {{ match_pattern: \"{esc}\".to_string(), is_negative: true }}"
-        ));
-    }
-    let patterns_str = format!("vec![{}]", pattern_entries.join(", "));
-
     let tags_str = if tags.is_empty() {
         String::from("vec![]")
     } else {
@@ -202,9 +174,8 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
     let desc_escaped = escape(&desc);
     let suggestion_escaped = escape(suggestion);
 
-    let has_context = if context.is_some() { "true" } else { "false" };
-    let has_dataflow = if dataflow.is_some() { "true" } else { "false" };
     let has_graph_bool = if has_graph { "true" } else { "false" };
+    let has_catalog_bool = if requires_catalog { "true" } else { "false" };
 
     fn opt_string_literal(opt: Option<&str>) -> String {
         match opt {
@@ -233,10 +204,8 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
             suggestion: \"{suggestion}\".to_string(),\n\
             category: \"{category}\".to_string(),\n\
             tags: {tags},\n\
-            patterns: {patterns},\n\
-            has_context: {has_context},\n\
-            has_dataflow: {has_dataflow},\n\
             has_graph: {has_graph_bool},\n\
+            has_catalog: {has_catalog_bool},\n\
             graph_detect: \"{graph_detect}\".to_string(),\n\
             graph_exclude: {graph_exclude},\n\
             graph_finding_severity: {graph_severity},\n\
@@ -248,7 +217,6 @@ fn parse_rule_file(content: &str) -> RuleParseResult {
         desc = desc_escaped,
         suggestion = suggestion_escaped,
         tags = tags_str,
-        patterns = patterns_str,
         graph_detect = graph_detect_literal,
         graph_exclude = graph_exclude_literal,
         graph_severity = graph_severity_literal,
@@ -266,7 +234,7 @@ fn generate_registry_code(rules: &[String]) -> String {
 
     format!(
         "use std::sync::OnceLock;\n\
-         use crate::types::{{RuleEntry, Severity, CompiledRule, QueryPattern}};\n\
+         use crate::types::{{RuleEntry, Severity, CompiledRule}};\n\
          \n\
          static REGISTRY_CACHE: OnceLock<Vec<RuleEntry>> = OnceLock::new();\n\
          static COMPILED_RULES_CACHE: OnceLock<Vec<CompiledRule>> = OnceLock::new();\n\

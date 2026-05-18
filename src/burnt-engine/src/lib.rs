@@ -6,6 +6,7 @@
 
 use pyo3::prelude::*;
 
+pub mod catalog;
 pub mod detect;
 pub mod graph;
 pub mod ingestion;
@@ -76,6 +77,39 @@ fn run_rules(source: &str, language: Option<&str>) -> PyResult<Vec<types::Findin
         Some(l) => l,
     };
     rules::run(source, lang).map_err(pyo3::exceptions::PyRuntimeError::new_err)
+}
+
+/// Runs all applicable lint rules against `source`, enriching table specs from
+/// the Databricks Unity Catalog REST API when `catalog_url` is provided.
+///
+/// When `catalog_url` is `None` the call is identical to `run_rules`. When
+/// provided, it enables rules marked `requires_catalog = true` — these rules
+/// fire only when table schemas or properties are available from the catalog.
+#[pyfunction]
+#[pyo3(signature = (source, language=None, catalog_url=None, catalog_token=None))]
+fn run_rules_with_catalog(
+    py: Python<'_>,
+    source: &str,
+    language: Option<&str>,
+    catalog_url: Option<&str>,
+    catalog_token: Option<&str>,
+) -> PyResult<Vec<types::Finding>> {
+    let lang = match language {
+        Some("auto") | None => detect_mode_from_source(source).as_lang_str(),
+        Some(l) => l,
+    };
+    py.allow_threads(|| {
+        if let Some(url) = catalog_url {
+            let all_rules = rules::load_all_compiled();
+            let client =
+                catalog::databricks::DatabricksCatalogClient::new(url, catalog_token);
+            Ok(rules::graph_pipeline::run_graph_rules_with_catalog(
+                source, lang, &all_rules, &client,
+            ))
+        } else {
+            rules::run(source, lang).map_err(pyo3::exceptions::PyRuntimeError::new_err)
+        }
+    })
 }
 
 /// Returns metadata for every rule in the registry.
@@ -220,6 +254,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(check, m)?)?;
     m.add_function(wrap_pyfunction!(run_rules, m)?)?;
+    m.add_function(wrap_pyfunction!(run_rules_with_catalog, m)?)?;
     m.add_function(wrap_pyfunction!(list_rules, m)?)?;
     m.add_function(wrap_pyfunction!(get_registry_count, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_source, m)?)?;

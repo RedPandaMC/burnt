@@ -103,6 +103,7 @@ pub struct ResolvedGraphBuilder {
     graph: Graph,
     stages: Vec<RawStage>,
     plan_bundles: Vec<PlanBundle>,
+    source_text: Option<String>,
 }
 
 impl ResolvedGraphBuilder {
@@ -112,7 +113,15 @@ impl ResolvedGraphBuilder {
             graph,
             stages: Vec::new(),
             plan_bundles: Vec::new(),
+            source_text: None,
         }
+    }
+
+    /// Attach raw source text so `fact:source` DSL patterns can scan it.
+    #[must_use]
+    pub fn with_source(mut self, source: &str) -> Self {
+        self.source_text = Some(source.to_string());
+        self
     }
 
     #[must_use]
@@ -207,7 +216,12 @@ impl ResolvedGraphBuilder {
             }
         }
 
-        ResolvedGraph::from_parts(self.graph, overlays, HashMap::new(), unmatched)
+        let resolved = ResolvedGraph::from_parts(self.graph, overlays, HashMap::new(), unmatched);
+        if let Some(src) = self.source_text.as_deref() {
+            resolved.with_source_text(src)
+        } else {
+            resolved
+        }
     }
 }
 

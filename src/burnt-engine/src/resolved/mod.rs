@@ -46,6 +46,7 @@ pub mod python;
 pub mod scope_facts;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::graph::Graph;
 use crate::types::TableRef;
@@ -65,7 +66,11 @@ pub use scope_facts::{populate_dag_facts, Namespace, ScopeFacts};
 /// Owned by the Python enrichment layer (`DESCRIBE TABLE EXTENDED`); attached
 /// to a resolved graph through [`ResolvedGraph::with_table_specs`] so all
 /// three signals (static / plan / stage / table-spec) live in one type.
-#[derive(Debug, Clone)]
+///
+/// The `schema` and `table_properties` fields are populated by the Rust-side
+/// [`CatalogClient`] enrichment pass (`run_graph_rules_with_catalog`) and are
+/// not exposed to Python — the Python layer only supplies the size/count fields.
+#[derive(Debug, Clone, Default)]
 pub struct TableSpec {
     pub fqn: String,
     pub size_bytes: Option<u64>,
@@ -76,6 +81,10 @@ pub struct TableSpec {
     pub location: Option<String>,
     pub is_managed: Option<bool>,
     pub partition_columns: Vec<String>,
+    /// Column schema fetched from the Unity Catalog REST API.
+    pub schema: Option<crate::catalog::TableSchema>,
+    /// Delta / Hive table properties fetched from the Unity Catalog REST API.
+    pub table_properties: std::collections::HashMap<String, String>,
 }
 
 /// Canonical static graph fused with runtime overlays.
@@ -95,6 +104,8 @@ pub struct ResolvedGraph {
     overlays: HashMap<StaticNodeId, NodeOverlay>,
     table_specs: HashMap<String, TableSpec>,
     unmatched: Unmatched,
+    /// Raw source text stored for `fact:source` DSL patterns.
+    source_text: Option<Arc<str>>,
 }
 
 impl ResolvedGraph {
@@ -111,7 +122,22 @@ impl ResolvedGraph {
             overlays,
             table_specs,
             unmatched,
+            source_text: None,
         }
+    }
+
+    /// Attach the raw source text for `fact:source` DSL patterns.
+    #[must_use]
+    pub(crate) fn with_source_text(mut self, source: &str) -> Self {
+        self.source_text = Some(Arc::from(source));
+        self
+    }
+
+    /// Return the raw source text if available.
+    #[inline]
+    #[must_use]
+    pub fn source_text(&self) -> Option<&str> {
+        self.source_text.as_deref()
     }
 
     /// Reference to the canonical static graph.

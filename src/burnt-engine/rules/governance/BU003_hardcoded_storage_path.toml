@@ -9,12 +9,6 @@ category = "Governance"
 tags = ["unity-catalog", "governance", "security"]
 platform = "databricks"
 
-[query]
-detect = """
-((string) @s
- (#match? @s "(dbfs:/(mnt|FileStore)|s3a?://|abfss://|gs://|wasbs?://)"))
-"""
-
 [tests]
 pass = [
     "path = '/Volumes/my_catalog/my_schema/my_volume/data'",
@@ -25,3 +19,9 @@ fail = [
     "path = 's3://my-bucket/prefix/data.parquet'",
     "path = 'abfss://container@account.dfs.core.windows.net/path'",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(dbfs:/(mnt|FileStore)|s3a?://|abfss://|gs://|wasbs?://)"))
+"""

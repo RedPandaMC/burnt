@@ -9,9 +9,6 @@ category = "Streaming"
 tags = ["pyspark", "streaming", "databricks"]
 platform = "databricks"
 
-[context]
-type = "readstream_no_trigger"
-
 [tests]
 pass = [
     "df.readStream.format('delta').load(path).trigger(processingTime='1 minute').writeStream.start()",
@@ -21,3 +18,12 @@ fail = [
     "spark.readStream.format('delta').load(path).writeStream.outputMode('append').start()",
     "df.readStream.option('header', 'true').load().writeStream.start()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "writeStream")
+  (#match? @src "\\.start\\s*\\(")
+  (#not (#match? @src "\\.trigger\\s*\\(")))
+"""

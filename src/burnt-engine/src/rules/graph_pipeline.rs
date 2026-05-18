@@ -8,9 +8,11 @@
 //! (via `ResolvedGraphBuilder` — no session), runs every rule whose
 //! `[graph]` block matches, and returns the findings.
 
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use crate::resolved::{ResolvedGraph, ResolvedGraphBuilder};
+use crate::catalog::CatalogClient;
+use crate::resolved::{ResolvedGraph, ResolvedGraphBuilder, TableSpec};
 use crate::rules::finding::make_finding;
 use crate::rules::graph_dsl::context::FindingMutation;
 use crate::rules::graph_dsl::matcher::{run_pattern, DslMatch};
@@ -75,6 +77,9 @@ fn compile_for(rule: &CompiledRule) -> Option<Arc<CompiledPatterns>> {
 /// Builds the resolved graph internally with no session overlay
 /// (static-only path). Per-rule patterns are compiled lazily and
 /// cached for the lifetime of the process.
+///
+/// Rules marked `has_catalog = true` are **skipped** on this path; use
+/// [`run_graph_rules_with_catalog`] to evaluate them.
 #[must_use]
 pub fn run_graph_rules(
     source: &str,
@@ -84,6 +89,36 @@ pub fn run_graph_rules(
     let Some(resolved) = resolve_for_source(source, language) else {
         return Vec::new();
     };
+    run_rules_on_resolved(&resolved, language, rules, false)
+}
+
+/// Run graph rules with catalog enrichment.
+///
+/// Fetches table schemas and properties for every table referenced in the
+/// graph, stores them in the resolved graph's `TableSpec` overlay, then
+/// evaluates **all** applicable rules — including those with
+/// `requires_catalog = true`.
+#[must_use]
+pub fn run_graph_rules_with_catalog(
+    source: &str,
+    language: &str,
+    rules: &[CompiledRule],
+    catalog: &dyn CatalogClient,
+) -> Vec<Finding> {
+    let Some(resolved) = resolve_for_source(source, language) else {
+        return Vec::new();
+    };
+    let enriched_specs = enrich_specs_from_catalog(&resolved, catalog);
+    let resolved = resolved.with_table_specs(enriched_specs);
+    run_rules_on_resolved(&resolved, language, rules, true)
+}
+
+fn run_rules_on_resolved(
+    resolved: &ResolvedGraph,
+    language: &str,
+    rules: &[CompiledRule],
+    include_catalog_rules: bool,
+) -> Vec<Finding> {
     let mut out = Vec::new();
     for rule in rules {
         if !rule.has_graph {
@@ -92,28 +127,63 @@ pub fn run_graph_rules(
         if !lang_matches(&rule.language, language) {
             continue;
         }
+        if rule.has_catalog && !include_catalog_rules {
+            continue;
+        }
         let Some(patterns) = compile_for(rule) else {
             continue;
         };
-        let matches = run_pattern(&patterns.detect, patterns.exclude.as_ref(), &resolved);
+        let matches = run_pattern(&patterns.detect, patterns.exclude.as_ref(), resolved);
         for m in matches {
-            out.push(build_finding(rule, &m, &resolved));
+            out.push(build_finding(rule, &m, resolved));
         }
     }
     out
 }
 
+fn enrich_specs_from_catalog(
+    resolved: &ResolvedGraph,
+    catalog: &dyn CatalogClient,
+) -> HashMap<String, TableSpec> {
+    let mut specs: HashMap<String, TableSpec> = resolved
+        .table_specs()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    for tref in resolved.distinct_table_refs() {
+        let fqn = tref.fqn();
+        let entry = specs.entry(fqn.clone()).or_insert_with(|| TableSpec {
+            fqn: fqn.clone(),
+            ..TableSpec::default()
+        });
+        if entry.schema.is_none() {
+            entry.schema = catalog.get_schema(&fqn);
+        }
+        if entry.table_properties.is_empty() {
+            if let Some(props) = catalog.get_table_properties(&fqn) {
+                entry.table_properties = props;
+            }
+        }
+    }
+    specs
+}
+
 fn lang_matches(rule_lang: &str, source_lang: &str) -> bool {
-    rule_lang == "any" || rule_lang == source_lang
+    if rule_lang == "any" {
+        return true;
+    }
+    let rl = rule_lang.to_ascii_lowercase();
+    let sl = source_lang.to_ascii_lowercase();
+    rl == sl || (rl == "notebook" && sl == "python")
 }
 
 fn resolve_for_source(source: &str, language: &str) -> Option<ResolvedGraph> {
-    let graph = match language {
-        "python" | "py" => crate::graph::Graph::from_python(source).ok()?,
+    let graph = match language.to_ascii_lowercase().as_str() {
+        "python" | "py" | "notebook" => crate::graph::Graph::from_python(source).ok()?,
         "sql" => crate::graph::Graph::from_sql(source).ok()?,
         _ => return None,
     };
-    Some(ResolvedGraphBuilder::new(graph).build())
+    Some(ResolvedGraphBuilder::new(graph).with_source(source).build())
 }
 
 fn build_finding(rule: &CompiledRule, m: &DslMatch, resolved: &ResolvedGraph) -> Finding {
@@ -231,7 +301,6 @@ fn mutation_confidence(m: &FindingMutation) -> Option<Confidence> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::QueryPattern;
 
     fn make_rule(
         code: &str,
@@ -247,11 +316,9 @@ mod tests {
             description: format!("test rule {code}"),
             suggestion: "fix it".into(),
             category: "Test".into(),
-            patterns: Vec::<QueryPattern>::new(),
             tags: Vec::new(),
-            has_context: false,
-            has_dataflow: false,
             has_graph: true,
+            has_catalog: false,
             graph_detect: detect.into(),
             graph_exclude: exclude.map(String::from),
             graph_finding_severity: None,

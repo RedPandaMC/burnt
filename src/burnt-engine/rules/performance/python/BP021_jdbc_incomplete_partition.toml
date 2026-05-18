@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "jdbc", "performance"]
 platform = "all"
 
-[context]
-type = "jdbc_partition"
-
 [tests]
 pass = [
     "df = spark.read.jdbc('jdbc:mysql://host/db', 'table', partitionColumn='id', numPartitions=10, lowerBound=0, upperBound=1000)",
@@ -22,3 +19,10 @@ fail = [
     "df = spark.read.option('driver', 'com.mysql.Driver').jdbc('jdbc:postgresql://host/db')",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.jdbc\\s*\\(")
+  (#not (#match? @src "partitionColumn")))
+"""

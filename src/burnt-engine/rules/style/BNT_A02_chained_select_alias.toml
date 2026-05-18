@@ -9,9 +9,6 @@ category = "Style"
 tags = ["pyspark", "style", "readability"]
 platform = "all"
 
-[dataflow]
-type = "chained_select_alias"
-
 [tests]
 pass = [
     "df.select(col('a'), col('b'))",
@@ -21,3 +18,9 @@ fail = [
     "df.select(col('a').alias('x')).select(col('x').alias('y')).select(col('y').alias('z'))",
     "df.select(col('col1').alias('a')).select(col('a').alias('b')).select(col('b').alias('c'))",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.alias\\s*\\([^)]*\\)\\s*\\)\\.select\\s*\\("))
+"""

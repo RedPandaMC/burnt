@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["delta", "performance", "sql"]
 platform = "delta"
 
-[context]
-type = "convert_to_delta_no_optimize"
-
 [tests]
 pass = [
     "CONVERT TO DELTA parquet.`/path/to/data`;\nOPTIMIZE my_table",
@@ -19,3 +16,10 @@ pass = [
 fail = [
     "CONVERT TO DELTA parquet.`/path/to/data`",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bCONVERT\\s+TO\\s+DELTA\\b")
+  (#not (#match? @src "(?i)\\bOPTIMIZE\\b")))
+"""

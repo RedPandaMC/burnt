@@ -9,14 +9,6 @@ category = "NotebookStyle"
 tags = ["python", "style", "correctness"]
 platform = "all"
 
-[query]
-detect = """
-(subscript
-  value: (identifier) @obj
-  subscript: (string)
-  (#match? @obj "^df"))
-"""
-
 [tests]
 pass = [
     "result = F.col('column')",
@@ -28,3 +20,9 @@ fail = [
     "val = df[\"column\"]",
     "val = df1['column']",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bdf\\d*\\s*\\[\\s*[a-zA-Z_'\\x22]"))
+"""

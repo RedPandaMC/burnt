@@ -9,9 +9,6 @@ category = "Streaming"
 tags = ["pyspark", "streaming", "correctness"]
 platform = "all"
 
-[context]
-type = "writestream_no_checkpoint"
-
 [tests]
 pass = [
     "df.writeStream.option('checkpointLocation', '/tmp/ckpt').start()",

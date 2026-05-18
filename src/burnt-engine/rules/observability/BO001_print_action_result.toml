@@ -9,19 +9,6 @@ category = "Observability"
 tags = ["pyspark", "observability", "logging"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (identifier) @fn
-  arguments: (argument_list
-    (call
-      function: (attribute
-        object: (_)
-        attribute: (identifier) @action)))
-  (#eq? @fn "print")
-  (#match? @action "^(collect|count|first|take|toPandas|toLocalIterator)$"))
-"""
-
 [tests]
 pass = [
     "logging.info(df.count())",
@@ -33,3 +20,9 @@ fail = [
     "print(df.count())",
     "print(df.first())",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "print\\s*\\([^)]*\\.(collect|count|first|take|toPandas|toLocalIterator)\\s*\\("))
+"""

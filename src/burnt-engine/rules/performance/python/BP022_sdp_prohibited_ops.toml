@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "sdp", "dlt"]
 platform = "databricks"
 
-[context]
-type = "sdp_prohibited_ops"
-
 [tests]
 pass = [
     "@sdp.table\ndef my_table():\n    return spark.read.table('source')",
@@ -22,3 +19,9 @@ fail = [
     "sdp.table.show(df)",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bsdp\\.(?:collect|table\\.show)\\s*\\("))
+"""

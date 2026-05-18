@@ -16,22 +16,6 @@ category = "SqlQuality"
 tags = ["sql", "performance", "select-star"]
 platform = "all"
 
-[query]
-detect = """
-; Match SELECT * via all_fields
-(select
-  (select_expression
-    (term
-      (all_fields))))
-"""
-exclude = """
-; Exclude SELECT * when LIMIT is present anywhere in the FROM clause
-; The FROM node contains both the table and the WHERE/LIMIT clauses
-(from
-  (limit))
-"""
-
-
 [tests]
 pass = [
     "SELECT id, name FROM users LIMIT 100",
@@ -42,3 +26,10 @@ fail = [
     "SELECT * FROM users",
     "SELECT * FROM users WHERE id = 1",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bSELECT\\s+\\*")
+  (#not (#match? @src "(?i)\\bLIMIT\\b")))
+"""

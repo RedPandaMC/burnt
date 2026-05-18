@@ -9,5 +9,16 @@ category = "Notebook"
 tags = ["notebook", "cost", "governance"]
 platform = "databricks"
 
-[context]
-type = "cluster_tag"
+[tests]
+pass = [
+    "cluster_tags = {'team': 'data-eng', 'project': 'etl'}",
+]
+fail = [
+    "spark.read.table('events')",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#not (#match? @src "cluster_tags")))
+"""

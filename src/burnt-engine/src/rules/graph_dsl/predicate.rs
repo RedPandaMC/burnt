@@ -168,6 +168,27 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
     m.insert("kwargs/missing", pred_kwargs_missing);
     m.insert("kwargs/has", pred_kwargs_has);
 
+    // ------------------------------------------------------------------
+    // Node-level scope predicates
+    // ------------------------------------------------------------------
+    m.insert("in-loop", pred_in_loop);
+    m.insert("method-chain-contains", pred_method_chain_contains);
+    m.insert("source-of", pred_source_of);
+    m.insert("shares-receiver", pred_shares_receiver_impl);
+    m.insert("self-join?", pred_self_join);
+
+    // ------------------------------------------------------------------
+    // Dynamic-argument predicates (Issue #53)
+    // ------------------------------------------------------------------
+    m.insert("arg-is-dynamic", pred_arg_is_dynamic);
+    m.insert("arg-kind-of", pred_arg_kind_of);
+
+    // ------------------------------------------------------------------
+    // Catalog-enriched predicates (Issue #72)
+    // ------------------------------------------------------------------
+    m.insert("table-has-property", pred_table_has_property);
+    m.insert("join-type-mismatch", pred_join_type_mismatch);
+
     m
 }
 
@@ -711,9 +732,152 @@ fn pred_reads(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 }
 
 fn pred_shares_receiver(_args: &[PredArg], _ctx: &MatchCtx) -> PredResult {
-    // Full impl requires the matcher's AST traversal helpers — wired in
-    // commit 7. Stub returns false; safe for predicate evaluation order.
+    // Legacy stub — superseded by pred_shares_receiver_impl registered
+    // under "shares-receiver". Kept to avoid registry gaps.
     PredResult::Bool(false)
+}
+
+/// `(#in-loop @node)` — true iff the captured node was built inside a
+/// `for` or `while` loop body. Set by the Python graph builder.
+fn pred_in_loop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let cap = first_value(args, ctx)
+        .or_else(|| ctx.captures.get("__current").cloned());
+    let Some(CaptureValue::Node(id)) = cap else {
+        return PredResult::Bool(false);
+    };
+    let result = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+        .map(|n| n.scope.in_for_loop)
+        .unwrap_or(false);
+    PredResult::Bool(result)
+}
+
+/// `(#method-chain-contains @node "trigger")` — true iff any element in
+/// the node's AST Call method_chain contains the given substring.
+fn pred_method_chain_contains(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let cap = first_value(args, ctx)
+        .or_else(|| ctx.captures.get("__current").cloned());
+    let Some(needle) = args.get(if cap.is_some() { 1 } else { 0 })
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| coerce_string(&v))
+    else {
+        return PredResult::Bool(false);
+    };
+    let chain = match cap {
+        Some(CaptureValue::Node(id)) => ctx
+            .resolved
+            .graph()
+            .nodes
+            .iter()
+            .find(|n| n.id == id.as_str())
+            .and_then(|n| n.ast.as_ref())
+            .and_then(|s| match &s.root {
+                crate::resolved::ast_shape::AstNode::Call(c) => Some(c.method_chain.clone()),
+                _ => None,
+            })
+            .unwrap_or_default(),
+        Some(CaptureValue::AstArg(a)) => match *a {
+            crate::resolved::ast_shape::AstArg::Call(c) => c.method_chain,
+            _ => Vec::new(),
+        },
+        _ => ctx
+            .captures
+            .get("__current")
+            .and_then(|v| match v {
+                CaptureValue::Node(id) => ctx
+                    .resolved
+                    .graph()
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == id.as_str())
+                    .and_then(|n| n.ast.as_ref())
+                    .and_then(|s| match &s.root {
+                        crate::resolved::ast_shape::AstNode::Call(c) => {
+                            Some(c.method_chain.clone())
+                        }
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .unwrap_or_default(),
+    };
+    PredResult::Bool(chain.iter().any(|part| part.contains(&needle)))
+}
+
+/// `(#source-of @node)` — returns the node's raw source_code text as a
+/// `CaptureValue::String`. Useful for regex matching on the call site text.
+fn pred_source_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let cap = first_value(args, ctx)
+        .or_else(|| ctx.captures.get("__current").cloned());
+    let Some(CaptureValue::Node(id)) = cap else {
+        return PredResult::Value(CaptureValue::Nil);
+    };
+    let src = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+        .and_then(|n| n.source_code.as_deref())
+        .map(|s| CaptureValue::String(std::sync::Arc::from(s)))
+        .unwrap_or(CaptureValue::Nil);
+    PredResult::Value(src)
+}
+
+/// `(#shares-receiver @node-a @node-b)` — true iff both nodes call methods
+/// on the same root receiver variable. Uses the first element of each node's
+/// method_chain as the receiver identity.
+fn pred_shares_receiver_impl(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    fn receiver_of_node(id: &str, ctx: &MatchCtx) -> Option<String> {
+        ctx.resolved
+            .graph()
+            .nodes
+            .iter()
+            .find(|n| n.id == id)
+            .and_then(|n| n.ast.as_ref())
+            .and_then(|s| match &s.root {
+                crate::resolved::ast_shape::AstNode::Call(c) => c.method_chain.first().cloned(),
+                _ => None,
+            })
+    }
+    let (Some(CaptureValue::Node(a)), Some(CaptureValue::Node(b))) = (
+        first_value(args, ctx),
+        args.get(1).and_then(|a| resolve_arg(a, ctx)),
+    ) else {
+        return PredResult::Bool(false);
+    };
+    let ra = receiver_of_node(a.as_str(), ctx);
+    let rb = receiver_of_node(b.as_str(), ctx);
+    PredResult::Bool(ra.is_some() && ra == rb)
+}
+
+/// `(#self-join? @node)` — true iff the call's source text shows a
+/// self-join: the receiver variable and the first argument are the
+/// same identifier (e.g. `df.join(df, ...)`).
+fn pred_self_join(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    let Some(CaptureValue::Node(id)) = first_value(args, ctx) else {
+        return PredResult::Bool(false);
+    };
+    let src = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+        .and_then(|n| n.source_code.as_deref())
+        .unwrap_or("");
+    let Ok(re) = Regex::new(r"([a-zA-Z_]\w*)\.join\s*\(\s*([a-zA-Z_]\w*)") else {
+        return PredResult::Bool(false);
+    };
+    PredResult::Bool(re.captures(src).is_some_and(|caps| {
+        let a = caps.get(1).map_or("", |m| m.as_str());
+        let b = caps.get(2).map_or("", |m| m.as_str());
+        !a.is_empty() && a == b
+    }))
 }
 
 // ----------------------------------------------------------------------
@@ -1141,6 +1305,164 @@ fn pred_prop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         m.message_suffix = Some(format!("invariant '{description}' failed"));
     }
     PredResult::SetFinding(m)
+}
+
+// ----------------------------------------------------------------------
+// Dynamic-argument predicates
+// ----------------------------------------------------------------------
+
+/// `(#arg-is-dynamic @node :arg/0)` — true iff the Nth positional argument
+/// of the call node is a dynamically-constructed string (f-string, binary
+/// concatenation, .format(), %-format) or a bare identifier (variable
+/// reference that may carry a dynamic value at runtime).
+///
+/// Use this to detect `spark.sql(f"SELECT FROM {t}")` at the AST level
+/// rather than with a fragile source-text regex.
+fn pred_arg_is_dynamic(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    use crate::resolved::ast_shape::AstArg;
+    let arg = arg_at_index(args, ctx);
+    PredResult::Bool(matches!(
+        arg.as_deref(),
+        Some(
+            AstArg::FString { .. }
+                | AstArg::BinaryOp { .. }
+                | AstArg::DotFormat { .. }
+                | AstArg::PercentFormat { .. }
+                | AstArg::Identifier(_)
+        )
+    ))
+}
+
+/// `(#arg-kind-of @node :arg/0)` — returns the kind string of the Nth
+/// positional argument ("FString", "BinaryOp", "Literal", "Identifier",
+/// "DotFormat", "PercentFormat", "Call", "Attribute", "Unknown", …).
+///
+/// Used with `#eq?` to test specific argument shapes:
+/// `(#eq? (#arg-kind-of @n :arg/0) "FString")`
+fn pred_arg_kind_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    match arg_at_index(args, ctx) {
+        Some(arg) => {
+            let kind = crate::rules::graph_dsl::value::ast_arg_kind(&arg);
+            PredResult::Value(CaptureValue::String(std::sync::Arc::from(kind)))
+        }
+        None => PredResult::Value(CaptureValue::Nil),
+    }
+}
+
+/// Extract the `AstArg` at the positional index specified by the second
+/// argument (`@node` is first, `:arg/N` is second). The node is resolved
+/// from either a captured `Node` or `AstArg::Call` capture value.
+///
+/// Returns `None` when the node cannot be found or the index is out of range.
+fn arg_at_index(
+    args: &[PredArg],
+    ctx: &MatchCtx,
+) -> Option<Box<crate::resolved::ast_shape::AstArg>> {
+    use crate::resolved::ast_shape::{AstArg, AstNode};
+
+    let cap = first_value(args, ctx)?;
+    let call_node = match cap {
+        CaptureValue::Node(id) => {
+            let node = ctx
+                .resolved
+                .graph()
+                .nodes
+                .iter()
+                .find(|n| n.id == id.as_str())?;
+            match node.ast.as_ref().map(|s| &s.root) {
+                Some(AstNode::Call(c)) => c.clone(),
+                _ => return None,
+            }
+        }
+        CaptureValue::AstArg(a) => match *a {
+            AstArg::Call(c) => *c,
+            _ => return None,
+        },
+        _ => return None,
+    };
+
+    // Parse `:arg/N` from second predicate argument.
+    let idx: usize = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| v.as_str_value())
+        .as_deref()
+        .and_then(|s| s.trim_start_matches(":arg/").parse().ok())
+        .unwrap_or(0);
+
+    call_node.args.get(idx).map(|a| Box::new(a.clone()))
+}
+
+// ----------------------------------------------------------------------
+// Catalog-enriched predicates (Issue #72)
+// ----------------------------------------------------------------------
+
+fn pred_table_has_property(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#table-has-property @n "delta.feature.clustering")
+    // True iff any table referenced by @n has the given key in its table_properties.
+    // Returns false when no catalog enrichment has been run (table_properties is empty).
+    let node_id = match first_value(args, ctx) {
+        Some(CaptureValue::Node(id)) => id,
+        _ => return PredResult::Bool(false),
+    };
+    let key = match args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)) {
+        Some(k) => k,
+        None => return PredResult::Bool(false),
+    };
+    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+        return PredResult::Bool(false);
+    };
+    for tref in &node.tables_referenced {
+        if let Some(spec) = ctx.resolved.table_spec(&tref.fqn()) {
+            if spec.table_properties.contains_key(&key) {
+                return PredResult::Bool(true);
+            }
+        }
+    }
+    PredResult::Bool(false)
+}
+
+fn pred_join_type_mismatch(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
+    // (#join-type-mismatch @n)
+    // True iff the join node @n pulls from two tables that share a column name
+    // but with differing data types in the catalog schema.
+    // Returns false when fewer than two schemas are available — the predicate
+    // is a no-op when catalog enrichment has not run.
+    let node_id = match first_value(args, ctx) {
+        Some(CaptureValue::Node(id)) => id,
+        _ => return PredResult::Bool(false),
+    };
+    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+        return PredResult::Bool(false);
+    };
+    let schemas: Vec<_> = node
+        .tables_referenced
+        .iter()
+        .filter_map(|tref| {
+            ctx.resolved
+                .table_spec(&tref.fqn())
+                .and_then(|s| s.schema.as_ref())
+        })
+        .collect();
+
+    if schemas.len() < 2 {
+        return PredResult::Bool(false);
+    }
+
+    for i in 0..schemas.len() {
+        for j in (i + 1)..schemas.len() {
+            for col_a in &schemas[i].columns {
+                if let Some(col_b) = schemas[j].column(&col_a.name) {
+                    let type_a = col_a.data_type.to_ascii_uppercase();
+                    let type_b = col_b.data_type.to_ascii_uppercase();
+                    if type_a != type_b {
+                        return PredResult::Bool(true);
+                    }
+                }
+            }
+        }
+    }
+    PredResult::Bool(false)
 }
 
 // ----------------------------------------------------------------------

@@ -1,6 +1,6 @@
 [package]
 name = "burnt-engine"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Rust engine for burnt cost estimation"
 readme = "README.md"

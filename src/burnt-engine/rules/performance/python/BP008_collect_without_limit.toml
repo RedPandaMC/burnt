@@ -16,29 +16,6 @@ category = "BestPractice"
 tags = ["pyspark", "memory", "driver-bound"]
 platform = "all"
 
-[query]
-detect = """
-; Detects df.collect() without limit
-(call
-  function: (attribute
-    object: (_) @df
-    attribute: (identifier) @method)
-  (#eq? @method "collect"))
-"""
-exclude = """
-; Detect df.limit().collect() pattern
-(call
-  function: (attribute
-    object: (call
-      function: (attribute
-        object: (_) @df
-        attribute: (identifier) @limit_method))
-    attribute: (identifier) @collect_method)
-  (#eq? @collect_method "collect")
-  (#eq? @limit_method "limit"))
-"""
-
-
 [tests]
 pass = [
     "df.limit(100).collect()",

@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "photon", "xml", "databricks"]
 platform = "databricks"
 
-[context]
-type = "photon_incompatible_expr"
-
 [tests]
 pass = [
     "df.select(from_json(col('data'), schema))",
@@ -21,3 +18,9 @@ fail = [
     "df.select(from_xml(col('data'), schema))",
     "df.select(to_xml(col('struct_col')))",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\b(?:from_xml|to_xml)\\s*\\("))
+"""

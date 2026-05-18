@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "pandas", "performance"]
 platform = "all"
 
-[context]
-type = "pandas_roundtrip"
-
 [tests]
 pass = [
     "result = df.toPandas()",
@@ -21,3 +18,10 @@ fail = [
     "result = df.toPandas().to_spark()",
     "pdf = df.to_pandas()\nspark_df = pdf.to_spark()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.(toPandas|to_pandas)\\s*\\(")
+  (#match? @src "\\.to_spark\\s*\\("))
+"""

@@ -9,9 +9,6 @@ category = "SDP"
 tags = ["sdp", "dlt", "incremental", "performance"]
 platform = "databricks"
 
-[context]
-type = "materialized_view_incremental"
-
 [tests]
 pass = [
     "@sdp.table\ndef my_table(incremental):\n    return spark.read.table('x')",
@@ -20,3 +17,10 @@ pass = [
 fail = [
     "@sdp.table\ndef my_table():\n    return spark.read.table('x')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "@sdp\\.table")
+  (#not (#match? @src "incremental")))
+"""

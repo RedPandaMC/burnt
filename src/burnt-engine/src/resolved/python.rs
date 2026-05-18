@@ -243,6 +243,8 @@ impl From<&PyTableSpec> for TableSpec {
             location: p.location.clone(),
             is_managed: p.is_managed,
             partition_columns: p.partition_columns.clone(),
+            schema: None,
+            table_properties: std::collections::HashMap::new(),
         }
     }
 }

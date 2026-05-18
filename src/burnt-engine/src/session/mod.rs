@@ -2,7 +2,7 @@
 // useless conversion. Scoped here rather than crate-wide.
 #![allow(clippy::useless_conversion)]
 
-mod rest_client;
+pub mod rest_client;
 mod types;
 
 use std::sync::Arc;

@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "withColumn", "performance"]
 platform = "all"
 
-[context]
-type = "single_withcolumn"
-
 [tests]
 pass = [
     "df.withColumns({'a': col('x') + 1, 'b': col('y') * 2})",
@@ -21,3 +18,9 @@ fail = [
     "df.withColumn('a', col('x') + 1).withColumn('b', col('y') * 2).withColumn('c', lit(0))",
     "df.withColumn('flag', lit(True)).withColumn('ts', current_timestamp()).withColumn('id', monotonically_increasing_id())",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "withColumn.*withColumn"))
+"""

@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "streaming", "schema", "performance"]
 platform = "all"
 
-[context]
-type = "readstream_no_schema"
-
 [tests]
 pass = [
     "spark.readStream.schema(my_schema).format('json').load(path)",
@@ -21,3 +18,11 @@ fail = [
     "spark.readStream.format('json').load(path)",
     "spark.readStream.format('csv').option('header', 'true').load(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "\\.format\\s*\\([^)]*(?:json|csv|avro)")
+  (#not (#match? @src "\\.schema\\s*\\(")))
+"""

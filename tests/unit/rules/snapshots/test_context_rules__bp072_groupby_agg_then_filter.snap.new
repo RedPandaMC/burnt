@@ -1,0 +1,8 @@
+---
+source: "../../tests/unit/rules/test_context_rules.rs"
+assertion_line: 54
+expression: snapshot_data
+---
+findings: []
+rule: BP072
+triggered: false

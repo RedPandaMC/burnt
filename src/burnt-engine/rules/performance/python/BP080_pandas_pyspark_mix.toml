@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "pandas", "performance"]
 platform = "all"
 
-[context]
-type = "pandas_pyspark_mix"
-
 [tests]
 pass = [
     "import pyspark.pandas as ps\ndf = ps.read_csv('data.csv')",
@@ -20,3 +17,10 @@ pass = [
 fail = [
     "import pyspark.pandas as ps\nimport pandas as pd\ndf = ps.from_pandas(pd.DataFrame({'a': [1]}))",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "import pyspark\\.pandas")
+  (#match? @src "import pandas"))
+"""

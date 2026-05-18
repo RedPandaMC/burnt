@@ -9,5 +9,16 @@ category = "Notebook"
 tags = ["notebook", "structure"]
 platform = "databricks"
 
-[context]
-type = "missing_run_target"
+[tests]
+pass = [
+    "# %run ./utils/helpers",
+]
+fail = [
+    "df = spark.read.table('events')",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#not (#match? @src "%run\\b")))
+"""

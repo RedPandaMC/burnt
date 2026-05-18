@@ -9,9 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "delta", "write", "databricks"]
 platform = "databricks"
 
-[context]
-type = "parquet_write_databricks"
-
 [tests]
 pass = [
     "df.write.format('delta').save(path)",
@@ -21,3 +18,9 @@ fail = [
     "df.write.format('parquet').save(path)",
     "df.write.format('parquet').saveAsTable('events')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.format\\s*\\([^)]*parquet"))
+"""

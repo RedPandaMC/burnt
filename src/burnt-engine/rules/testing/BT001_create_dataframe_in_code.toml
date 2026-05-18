@@ -9,17 +9,6 @@ category = "Testing"
 tags = ["pyspark", "testing", "hygiene"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (list))
-  (#eq? @method "createDataFrame"))
-"""
-
 [tests]
 pass = [
     "spark.read.table('catalog.schema.events')",
@@ -29,3 +18,9 @@ fail = [
     "spark.createDataFrame([('a', 1), ('b', 2)], ['name', 'val'])",
     "spark.createDataFrame([{'id': 1}])",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "createDataFrame\\s*\\(\\s*\\["))
+"""

@@ -9,18 +9,6 @@ category = "BestPractice"
 tags = ["pyspark", "performance", "schema"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (attribute
-      object: (_)
-      attribute: (identifier) @read)
-    attribute: (identifier) @fmt)
-  (#eq? @read "read")
-  (#match? @fmt "^(csv|json)$"))
-"""
-
 [tests]
 pass = [
     "spark.read.schema(schema).csv('/data/path')",
@@ -31,3 +19,10 @@ fail = [
     "spark.read.csv('/data/path')",
     "spark.read.json('/data/path')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.read\\.(csv|json)\\s*\\(")
+  (#not (#match? @src "\\.schema\\s*\\(")))
+"""

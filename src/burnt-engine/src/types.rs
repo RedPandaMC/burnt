@@ -411,13 +411,6 @@ pub struct RuleEntry {
     pub tags: Vec<String>,
 }
 
-// Types for enhanced rule system with tree-sitter queries
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryPattern {
-    pub match_pattern: String,
-    pub is_negative: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompiledRule {
     pub id: String,
@@ -427,17 +420,8 @@ pub struct CompiledRule {
     pub description: String,
     pub suggestion: String,
     pub category: String,
-    pub patterns: Vec<QueryPattern>,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub has_context: bool,
-    #[serde(default)]
-    pub has_dataflow: bool,
-    /// True iff the TOML carries a `[graph]` block. When set, the new
-    /// graph-DSL pipeline runs against this rule alongside (during
-    /// the migration bridge) or instead of (post-cutover) the legacy
-    /// `[query]` / `[context]` / `[dataflow]` paths.
     #[serde(default)]
     pub has_graph: bool,
     /// `[graph].detect` S-expression source.
@@ -461,6 +445,13 @@ pub struct CompiledRule {
     /// `[graph.finding].line` — capture-ref like "@call.line".
     #[serde(default)]
     pub graph_finding_line: Option<String>,
+    /// Whether this rule requires catalog enrichment to fire.
+    ///
+    /// Rules with `requires_catalog = true` in their TOML are skipped by the
+    /// standard `run_graph_rules` path and only evaluated when a
+    /// [`CatalogClient`] is available via `run_graph_rules_with_catalog`.
+    #[serde(default)]
+    pub has_catalog: bool,
 }
 
 impl AnalysisMode {

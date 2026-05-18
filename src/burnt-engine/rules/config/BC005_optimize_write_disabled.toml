@@ -9,23 +9,6 @@ category = "Config"
 tags = ["delta", "performance", "config"]
 platform = "databricks"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (attribute
-      object: (identifier)
-      attribute: (identifier) @conf)
-    attribute: (identifier) @method)
-  arguments: (argument_list
-    (string) @key
-    (string) @val)
-  (#eq? @conf "conf")
-  (#eq? @method "set")
-  (#match? @key "optimizeWrite\\.enabled")
-  (#match? @val "false"))
-"""
-
 [tests]
 pass = [
     "spark.conf.set(\"spark.databricks.delta.optimizeWrite.enabled\", \"true\")",

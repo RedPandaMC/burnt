@@ -9,15 +9,6 @@ category = "Observability"
 tags = ["pyspark", "observability", "debugging"]
 platform = "all"
 
-[query]
-detect = """
-(call
-  function: (attribute
-    object: (_)
-    attribute: (identifier) @method)
-  (#eq? @method "show"))
-"""
-
 [tests]
 pass = [
     "df.write.format('delta').save('/data')",

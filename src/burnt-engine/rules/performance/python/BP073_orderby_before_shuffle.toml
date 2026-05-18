@@ -9,9 +9,6 @@ category = "Performance"
 tags = ["pyspark", "orderby", "shuffle", "performance"]
 platform = "all"
 
-[context]
-type = "orderby_before_shuffle"
-
 [tests]
 pass = [
     "df.groupBy('dept').agg(count('*')).orderBy('count(1)')",
@@ -22,3 +19,9 @@ fail = [
     "df.orderBy('id').join(other, 'id')",
     "df.orderBy('col').repartition(10)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.orderBy\\s*\\([^)]*\\)\\s*\\.(?:groupBy|join|repartition)\\s*\\("))
+"""
