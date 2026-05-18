@@ -21,3 +21,10 @@ fail = [
     "SELECT * FROM my_schema.my_table",
     "SELECT * FROM default.events WHERE date > '2024-01-01'",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bFROM\\s+[a-zA-Z_]\\w*\\.[a-zA-Z_]\\w*")
+  (#not (#match? @src "(?i)\\bFROM\\s+[a-zA-Z_]\\w*\\.[a-zA-Z_]\\w*\\.[a-zA-Z_]")))
+"""

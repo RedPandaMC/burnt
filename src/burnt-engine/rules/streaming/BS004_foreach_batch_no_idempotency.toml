@@ -19,3 +19,10 @@ pass = [
 fail = [
     "df.writeStream.foreachBatch(lambda df, epoch: df.write.format('delta').save(path)).start()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "foreachBatch")
+  (#not (#match? @src "txnAppId")))
+"""

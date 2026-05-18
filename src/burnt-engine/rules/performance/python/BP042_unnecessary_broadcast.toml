@@ -31,3 +31,9 @@ fail = [
     "df.join(broadcast(small_df), 'id')",
     "joined = F.broadcast(lookup_df)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bbroadcast\\s*\\("))
+"""

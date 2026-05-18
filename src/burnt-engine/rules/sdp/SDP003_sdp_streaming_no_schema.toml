@@ -26,3 +26,9 @@ pass = [
 fail = [
     "spark.readStream.format('delta').load(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.readStream\\b"))
+"""

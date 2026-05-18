@@ -26,3 +26,9 @@ pass = [
 fail = [
     "df.withColumn('uid', F.uuid())",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bF\\.uuid\\s*\\("))
+"""

@@ -29,3 +29,9 @@ fail = [
     "spark.createDataFrame([('a', 1), ('b', 2)], ['name', 'val'])",
     "spark.createDataFrame([{'id': 1}])",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "createDataFrame\\s*\\(\\s*\\["))
+"""

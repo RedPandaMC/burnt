@@ -11,3 +11,18 @@ platform = "delta"
 
 [context]
 type = "missing_zorder"
+
+[tests]
+pass = [
+    "OPTIMIZE events WHERE date >= '2024-01-01' ZORDER BY col1",
+]
+fail = [
+    "OPTIMIZE events",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bOPTIMIZE\\b")
+  (#not (#match? @src "(?i)\\bZORDER\\b")))
+"""

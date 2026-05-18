@@ -44,3 +44,10 @@ pass = [
 fail = [
     "for col_name in columns:\n    df = df.withColumn(col_name, col(col_name) * 2)",
 ]
+
+[graph]
+detect = """
+(op:Transform @n
+  (ast/Call :method "withColumn")
+  (#in-loop @n))
+"""

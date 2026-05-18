@@ -30,3 +30,9 @@ fail = [
     "df.join(other, 'user_id')",
     "df.join(lookup, 'id', 'left')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.join\\s*\\(\\s*[a-zA-Z_]\\w*\\s*,\\s*'[^']*'\\s*[,)]"))
+"""

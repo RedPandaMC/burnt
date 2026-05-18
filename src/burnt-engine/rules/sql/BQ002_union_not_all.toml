@@ -24,3 +24,18 @@ detect = """
   (#not-eq? @all "ALL"))
 """
 
+
+[tests]
+pass = [
+    "SELECT a FROM t UNION ALL SELECT a FROM s",
+]
+fail = [
+    "SELECT a FROM t UNION SELECT a FROM s",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bUNION\\b")
+  (#not (#match? @src "(?i)\\bUNION\\s+ALL\\b")))
+"""

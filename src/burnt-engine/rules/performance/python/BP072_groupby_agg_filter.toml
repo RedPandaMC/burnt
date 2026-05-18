@@ -21,3 +21,9 @@ fail = [
     "df.groupBy('dept').agg(count('*').alias('cnt')).filter('cnt > 100')",
     "df.groupBy('category').agg(sum('amount')).filter(col('sum(amount)') > 1000)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.agg\\s*\\(.*\\)\\.(?:filter|where)\\s*\\("))
+"""

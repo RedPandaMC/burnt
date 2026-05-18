@@ -21,3 +21,10 @@ fail = [
     "df.write.format('delta').mode('overwrite').save(path)",
     "df.write.format('delta').mode('overwrite').saveAsTable('events')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.mode\\s*\\([^)]*overwrite")
+  (#not (#match? @src "replaceWhere")))
+"""

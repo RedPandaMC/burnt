@@ -20,3 +20,10 @@ pass = [
 fail = [
     "@sdp.table\ndef my_table():\n    return spark.read.table('x')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "@sdp\\.table")
+  (#not (#match? @src "incremental")))
+"""

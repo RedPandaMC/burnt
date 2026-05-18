@@ -42,3 +42,9 @@ pass = [
 fail = [
     "for date in dates:\n    df.write.save(f'/data/{date}')",
 ]
+
+[graph]
+detect = """
+(op:Write @n
+  (#in-loop @n))
+"""

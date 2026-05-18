@@ -11,3 +11,17 @@ platform = "databricks"
 
 [context]
 type = "missing_cell_type"
+
+[tests]
+pass = [
+    "# %python\ndf = spark.read.table('events')",
+]
+fail = [
+    "# %%\ndf = spark.read.table('events')",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "#\\s*%%[^\\n]*\\n[^#\\n]"))
+"""

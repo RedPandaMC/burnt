@@ -19,3 +19,10 @@ pass = [
 fail = [
     "df.groupBy(window('timestamp', '1 hour')).agg(count('*'))",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "groupBy\\s*\\(\\s*window\\s*\\(")
+  (#not (#match? @src "withWatermark\\s*\\(")))
+"""

@@ -34,3 +34,9 @@ pass = [
 fail = [
     "spark.conf.set(\"spark.sql.shuffle.partitions\", \"200\")",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "shuffle\\.partitions[^,]*,\\s*[^,)]*200"))
+"""

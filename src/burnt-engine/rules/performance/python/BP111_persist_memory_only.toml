@@ -33,3 +33,9 @@ pass = [
 fail = [
     "df.persist(StorageLevel.MEMORY_ONLY)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "persist\\s*\\(\\s*StorageLevel\\.MEMORY_ONLY\\s*\\)"))
+"""

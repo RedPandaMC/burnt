@@ -21,3 +21,10 @@ fail = [
     "df.write.format('csv').save('/data/analytics/events')",
     "df.write.format('json').saveAsTable('processed_events')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.format\\s*\\([^)]*(?:csv|json)")
+  (#match? @src "(?:saveAsTable|analytics|processed|warehouse|mart|gold|silver)"))
+"""

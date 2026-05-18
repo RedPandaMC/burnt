@@ -21,3 +21,11 @@ fail = [
     "spark.readStream.format('json').load(path)",
     "spark.readStream.format('csv').option('header', 'true').load(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "\\.format\\s*\\([^)]*(?:json|csv|avro)")
+  (#not (#match? @src "\\.schema\\s*\\(")))
+"""

@@ -52,3 +52,9 @@ fail = [
     "spark.udf.register(lambda x: x)",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?:@udf\\b|\\.udf\\.register\\s*\\(|\\budf\\s*\\()"))
+"""

@@ -33,3 +33,9 @@ pass = [
 fail = [
     "SELECT * FROM a WHERE id NOT IN (SELECT id FROM b)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)NOT\\s+IN\\s*\\(\\s*SELECT"))
+"""

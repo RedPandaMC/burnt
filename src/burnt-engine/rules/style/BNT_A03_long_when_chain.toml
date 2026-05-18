@@ -35,3 +35,9 @@ fail = [
     "F.when(c1, v1).when(c2, v2).when(c3, v3).otherwise(v4)",
     "F.when(a, 1).when(b, 2).when(c, 3).when(d, 4).otherwise(0)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.when\\s*\\([^)]*\\)\\.when\\s*\\([^)]*\\)\\.when\\s*\\("))
+"""

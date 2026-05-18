@@ -21,3 +21,10 @@ fail = [
     "df.join(df, df.parent_id == df.id)",
     "employees.join(employees, employees.manager_id == employees.id)",
 ]
+
+[graph]
+detect = """
+(op:Shuffle @n
+  (ast/Call :method "join")
+  (#self-join? @n))
+"""

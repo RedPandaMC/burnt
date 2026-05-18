@@ -19,3 +19,10 @@ pass = [
 fail = [
     "CONVERT TO DELTA parquet.`/path/to/data`",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bCONVERT\\s+TO\\s+DELTA\\b")
+  (#not (#match? @src "(?i)\\bOPTIMIZE\\b")))
+"""

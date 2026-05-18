@@ -31,3 +31,9 @@ fail = [
     "df.distinct().distinct()",
     "df.sort('id').sort('id')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.distinct\\s*\\(\\s*\\)\\.distinct|\\.sort\\s*\\([^)]*\\)\\.sort|\\.orderBy\\s*\\([^)]*\\)\\.orderBy|\\.order_by\\s*\\([^)]*\\)\\.order_by"))
+"""

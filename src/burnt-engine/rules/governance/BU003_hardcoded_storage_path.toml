@@ -25,3 +25,9 @@ fail = [
     "path = 's3://my-bucket/prefix/data.parquet'",
     "path = 'abfss://container@account.dfs.core.windows.net/path'",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(dbfs:/(mnt|FileStore)|s3a?://|abfss://|gs://|wasbs?://)"))
+"""

@@ -59,6 +59,10 @@ pub struct ScopeFacts {
     pub ancestors: Vec<StaticNodeId>,
     /// DAG descendants (transitive). Symmetric to `ancestors`.
     pub descendants: Vec<StaticNodeId>,
+    /// True when the call node is syntactically inside a `for` or `while`
+    /// loop body. Populated by the Python builder via tree-sitter ancestor
+    /// walk. Used by BD016 (write in loop) and BP020 (withColumn in loop).
+    pub in_for_loop: bool,
 }
 
 impl ScopeFacts {

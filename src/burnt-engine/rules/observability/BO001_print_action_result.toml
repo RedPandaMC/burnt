@@ -33,3 +33,9 @@ fail = [
     "print(df.count())",
     "print(df.first())",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "print\\s*\\([^)]*\\.(collect|count|first|take|toPandas|toLocalIterator)\\s*\\("))
+"""

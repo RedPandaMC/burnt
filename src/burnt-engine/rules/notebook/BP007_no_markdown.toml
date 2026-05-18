@@ -11,3 +11,17 @@ platform = "all"
 
 [context]
 type = "no_markdown"
+
+[tests]
+pass = [
+    "# %md\n## My Section\nThis notebook loads data.",
+]
+fail = [
+    "df = spark.read.table('events')\ndf.show()",
+]
+
+[graph]
+detect = """
+(fact:source @src
+  (#not (#match? @src "(?:%md|# MAGIC %md)")))
+"""

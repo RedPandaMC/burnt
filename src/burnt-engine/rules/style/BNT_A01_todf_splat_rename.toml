@@ -29,3 +29,9 @@ fail = [
     "df.toDF(*new_names)",
     "df.toDF(*['x', 'y', 'z'])",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.toDF\\s*\\(\\s*\\*"))
+"""

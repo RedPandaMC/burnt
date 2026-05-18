@@ -21,3 +21,10 @@ fail = [
     "stream_df = spark.readStream.format('delta').load(path)\nbroadcast(stream_df).join(other, 'id')",
     "joined = broadcast(spark.readStream.load()).join(df, 'id')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "\\bbroadcast\\s*\\("))
+"""

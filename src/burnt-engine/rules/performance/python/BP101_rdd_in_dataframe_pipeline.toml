@@ -28,3 +28,9 @@ fail = [
     "count = df.rdd.count()",
     "rows = df.rdd.collect()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.rdd\\b"))
+"""

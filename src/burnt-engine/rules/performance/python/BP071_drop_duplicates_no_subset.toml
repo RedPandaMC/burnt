@@ -28,3 +28,9 @@ pass = [
 fail = [
     "df.dropDuplicates()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "dropDuplicates\\s*\\(\\s*\\)"))
+"""

@@ -20,3 +20,10 @@ fail = [
     "result = big_df.collect()\nresult = big_df.count()",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.(collect|count|first|take|toPandas)\\s*\\(")
+  (#not (#match? @src "\\.cache\\s*\\(")))
+"""

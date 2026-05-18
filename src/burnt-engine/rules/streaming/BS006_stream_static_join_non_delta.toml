@@ -20,3 +20,10 @@ fail = [
     "stream_df = spark.readStream.format('delta').load(path)\nstream_df.join(spark.read.format('parquet').load(lookup_path), 'id')",
     "spark.readStream.load().join(spark.read.csv(path), 'id')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "spark\\.read\\.(?:csv|json|format\\s*\\([^)]*(?:parquet|csv|json|orc|avro))"))
+"""

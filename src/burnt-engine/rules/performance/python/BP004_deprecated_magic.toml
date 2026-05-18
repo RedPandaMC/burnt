@@ -26,3 +26,9 @@ fail = [
     "# MAGIC md",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "^# MAGIC (run|sql|md)( |$)"))
+"""

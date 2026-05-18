@@ -22,3 +22,9 @@ fail = [
     "sdp.table.show(df)",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bsdp\\.(?:collect|table\\.show)\\s*\\("))
+"""

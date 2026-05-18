@@ -31,3 +31,9 @@ pass = [
 fail = [
     "df = spark.read.option(\"mergeSchema\", \"true\").format(\"delta\").load(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)mergeSchema[^\\n]*true"))
+"""

@@ -27,3 +27,9 @@ fail = [
     "SELECT COUNT(DISTINCT id) FROM users",
     "SELECT count(distinct id) FROM users",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bCOUNT\\s*\\(\\s*DISTINCT\\b"))
+"""

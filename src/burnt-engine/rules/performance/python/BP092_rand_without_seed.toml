@@ -29,3 +29,9 @@ fail = [
     "F.rand()",
     "F.randn()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\b(?:F\\.)?rand[n]?\\s*\\(\\s*\\)"))
+"""

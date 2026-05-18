@@ -238,23 +238,37 @@ fn match_fact_pattern(pattern: &Pattern, resolved: &ResolvedGraph) -> Vec<DslMat
         "UnmatchedStages" => Some(CaptureValue::Number(
             resolved.unmatched().stages.len() as f64,
         )),
+        // Raw source text — exposes the full source string so rules can
+        // run regex / substring checks directly without needing a node anchor.
+        // Used by BNT_I01, BU003, BT002, BT003, etc.
+        "source" => resolved
+            .source_text()
+            .map(|s| CaptureValue::String(Arc::from(s))),
         _ => None,
     };
     let Some(value) = fact_value else {
         return Vec::new();
     };
     let mut captures: CaptureMap = CaptureMap::new();
-    captures.insert("__fact".into(), value);
+    captures.insert("__fact".into(), value.clone());
+
+    // Bind any top-level captures in the body to the fact value so rules
+    // can alias it with a readable name: `(fact:source @src ...)`.
     let mut mutation = FindingMutation::default();
-    // Facts don't have a graph node as anchor; fabricate a stable
-    // synthetic id so downstream code can still attribute the finding.
     let anchor = StaticNodeId::new(format!("__fact:{}", pattern.head.kind));
 
-    // Run any predicates over the bound __fact.
     for item in &pattern.body {
-        if let PatternBody::Predicate(p) = item {
-            if !run_predicate(p, resolved, &mut captures, &mut mutation) {
-                return Vec::new();
+        match item {
+            PatternBody::Capture(c) => {
+                captures.insert(Arc::from(c.name.as_str()), value.clone());
+            }
+            PatternBody::Predicate(p) => {
+                if !run_predicate(p, resolved, &mut captures, &mut mutation) {
+                    return Vec::new();
+                }
+            }
+            PatternBody::Sub(_) => {
+                // Sub-patterns inside fact heads are not supported.
             }
         }
     }

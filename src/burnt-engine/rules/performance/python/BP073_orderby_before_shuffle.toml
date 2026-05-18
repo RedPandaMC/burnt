@@ -22,3 +22,9 @@ fail = [
     "df.orderBy('id').join(other, 'id')",
     "df.orderBy('col').repartition(10)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.orderBy\\s*\\([^)]*\\)\\s*\\.(?:groupBy|join|repartition)\\s*\\("))
+"""

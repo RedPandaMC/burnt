@@ -35,3 +35,9 @@ pass = [
 fail = [
     "f.pandas_udf(StringType(), lambda s: s)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "pandas_udf\\s*\\("))
+"""

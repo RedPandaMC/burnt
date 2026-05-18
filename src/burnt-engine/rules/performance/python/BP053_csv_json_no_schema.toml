@@ -31,3 +31,10 @@ fail = [
     "spark.read.csv('/data/path')",
     "spark.read.json('/data/path')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.read\\.(csv|json)\\s*\\(")
+  (#not (#match? @src "\\.schema\\s*\\(")))
+"""

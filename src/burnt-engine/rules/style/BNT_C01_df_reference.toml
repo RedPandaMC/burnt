@@ -28,3 +28,9 @@ fail = [
     "val = df[\"column\"]",
     "val = df1['column']",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bdf\\d*\\s*\\[\\s*[a-zA-Z_'\\x22]"))
+"""

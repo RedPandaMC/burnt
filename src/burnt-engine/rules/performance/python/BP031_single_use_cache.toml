@@ -27,3 +27,10 @@ fail = [
     "cached_df = df.cache()\nresult = cached_df.collect()",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.cache\\s*\\(\\s*\\)")
+  (#not (#match? @src "\\.unpersist\\s*\\(")))
+"""

@@ -21,3 +21,12 @@ fail = [
     "spark.readStream.format('delta').load(path).writeStream.outputMode('append').start()",
     "df.readStream.option('header', 'true').load().writeStream.start()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "readStream")
+  (#match? @src "writeStream")
+  (#match? @src "\\.start\\s*\\(")
+  (#not (#match? @src "\\.trigger\\s*\\(")))
+"""

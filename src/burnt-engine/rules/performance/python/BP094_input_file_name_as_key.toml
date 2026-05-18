@@ -21,3 +21,10 @@ fail = [
     "df.withColumn('file_key', input_file_name()).join(other, 'file_key')",
     "df.withColumn('fname', input_file_name()).write.partitionBy('fname').save(path)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "input_file_name\\s*\\(")
+  (#match? @src "(?:\\.join\\s*\\(|\\.partitionBy\\s*\\()"))
+"""

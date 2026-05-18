@@ -20,3 +20,9 @@ fail = [
     "# %%\ndf = spark.read.table('orders')\n# %%\nfiltered = df.filter(col('id') > 0)",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "#\\s*%%[^\\n]*\\n[^#\\n]"))
+"""

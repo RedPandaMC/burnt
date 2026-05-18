@@ -26,3 +26,9 @@ pass = [
 fail = [
     "from pyspark.sql.functions import *",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "from\\s+pyspark[^\\n]*\\bimport\\s+\\*"))
+"""

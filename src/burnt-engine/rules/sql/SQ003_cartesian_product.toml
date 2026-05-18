@@ -17,3 +17,9 @@ detect = """
   (#eq? @no_condition "nil"))
 """
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bCROSS\\s+JOIN\\b"))
+"""

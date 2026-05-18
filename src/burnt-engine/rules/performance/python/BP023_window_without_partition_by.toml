@@ -22,3 +22,10 @@ fail = [
     "w = Window.order_by('timestamp')",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\bWindow\\.(?:orderBy|order_by)\\s*\\(")
+  (#not (#match? @src "(?:partitionBy|partition_by)")))
+"""

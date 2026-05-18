@@ -32,3 +32,9 @@ fail = [
     "df = spark.read.csv(path, inferSchema=True)",
     "df = spark.read.json(path, inferSchema=True)",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "inferSchema\\s*=\\s*True"))
+"""

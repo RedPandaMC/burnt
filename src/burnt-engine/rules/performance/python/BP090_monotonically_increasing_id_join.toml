@@ -21,3 +21,10 @@ fail = [
     "df.withColumn('row_id', monotonically_increasing_id()).join(other, 'row_id')",
     "df2 = df.withColumn('id', monotonically_increasing_id())\ndf2.join(lookup, 'id')",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "monotonically_increasing_id\\s*\\(")
+  (#match? @src "\\.join\\s*\\("))
+"""

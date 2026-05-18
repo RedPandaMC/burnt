@@ -21,3 +21,10 @@ fail = [
     "OPTIMIZE events",
     "OPTIMIZE catalog.schema.large_table",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bOPTIMIZE\\b")
+  (#not (#match? @src "(?i)\\bWHERE\\b")))
+"""

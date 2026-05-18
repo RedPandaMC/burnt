@@ -19,3 +19,10 @@ pass = [
 fail = [
     "MERGE INTO events USING updates ON events.id = updates.id WHEN MATCHED THEN UPDATE SET *",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bMERGE\\s+INTO\\b")
+  (#not (#match? @src "(?i)\\bAND\\b")))
+"""

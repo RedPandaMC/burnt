@@ -42,3 +42,10 @@ fail = [
     "SELECT * FROM users",
     "SELECT * FROM users WHERE id = 1",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?i)\\bSELECT\\s+\\*")
+  (#not (#match? @src "(?i)\\bLIMIT\\b")))
+"""

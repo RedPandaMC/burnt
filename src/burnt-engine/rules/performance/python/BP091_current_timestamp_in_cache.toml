@@ -21,3 +21,10 @@ fail = [
     "df.withColumn('ts', current_timestamp()).cache()",
     "df.withColumn('now', F.now()).cache()",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "(?:current_timestamp\\s*\\(|F\\.now\\s*\\()")
+  (#match? @src "\\.cache\\s*\\("))
+"""

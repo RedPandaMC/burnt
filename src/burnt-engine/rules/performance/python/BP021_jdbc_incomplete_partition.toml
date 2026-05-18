@@ -22,3 +22,10 @@ fail = [
     "df = spark.read.option('driver', 'com.mysql.Driver').jdbc('jdbc:postgresql://host/db')",
 ]
 
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.jdbc\\s*\\(")
+  (#not (#match? @src "partitionColumn")))
+"""

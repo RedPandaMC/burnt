@@ -47,23 +47,30 @@ impl PythonGraphBuilder {
     }
 
     fn visit_node(&mut self, node: &TsNode, source: &str) {
+        self.visit_node_with_loop(node, source, false);
+    }
+
+    fn visit_node_with_loop(&mut self, node: &TsNode, source: &str, in_loop: bool) {
+        let next_in_loop = in_loop
+            || matches!(node.kind(), "for_statement" | "while_statement");
+
         match node.kind() {
             "assignment" => {
-                self.handle_assignment(node, source);
+                self.handle_assignment(node, source, next_in_loop);
             }
             "call" => {
-                self.handle_call(node, source);
+                self.handle_call(node, source, next_in_loop);
             }
             _ => {}
         }
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            self.visit_node(&child, source);
+            self.visit_node_with_loop(&child, source, next_in_loop);
         }
     }
 
-    fn handle_assignment(&mut self, node: &TsNode, source: &str) {
+    fn handle_assignment(&mut self, node: &TsNode, source: &str, in_loop: bool) {
         let mut cursor = node.walk();
         let children: Vec<TsNode> = node.children(&mut cursor).collect();
 
@@ -81,7 +88,7 @@ impl PythonGraphBuilder {
                 if children.len() >= 3 {
                     let rhs = &children[2];
                     if rhs.kind() == "call" {
-                        let node_id = self.handle_spark_call(rhs, source, line);
+                        let node_id = self.handle_spark_call(rhs, source, line, in_loop);
                         if let Some(node_id) = node_id {
                             self.bindings.insert(var_name, node_id);
                         }
@@ -91,12 +98,12 @@ impl PythonGraphBuilder {
         }
     }
 
-    fn handle_call(&mut self, node: &TsNode, source: &str) -> Option<String> {
+    fn handle_call(&mut self, node: &TsNode, source: &str, in_loop: bool) -> Option<String> {
         let line = node.start_position().row as u32 + 1;
-        self.handle_spark_call(node, source, line)
+        self.handle_spark_call(node, source, line, in_loop)
     }
 
-    fn handle_spark_call(&mut self, node: &TsNode, source: &str, line: u32) -> Option<String> {
+    fn handle_spark_call(&mut self, node: &TsNode, source: &str, line: u32, in_loop: bool) -> Option<String> {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
         let (kind, scaling, photon, shuffle, driver) =
@@ -241,7 +248,7 @@ impl PythonGraphBuilder {
         let refs = extract_refs_from_call(node, source);
         let ast = extract_call_ast(node, source).map(|c| AstShape::new(AstNode::Call(c)));
         let node_id =
-            self.create_node(kind, scaling, photon, shuffle, driver, line, Some(call_text));
+            self.create_node(kind, scaling, photon, shuffle, driver, line, Some(call_text), in_loop);
         for tref in refs {
             self.push_table_ref(&node_id, tref);
         }
@@ -261,10 +268,14 @@ impl PythonGraphBuilder {
         driver_bound: bool,
         line: u32,
         source_code: Option<String>,
+        in_for_loop: bool,
     ) -> String {
         // nodes.len() before push equals the 0-based index of the new node,
         // so +1 gives a stable 1-based ID without a separate counter field.
         let node_id = format!("node_{}", self.nodes.len() + 1);
+
+        let mut scope = crate::resolved::ScopeFacts::default();
+        scope.in_for_loop = in_for_loop;
 
         self.nodes.push(Node {
             id: node_id.clone(),
@@ -279,7 +290,7 @@ impl PythonGraphBuilder {
             line_number: Some(line),
             source_code,
             ast: None,
-            scope: crate::resolved::ScopeFacts::default(),
+            scope,
         });
 
         node_id

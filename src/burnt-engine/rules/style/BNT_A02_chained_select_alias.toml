@@ -21,3 +21,9 @@ fail = [
     "df.select(col('a').alias('x')).select(col('x').alias('y')).select(col('y').alias('z'))",
     "df.select(col('col1').alias('a')).select(col('a').alias('b')).select(col('b').alias('c'))",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "\\.alias\\s*\\([^)]*\\)\\s*\\)\\.select\\s*\\("))
+"""

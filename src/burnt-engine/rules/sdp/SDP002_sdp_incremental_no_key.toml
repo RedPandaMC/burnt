@@ -29,3 +29,9 @@ pass = [
 fail = [
     "@dlt.table()\ndef foo(): pass",
 ]
+
+[graph]
+detect = """
+(fact:source @src
+  (#match? @src "@dlt\\.table\\s*\\("))
+"""
