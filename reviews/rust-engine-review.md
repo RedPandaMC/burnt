@@ -15,12 +15,12 @@ However, the review surfaced **a set of structural and correctness concerns that
 
 | Severity     | Count | Headline themes                                                                 |
 |--------------|------:|---------------------------------------------------------------------------------|
-| **Critical** |     5 | SQL builder loses derived-subquery references; orphaned shuffle nodes; missing PyO3 typed exceptions |
+| **Critical** |     6 | **Migrate SQL builder from `sqlparser` to `tree-sitter-sequel`**; SQL builder loses derived-subquery references; orphaned shuffle nodes; missing PyO3 typed exceptions |
 | **High**     |    24 | Pervasive `.unwrap()` / `.expect()` on tree-sitter walks; clone-heavy hot paths; missing input validation in catalog/HTTP layer; graph DSL tier entirely undocumented in `writing-rules.md` |
 | **Medium**   |    33 | Silent error swallowing in `build.rs`; case-sensitivity in table-ref dedup; clippy `pedantic` lint surface (~600 warnings); incomplete error-type unification; DSL docs/code drift |
 | **Low**      |    35 | Idiom polish (`format!` string interpolation, `Option` combinators); naming inconsistencies; test-only panics; rule-count comment drift |
 | **Info**     |    11 | Documentation cross-links, profile tuning, future-proofing notes                |
-| **Total**    |   108 |                                                                                 |
+| **Total**    |   109 |                                                                                 |
 
 The four user-requested focal areas are summarised in their own sections at the end:
 
@@ -65,7 +65,7 @@ Each finding carries:
 | `build.rs`                      |   320 | Silent TOML parse swallowing; no DSL syntax validation at build time; registry clones on every load |
 | `catalog/`                      |   ~150 | URL encoding gap; token-in-error-message risk; cache scoped to instance |
 | `graph/python.rs`               |  1004 | High `.unwrap()` density on tree-sitter walks; SQL exec nodes never created |
-| `graph/sql.rs`                  |   905 | **Orphaned shuffle nodes**; **derived subqueries dropped**; case-sensitive dedup |
+| `graph/sql.rs`                  |   905 | **Recommended for full rewrite onto tree-sitter-sequel (R-109)**; orphaned shuffle nodes; derived subqueries dropped; case-sensitive dedup |
 | `graph/sdp.rs`                  |   547 | Raw string parsing for DLT args; case-sensitive lookup; SDP source-type overwrite |
 | `semantic/mod.rs`               |   ~80 | `push_scope`/`pop_scope`/`get_bindings` are dead — scope stack never used |
 | `resolved/merge.rs`             |   505 | Dangling-overlay risk; multiple stages-per-exec silently picks first    |
@@ -87,6 +87,24 @@ Each finding carries:
 ## Findings — by severity
 
 ### Critical
+
+#### R-109. Migrate the SQL builder from `sqlparser` to `tree-sitter-sequel`
+- **File:** `src/burnt-engine/src/graph/sql.rs` (entire file, 905 LOC); `src/burnt-engine/Cargo.toml`
+- **Category:** graph-soundness / consistency / deps
+- **Severity:** Critical
+- **Impact:** The SQL builder is the only major parsing surface that doesn't use tree-sitter — the Python builder (`graph/python.rs`) and the SDP builder (`graph/sdp.rs` for embedded SQL fragments) both use tree-sitter. The split causes:
+  1. **No error recovery on SQL.** `sqlparser` bails on the first parse error, returning `Err(...)` which `graph/sql.rs:18-21` then silently converts to an empty `Vec` (R-024). A single typo in a file produces zero findings. Tree-sitter parses partial/malformed input and yields a best-effort tree, so the rest of the file still produces findings.
+  2. **Embedded SQL in Python is unreachable.** `spark.sql("…")` content is a string from tree-sitter's perspective; to analyse it today the engine would need to spin up a *second* parser (`sqlparser`) with different node types, different position info, and different error semantics. With a single tree-sitter pipeline, the embedded string can be re-parsed with `Parser::set_included_ranges` into the *same* tree, sharing position offsets — directly unblocking R-003.
+  3. **Inconsistent position info.** `sqlparser` line numbers are statement-index-relative (R-2-1 of the Tier B agent: "SQL builder sets `line_number = statement_index + 1`, which is not the actual source line"). Tree-sitter gives byte-accurate row/column for every node, matching the Python builder.
+  4. **Concrete-syntax DSL alignment.** The graph DSL `ast/*` patterns assume a tree-sitter-shaped AST (field names, child kinds). SQL nodes today take a different shape, which is why rules referencing `:method-chain`, `:arg/N`, etc. only work on Python.
+  5. **Dependency duplication.** `tree-sitter-sequel = "0.3"` is already a declared dependency in `Cargo.toml` and currently goes unused (this was originally flagged as a removal candidate — see R-053, now superseded). The package was clearly intended for adoption.
+- **Recommendation:**
+  1. Build a `graph/sql_ts.rs` next to the existing `graph/sql.rs` that traverses tree-sitter-sequel concrete syntax and produces the same `Graph`/`Vec<Finding>` pair.
+  2. Mirror the visitor functions one statement at a time (CTE, SELECT, JOIN, GROUP BY, INSERT, MERGE, CREATE TABLE / VIEW / STREAMING TABLE) — write a fixture file per construct and pin output with `insta`.
+  3. Once feature-parity tests pass, switch `Graph::from_sql` to call the new path, delete `graph/sql.rs`, drop `sqlparser` from `Cargo.toml`. Keep DatabricksDialect-specific cases (e.g. `EXCEPT` semantics) as a thin normalisation pass.
+  4. Wire embedded `spark.sql("…")` strings into the SQL tree using `Parser::set_included_ranges` so a single tree spans Python + SQL — this resolves R-003 as a side-effect.
+  5. Validate against the existing rule corpus (`tests/unit/rules/test_*_rules.rs`) — these are the regression net.
+- **Cost / risk:** ~1–2 engineer-weeks for the migration; `tree-sitter-sequel` does not cover every Databricks SQL extension out of the box (verify against the rule corpus). Migration is staged via the side-by-side approach above, so risk is contained.
 
 #### R-001. SQL `TableFactor::Derived` subqueries silently drop their inner table references
 - **File:** `src/burnt-engine/src/graph/sql.rs:349-351`
@@ -476,12 +494,12 @@ Each finding carries:
 - **Impact:** When the fixture format changes, tests panic with `unwrap()` rather than a descriptive failure.
 - **Recommendation:** `.expect("expected ReusedExchange node in plan")` at minimum.
 
-#### R-053. Two declared dependencies are unused: `tree-sitter-sequel`, `streaming-iterator`
+#### R-053. One declared dependency is unused: `streaming-iterator` (superseded for `tree-sitter-sequel`)
 - **File:** `src/burnt-engine/Cargo.toml`
 - **Category:** deps
 - **Severity:** Medium
-- **Impact:** Adds compile time and wheel size for no value. Grep across all engine `.rs` files finds zero references.
-- **Recommendation:** Remove both lines from `[dependencies]`. Confirm with `cargo build --release` after removal.
+- **Impact:** `streaming-iterator` is declared but has zero references in the engine — adds compile time and wheel size for no value. `tree-sitter-sequel` is also currently unused, **but should be adopted, not removed** — see R-109 (Critical) for the migration recommendation.
+- **Recommendation:** Remove `streaming-iterator = "0.1"` from `[dependencies]`. Keep `tree-sitter-sequel`; track its adoption against R-109.
 
 #### R-054. `thiserror = 2.0` adoption is partial — most public APIs still return `Result<_, String>`
 - **File:** `src/burnt-engine/src/lib.rs`, `src/burnt-engine/src/ingestion/files.rs`, `src/burnt-engine/src/ingestion/dabs.rs`, `src/burnt-engine/src/rules/mod.rs`
@@ -881,12 +899,13 @@ The graph model is the heart of the engine; this section consolidates findings 0
 
 **Recommendation summary for graph soundness:**
 
-1. Add `Graph::validate()` invoked under `debug_assertions` at the end of every `Graph::from_*`.
-2. Define `EdgeKind` and `OperationKind` enums; replace string edge kinds.
-3. Tighten `TableRef` to private fields with constructor-only invariants and a canonical-key method.
-4. Implement alias tracking on `TableRef`.
-5. Recurse into derived subqueries; wire join shuffle nodes; create nodes for `spark.sql()`.
-6. Make case-insensitivity explicit at the `TableRef` boundary.
+1. **Migrate the SQL builder to `tree-sitter-sequel` (R-109)** — unifies parsing with the Python builder, gives error recovery, enables embedded-SQL re-parse via `set_included_ranges`, and aligns the SQL AST with the DSL `ast/*` patterns. Several of the items below become natural by-products of this migration.
+2. Add `Graph::validate()` invoked under `debug_assertions` at the end of every `Graph::from_*`.
+3. Define `EdgeKind` and `OperationKind` enums; replace string edge kinds.
+4. Tighten `TableRef` to private fields with constructor-only invariants and a canonical-key method.
+5. Implement alias tracking on `TableRef`.
+6. Recurse into derived subqueries; wire join shuffle nodes; create nodes for `spark.sql()` (R-001, R-002, R-003 — all easier post-R-109).
+7. Make case-insensitivity explicit at the `TableRef` boundary.
 
 ---
 
@@ -959,11 +978,12 @@ Other concrete drift items:
 
 ## Section: Dependency hygiene
 
-See findings R-029, R-053–R-057, R-088–R-095. Two pull-requestable items:
+See findings R-029, R-053–R-057, R-088–R-095, R-109. Pull-requestable items:
 
-1. **Drop two unused dependencies** (`tree-sitter-sequel`, `streaming-iterator`) — one-line PR.
-2. **Enable `abi3`** on PyO3 + maturin — reduces release matrix from N×M (Python × OS) to 1×M.
-3. **Unify error handling** via `thiserror`-based `EngineError` — enables R-004 and R-054 together.
+1. **Adopt `tree-sitter-sequel` in place of `sqlparser`** — R-109 (Critical). The dep is already declared.
+2. **Drop the unused `streaming-iterator` dependency** — R-053, one-line PR.
+3. **Enable `abi3`** on PyO3 + maturin — reduces release matrix from N×M (Python × OS) to 1×M.
+4. **Unify error handling** via `thiserror`-based `EngineError` — enables R-004 and R-054 together.
 
 ---
 
