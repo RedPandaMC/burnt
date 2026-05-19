@@ -15,19 +15,20 @@ However, the review surfaced **a set of structural and correctness concerns that
 
 | Severity     | Count | Headline themes                                                                 |
 |--------------|------:|---------------------------------------------------------------------------------|
-| **Critical** |     6 | **Migrate SQL builder from `sqlparser` to `tree-sitter-sequel`**; SQL builder loses derived-subquery references; orphaned shuffle nodes; missing PyO3 typed exceptions |
+| **Critical** |     7 | **File naming, module organization, and naming-convention discipline**; **migrate SQL builder from `sqlparser` to `tree-sitter-sequel`**; SQL builder loses derived-subquery references; orphaned shuffle nodes; missing PyO3 typed exceptions |
 | **High**     |    24 | Pervasive `.unwrap()` / `.expect()` on tree-sitter walks; clone-heavy hot paths; missing input validation in catalog/HTTP layer; graph DSL tier entirely undocumented in `writing-rules.md` |
 | **Medium**   |    33 | Silent error swallowing in `build.rs`; case-sensitivity in table-ref dedup; clippy `pedantic` lint surface (~600 warnings); incomplete error-type unification; DSL docs/code drift |
 | **Low**      |    35 | Idiom polish (`format!` string interpolation, `Option` combinators); naming inconsistencies; test-only panics; rule-count comment drift |
 | **Info**     |    11 | Documentation cross-links, profile tuning, future-proofing notes                |
-| **Total**    |   109 |                                                                                 |
+| **Total**    |   110 |                                                                                 |
 
-The four user-requested focal areas are summarised in their own sections at the end:
+The user-requested focal areas are summarised in their own sections at the end:
 
-1. **Graph logic soundness** — the SQL and Python builders diverge on important semantics (alias tracking, derived subqueries, shuffle wiring), and `types.rs` allows internally inconsistent `TableRef` states.
-2. **Dependency hygiene** — two declared dependencies (`tree-sitter-sequel`, `streaming-iterator`) are not used; PyO3 is on `0.22` without `abi3` (rebuild per Python version); `thiserror = 2.0` adoption is partial — most public APIs still return `Result<_, String>`.
-3. **Python-layer interface** — error mapping to Python is inconsistent (`PyRuntimeError` vs `PyIOError` with no domain-specific exception type); several `#[pyfunction]` items lack docstrings; `PyResolvedGraph::graph()` clones the entire graph on every getter.
-4. **DSL syntax & docs** — the grammar is sound but operand/arity validation happens at match time (typos silently produce zero matches); `pred_shares_receiver` is registered twice; predicate metadata exists only as inline comments. **Documentation cross-reference surfaced 13 distinct gaps**, the most consequential being that `writing-rules.md` does not document the graph DSL tier at all even though all 111 active rules use it.
+1. **File structure & naming conventions** — the most cross-cutting maintainability concern: duplicate filenames (`python.rs` exists in two modules with unrelated purposes), undocumented abbreviations (`SDP`, `DABS`), root-level files that should be modules (`plan_parser.rs`, `json_py.rs`), overlapping modules (`parse/` vs `ingestion/`), inconsistent PyO3 wrapper naming (`PyFoo` vs `FooPy` vs unprefixed), and 14 rule-code prefixes with no documented mapping.
+2. **Graph logic soundness** — the SQL and Python builders diverge on important semantics (alias tracking, derived subqueries, shuffle wiring), and `types.rs` allows internally inconsistent `TableRef` states.
+3. **Dependency hygiene** — two declared dependencies (`tree-sitter-sequel`, `streaming-iterator`) are not used; PyO3 is on `0.22` without `abi3` (rebuild per Python version); `thiserror = 2.0` adoption is partial — most public APIs still return `Result<_, String>`.
+4. **Python-layer interface** — error mapping to Python is inconsistent (`PyRuntimeError` vs `PyIOError` with no domain-specific exception type); several `#[pyfunction]` items lack docstrings; `PyResolvedGraph::graph()` clones the entire graph on every getter.
+5. **DSL syntax & docs** — the grammar is sound but operand/arity validation happens at match time (typos silently produce zero matches); `pred_shares_receiver` is registered twice; predicate metadata exists only as inline comments. **Documentation cross-reference surfaced 13 distinct gaps**, the most consequential being that `writing-rules.md` does not document the graph DSL tier at all even though all 111 active rules use it.
 
 ---
 
@@ -87,6 +88,84 @@ Each finding carries:
 ## Findings — by severity
 
 ### Critical
+
+#### R-110. File naming, module organization, and naming-convention discipline
+- **File:** entire `src/burnt-engine/` tree; `rules/` rule TOMLs
+- **Category:** consistency / maintainability
+- **Severity:** Critical
+- **Impact:** A new contributor cannot answer basic orientation questions ("Where does X live? What does this prefix mean? Why are there two `python.rs` files? Is `SDP` the same as DLT?") from the code alone. Several concrete naming/structure problems are already producing real bugs surfaced elsewhere in this review (e.g. `resolved/python.rs` vs `graph/python.rs` collision, the half-dead `semantic/` module, the ambiguity between `TableRef` and `TableSpec`). Naming is the discipline that compounds — every confused name produces follow-on confused names. Fixing this early is high-leverage; fixing it late requires touching everything.
+
+  Concrete instances observed:
+
+  **A. Duplicate filenames at different module depths**
+  - `src/graph/python.rs` (builder) vs `src/resolved/python.rs` (PyO3 wrappers) — same filename, two unrelated purposes. IDE "Go to file" surfaces both ambiguously.
+  - `src/types.rs` (874 LOC, catch-all) vs `src/session/types.rs` (session-scoped) — junior contributors put the wrong type in the wrong file.
+  - `src/resolved/error.rs` and `src/rules/graph_dsl/error.rs` — acceptable pattern, but worth a convention.
+
+  **B. Undocumented abbreviations**
+  - `src/graph/sdp.rs` — "SDP" is never expanded in code or docs. Is it Spark Declarative Pipelines? Delta Live Tables? Both? The rule subdir is also `rules/sdp/`. The acronym is project-specific and opaque.
+  - `src/ingestion/dabs.rs` — "DABS" = Databricks Asset Bundles. The file is a stub (`"Not implemented"`); the name pre-dates the implementation.
+  - `src/resolved/ids.rs` — generic; covers identifier generation but the name "ids" is overloaded with DB IDs, Python IDs, node IDs.
+  - `src/rules/graph_dsl/ir.rs` — "IR" = Intermediate Representation; acceptable in compiler context but never spelled out in the module rustdoc.
+
+  **C. Root-level files that should be modules**
+  - `src/plan_parser.rs` (319 LOC) parses Spark physical plans — should live in `src/spark/plan.rs` or `src/plan/parser.rs` to make the domain clear and leave room for the related Spark types (`StageMetrics`, `RawStage`).
+  - `src/json_py.rs` (58 LOC) — a `serde_json::Value ↔ PyObject` adapter — could be `src/py/json.rs` or absorbed into a `py/` module alongside `lib.rs`'s PyO3 surface.
+  - `src/detect.rs` (61 LOC) — language detection — fits naturally inside `parse/`.
+
+  **D. Two near-identical concerns split across modules**
+  - `src/parse/` (tree-sitter wrappers + notebook parsing) and `src/ingestion/` (file reading) both read source code. The split is historical, not principled — there's no reason `notebooks.rs` lives in `parse/` while `files.rs` lives in `ingestion/`. Reading code starts in one place, ends in another.
+  - `src/semantic/mod.rs` is half-dead (`push_scope`/`pop_scope`/`get_bindings` are `#[allow(dead_code)]` — see R-058) — it shouldn't be a top-level module if it does nothing.
+
+  **E. Inconsistent PyO3 wrapper naming**
+  - 16 types use a `Py*` prefix: `PyGraph`, `PyEdge`, `PyTableRef`, `PyResolvedGraph`, etc.
+  - But `AnalysisResultPy` and `SessionStatePy` use a `*Py` **suffix**.
+  - And `AnalysisMode`, `Severity`, `Confidence`, `Cell`, `CellKind`, `Finding` are `#[pyclass]` with **no prefix or suffix at all**.
+  - Three conventions in one crate. Python consumers see whichever Rust chose, with no rule.
+
+  **F. Type-name clusters that obscure intent**
+  - **Rules:** `Rule`, `RuleMeta`, `RuleEntry`, `RulePipeline`, `RuleEngine`, `CompiledRule`, `PyRuleInfo` — seven rule-shaped types. The distinction (definition vs metadata vs compiled vs runtime vs Python view) is not documented in module rustdoc.
+  - **Tables:** `TableRef`, `TableSpec`, `PyTableRef`, `PyTableSpec`, `TableSchema`, `QualifiedName`, `PipelineTable` — six table-shaped types. `TableRef` vs `TableSpec` distinction (source-side reference vs catalog-side metadata) is only learnable from reading.
+  - **Plan nodes:** `PlanNode`, `PyPlanNode`, `PyPlanSubtreeNode`, `PyPlanSubtree` — three plan-node types with overlapping fields.
+  - **Scope:** `Scope`, `ScopeFacts`, `SemanticModel`, `PyScopeFacts` — four scope-ish types; one of them (`SemanticModel`) is half-dead.
+  - **Overlays:** `Overlay`, `NodeOverlay`, `PyNodeOverlay`, `Provenance`, `StageObservation`, `PyStageObservation` — overlay-of-what is unclear from names.
+  - **Namespace** exists in both `crate::resolved` and `crate::parse::import_map` — same word, different meanings. The `cargo doc` warning at `src/resolved/scope_facts.rs:17` (R-029) is a direct symptom.
+
+  **G. Rule-code prefixes are undocumented**
+  - 14 distinct prefixes in `rules/`: **BB, BC, BD, BJ, BN, BNT, BO, BP, BQ, BS, BT, BU, SDP, SQ**.
+  - 12 subdirectories: config, delta, governance, join, notebook, observability, performance, sdp, sql, streaming, style, testing.
+  - The mapping (e.g. BJ → join, BS → streaming, BO → observability) is inferable but not documented. **BN** appears in many subdirs; **BU** is unclear; **SDP**/**SQ** break the single-letter pattern.
+  - No central key. A new rule author asks "what code do I use?" and has to grep.
+
+  **H. `rules/graph_pipeline.rs` lives in `rules/` but operates on graphs**
+  - The orchestrator that wires `Graph → DSL match → Finding` lives at `rules/graph_pipeline.rs` but the bulk of its concerns are graph-side. Cross-module reviewers struggle to locate it.
+
+- **Recommendation:**
+
+  Treat this as a **dedicated naming/structure PR** before further feature work. Specifics:
+
+  1. **Establish a `NAMING.md`** at the repo root (or a section in `AGENTS.md`) that codifies:
+     - File-name conventions: domain-specific suffix when the same word recurs (`graph/python_builder.rs`, `resolved/py_bindings.rs` — or move PyO3 wrappers to a sibling `py/` module per domain).
+     - Abbreviation policy: spell out the first use in module rustdoc; preferred-form list ("SDP" → "Spark Declarative Pipelines (Delta Live Tables)").
+     - PyO3 wrapper convention: pick one of `PyFoo`, `FooPy`, or rename-via-`#[pyclass(name = "Foo")]`. Apply uniformly.
+     - Rule code prefix grammar: documented mapping from prefix to category, with reserved-letter table.
+  2. **Move the orphans:**
+     - `src/plan_parser.rs` → `src/spark/plan.rs` (new `spark/` module containing the Spark-runtime surface).
+     - `src/json_py.rs` → `src/py/json.rs` or inline into `lib.rs`.
+     - `src/detect.rs` → `src/parse/detect.rs`.
+  3. **Unify reading paths:** merge `src/parse/` and `src/ingestion/` into one module (`src/source/`) — files, notebooks, language detection, tree-sitter parsing all live together.
+  4. **Rename collision-prone files:**
+     - `src/graph/python.rs` → `src/graph/python_builder.rs` (and matching `sql_builder.rs`, `sdp_builder.rs`).
+     - `src/resolved/python.rs` → `src/resolved/py_bindings.rs` (or move into `src/py/resolved.rs`).
+  5. **Split the catch-all `src/types.rs`** (874 LOC): `src/graph/types.rs` for graph data model, `src/rules/types.rs` for findings, `src/cell.rs` for `Cell`/`CellKind`, keep only crate-wide primitives at root.
+  6. **Document the type clusters:** add a short rustdoc paragraph per cluster (Rule*, Table*, Plan*, Scope*, Overlay*) at the top of the module that defines the canonical type and how the variants relate.
+  7. **Delete or activate `src/semantic/mod.rs`** — see R-058.
+  8. **Disambiguate `Namespace`** — rename one of the two (probably `parse::import_map::Namespace` → `ImportNamespace`) and fix R-029's broken doc link as a side-effect.
+  9. **Document the rule-prefix grammar** in `docs/anti-pattern-rules.md` and add a build-time check that every TOML's `code` field matches a known prefix + its subdirectory.
+
+  **Migration safety:** every rename is `git mv` + IDE-driven refactor; no semantic change. Stage as ~5 PRs along the section letters above (A through I) so individual diffs stay reviewable. Use `pub use` re-exports during the transition if external users (the Python side) import paths directly.
+
+  **Definition of done:** a contributor with no project context can read `NAMING.md` + `src/lib.rs` and predict where any new code should live.
 
 #### R-109. Migrate the SQL builder from `sqlparser` to tree-sitter (via `tree-sitter-sequel`)
 - **File:** `src/burnt-engine/src/graph/sql.rs` (entire file, 905 LOC); `src/burnt-engine/Cargo.toml`
@@ -876,6 +955,31 @@ Each finding carries:
 - **Severity:** Info
 - **Impact:** Examples mix `@n`, `@src`, `@call`, `@cap` — readers don't know which is canonical.
 - **Recommendation:** Add a one-line convention: "Use descriptive names (`@call`, `@source`) in non-trivial patterns; single-letter captures (`@n`) are acceptable in two-or-three-capture rules."
+
+---
+
+## Section: File structure & naming conventions
+
+This section consolidates R-110 (Critical) with related lower-severity findings (R-029 broken doc links to `Namespace`/`CatalogClient`; R-058 dead-code `semantic/`; R-066 inconsistent node-id prefixes; R-067 inconsistent AST attachment; R-070 `#eq?` vs `#eq` naming; R-083 prop naming scheme; R-084 edge-pattern syntax divergence).
+
+**The single most damaging pattern** is the absence of a written convention. Without one, each new file inherits the local style of whatever it sits next to, and the style drifts every time a contributor reaches for a different mental model. Twelve months into the project, `graph/python.rs` (a builder) and `resolved/python.rs` (a PyO3 wrapper) coexist as evidence.
+
+**What "good" looks like for this codebase:**
+
+- Files named after the *thing they contain*, suffixed when ambiguous (`python_builder.rs`, not `python.rs`).
+- Modules named after the *responsibility*, not the *artefact* (`source/` for "things that read source code," not `parse/` + `ingestion/`).
+- Type-name clusters documented at the cluster's home module — one paragraph in `rules/mod.rs` explaining `Rule` / `RuleMeta` / `RuleEntry` / `CompiledRule` is worth a thousand `cargo doc` searches.
+- Abbreviations spelled out in module rustdoc and listed in a single glossary (`NAMING.md` or a section in `AGENTS.md`).
+- PyO3 wrappers in one convention. If `Py*` prefix wins, then `AnalysisResultPy` becomes `PyAnalysisResult`. If `#[pyclass(name = "...")]` wins, then drop both the prefix and the suffix in Rust source.
+- Rule-code prefixes documented in `docs/anti-pattern-rules.md` with a reserved-letter table and a build-time check.
+
+**Recommendation summary for naming/structure:**
+
+1. Land **`NAMING.md`** first — a short, opinionated document. Without it the rest is non-binding.
+2. The directory moves (R-110 §C–D, §H) are mechanical and should ship as one PR.
+3. The rename/disambiguation work (R-110 §A, §E, §F) splits naturally per type cluster (Rule*, Table*, Plan*, Scope*, Overlay*) — one PR per cluster.
+4. The rule-prefix grammar (R-110 §G) becomes a build-time invariant in `build.rs`.
+5. Hardest item: the catch-all `types.rs` split. Plan it; do it; never let it grow back.
 
 ---
 
