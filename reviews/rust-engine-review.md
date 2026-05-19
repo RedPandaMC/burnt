@@ -88,10 +88,11 @@ Each finding carries:
 
 ### Critical
 
-#### R-109. Migrate the SQL builder from `sqlparser` to `tree-sitter-sequel`
+#### R-109. Migrate the SQL builder from `sqlparser` to tree-sitter (via `tree-sitter-sequel`)
 - **File:** `src/burnt-engine/src/graph/sql.rs` (entire file, 905 LOC); `src/burnt-engine/Cargo.toml`
 - **Category:** graph-soundness / consistency / deps
 - **Severity:** Critical
+- **Note on naming:** The crate `tree-sitter-sequel` (already in `Cargo.toml`, currently unused) is published from `github.com/DerekStride/tree-sitter-sql` — the GitHub repo and crates.io names differ. The grammar covers Databricks SQL dialect features. No new dependency is needed for this migration.
 - **Impact:** The SQL builder is the only major parsing surface that doesn't use tree-sitter — the Python builder (`graph/python.rs`) and the SDP builder (`graph/sdp.rs` for embedded SQL fragments) both use tree-sitter. The split causes:
   1. **No error recovery on SQL.** `sqlparser` bails on the first parse error, returning `Err(...)` which `graph/sql.rs:18-21` then silently converts to an empty `Vec` (R-024). A single typo in a file produces zero findings. Tree-sitter parses partial/malformed input and yields a best-effort tree, so the rest of the file still produces findings.
   2. **Embedded SQL in Python is unreachable.** `spark.sql("…")` content is a string from tree-sitter's perspective; to analyse it today the engine would need to spin up a *second* parser (`sqlparser`) with different node types, different position info, and different error semantics. With a single tree-sitter pipeline, the embedded string can be re-parsed with `Parser::set_included_ranges` into the *same* tree, sharing position offsets — directly unblocking R-003.
@@ -494,11 +495,11 @@ Each finding carries:
 - **Impact:** When the fixture format changes, tests panic with `unwrap()` rather than a descriptive failure.
 - **Recommendation:** `.expect("expected ReusedExchange node in plan")` at minimum.
 
-#### R-053. One declared dependency is unused: `streaming-iterator` (superseded for `tree-sitter-sequel`)
+#### R-053. One declared dependency is unused: `streaming-iterator` (`tree-sitter-sequel` retained for R-109)
 - **File:** `src/burnt-engine/Cargo.toml`
 - **Category:** deps
 - **Severity:** Medium
-- **Impact:** `streaming-iterator` is declared but has zero references in the engine — adds compile time and wheel size for no value. `tree-sitter-sequel` is also currently unused, **but should be adopted, not removed** — see R-109 (Critical) for the migration recommendation.
+- **Impact:** `streaming-iterator` is declared but has zero references in the engine — adds compile time and wheel size for no value. `tree-sitter-sequel` is currently also unused **but is the SQL grammar from `github.com/DerekStride/tree-sitter-sql`** (crate-name ≠ repo-name) and should be adopted, not removed — see R-109 (Critical).
 - **Recommendation:** Remove `streaming-iterator = "0.1"` from `[dependencies]`. Keep `tree-sitter-sequel`; track its adoption against R-109.
 
 #### R-054. `thiserror = 2.0` adoption is partial — most public APIs still return `Result<_, String>`
@@ -1044,7 +1045,77 @@ Recommendation: see R-029.
 
 ---
 
-## Appendix C — Transitive duplicate dependencies
+## Appendix C — Recommended new dependencies
+
+The following crates are not currently declared but address concrete findings in this review. **No code change is proposed here** — this appendix is a curated shopping list for follow-up PRs. Version pins below were verified to build cleanly against the current crate tree (Rust 1.94, edition 2021, PyO3 0.22, rustls).
+
+### Production dependencies
+
+```toml
+# --- network / I/O safety ---
+url = "2.5"            # proper URL parsing/validation
+urlencoding = "2.1"    # URL-segment encoding for catalog paths
+walkdir = "2.5"        # symlink-safe directory traversal
+
+# --- data structures ---
+smallvec = "1.13"      # 0-2 element vectors without heap
+dashmap = "6.1"        # concurrent HashMap for shared caches
+
+# --- observability ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+```
+
+| Crate                | Addresses                                                                 | Notes |
+|----------------------|---------------------------------------------------------------------------|-------|
+| `url`                | R-005 (URL injection), R-011 (https-only catalog URLs)                     | Replace ad-hoc `format!()` URL construction in `session/mod.rs:156` and `catalog/databricks.rs:64-67`. |
+| `urlencoding`        | R-013 (catalog `table_fqn` not encoded)                                    | Tiny crate; use `encode_segment` on every path component. |
+| `walkdir`            | R-014 (symlink/traversal defense), R-015 (file-size cap on entry)          | `WalkDir::new(root).follow_links(false)`. |
+| `smallvec`           | R-027 (SDP source-type bitset), general perf in graph builders             | Apply selectively where Vec<T> hot paths have ≤2 elements typically. |
+| `dashmap`            | R-049 (per-instance catalog cache)                                         | Process-global cache backed by `OnceLock<DashMap<...>>`. |
+| `tracing`            | R-024, R-033, R-034, R-050, R-063, R-077, R-080, R-101 (silent error paths)| Foundational — replace every "silently swallows" with `warn!` / `error!`. The single biggest signal-to-noise improvement available. |
+| `tracing-subscriber` | Companion to `tracing`                                                     | Default subscriber gates on `RUST_LOG` (or `BURNT_LOG`). |
+
+### Dev-only dependencies
+
+```toml
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.5"
+mockito = "1.6"
+pretty_assertions = "1.4"
+rstest = "0.23"
+```
+
+| Crate               | Addresses                                                                     | Notes |
+|---------------------|-------------------------------------------------------------------------------|-------|
+| `criterion`         | R-018, R-019, R-026, R-068 (perf findings)                                    | Benchmark hot paths (graph getters, predicate evaluation, regex compilation) before refactoring — numbers beat intuition. |
+| `proptest`          | R-040 (graph invariants), R-078 (DSL round-trip stability)                    | Property tests for `parse(p.to_string()) == p` and `Graph::validate()` invariants. |
+| `mockito`           | R-010, R-011, R-012, R-034, R-035 (REST client testability)                   | Spin up a fake Spark/Databricks endpoint in tests instead of relying on integration env vars. |
+| `pretty_assertions` | All tests with structured-value assertions                                    | Drop-in `use pretty_assertions::assert_eq;` — diffs that fit on screen. |
+| `rstest`            | All tests with parameterised fixtures                                         | Cleaner test ergonomics for the 110+ rule tests. |
+
+### Dependency *not* added (mentioned for completeness)
+
+- **`parking_lot`** — would fix R-050 (mutex poisoning) but adds a transitive surface; the alternative (`Mutex::clear_poison` + `tracing::error!`) is reasonable in-tree without a new dep.
+
+### Adoption sequencing
+
+A sensible order to land these (each step is independently shippable):
+
+1. **`tracing` + `tracing-subscriber`** first — unblocks fixing every silent-error finding without code reshaping. Add a `#[cfg(not(any(test, feature = "no_log")))]` subscriber init in `lib.rs`.
+2. **`url` + `urlencoding`** alongside the R-005/R-013 fixes.
+3. **`walkdir`** alongside R-014.
+4. **Dev-only deps** in a single PR — they don't affect the wheel.
+5. **`smallvec` + `dashmap`** opportunistically as the relevant hot paths are touched.
+
+### Sanity-checked
+
+Each crate version above was test-installed against the engine's current dep tree. `cargo build --lib` completes cleanly; transitive duplicate count does not materially change. Adding these will increase `Cargo.lock` size and first-build time but does not change wheel ABI or runtime characteristics until the code is wired in.
+
+---
+
+## Appendix D — Transitive duplicate dependencies
 
 From `cargo tree --duplicates`:
 
