@@ -16,18 +16,16 @@ use crate::resolved::ids::StaticNodeId;
 /// Symbolic namespace of a call's leading identifier, resolved by
 /// `ImportMap`.
 ///
-/// Replaces the runtime `ImportMap` lookups today's Context rules do; once
-/// `ScopeFacts.namespace` is populated, the DSL can ask
-/// `:scope/namespace Spark` without touching `ImportMap` at rule-execution
-/// time. `UserDefined(name)` carries the resolved variable for cases the
-/// matcher wants to reason about specifically.
+/// `Pipeline` covers all declarative pipeline frameworks — `dlt`, `sdp`,
+/// `dp`, `pyspark.pipelines` — regardless of how they were imported.
+/// Rules use `(scope :namespace "Pipeline")` and never need to know which
+/// specific alias was in the source file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Namespace {
     Spark,
-    Dlt,
-    Dp,
-    PandasOnSpark,
+    /// Any pipeline framework: dlt, sdp, dp, pyspark.pipelines, or any alias.
+    Pipeline,
     UserDefined(String),
     Unknown,
 }
@@ -264,9 +262,7 @@ mod tests {
     fn namespace_variants_round_trip_serde() {
         let cases = vec![
             Namespace::Spark,
-            Namespace::Dlt,
-            Namespace::Dp,
-            Namespace::PandasOnSpark,
+            Namespace::Pipeline,
             Namespace::UserDefined("my_module".into()),
             Namespace::Unknown,
         ];
