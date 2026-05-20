@@ -13,7 +13,6 @@ pub const KNOWN_PIPELINE_MODULES: &[&str] = &[
 /// Module names that map to a Spark Session / DataFrame context.
 pub const KNOWN_SPARK_FRAMEWORKS: &[&str] = &["pyspark", "spark", "databricks"];
 
-
 /// Common Spark DataFrame method names used for call-site classification.
 pub const SPARK_METHODS: &[&str] = &[
     "read",
@@ -216,10 +215,7 @@ impl ImportMap {
         if rest.is_empty() {
             return None;
         }
-        let method = rest
-            .find('(')
-            .map(|p| &rest[..p])
-            .unwrap_or(rest);
+        let method = rest.find('(').map(|p| &rest[..p]).unwrap_or(rest);
         if method.is_empty() {
             return None;
         }
@@ -237,8 +233,7 @@ impl ImportMap {
         let Some((ns, method)) = self.extract_call_parts(call_text) else {
             return false;
         };
-        let is_spark = KNOWN_SPARK_FRAMEWORKS.contains(&ns)
-            || self.is_spark_ns(ns);
+        let is_spark = KNOWN_SPARK_FRAMEWORKS.contains(&ns) || self.is_spark_ns(ns);
         if !is_spark {
             return false;
         }
@@ -392,7 +387,6 @@ fn parse_import_target(target: &str) -> Option<(String, String)> {
     }
 }
 
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -438,9 +432,18 @@ mod tests {
         let mut map = ImportMap::new();
         map.add_alias("dl", "dlt");
         assert_eq!(map.decorator_kind("@dl.table"), Some(DecoratorKind::Table));
-        assert_eq!(map.decorator_kind("@dl.materialized_view"), Some(DecoratorKind::MaterializedView));
-        assert_eq!(map.decorator_kind("@dl.expect_or_drop"), Some(DecoratorKind::Expect));
-        assert_eq!(map.decorator_kind("@dl.append_flow"), Some(DecoratorKind::AppendFlow));
+        assert_eq!(
+            map.decorator_kind("@dl.materialized_view"),
+            Some(DecoratorKind::MaterializedView)
+        );
+        assert_eq!(
+            map.decorator_kind("@dl.expect_or_drop"),
+            Some(DecoratorKind::Expect)
+        );
+        assert_eq!(
+            map.decorator_kind("@dl.append_flow"),
+            Some(DecoratorKind::AppendFlow)
+        );
     }
 
     #[test]
