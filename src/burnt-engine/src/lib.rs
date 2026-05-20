@@ -25,7 +25,7 @@ pub use py_exceptions::{BurntEngineError, CatalogError, IoError, ParseError, Rul
 
 use detect::detect_mode_from_source;
 use error::EngineError;
-use graph::{Graph, PipelineGraph, PyGraph, PyPipeline};
+use graph::{Graph, PyGraph};
 use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use resolved::python::{
@@ -35,7 +35,7 @@ use resolved::python::{
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
     AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyAstShape, PyEdge, PyNode,
-    PyPipelineTable, PyScopeFacts, PyTableRef, RuleEntry,
+    PyScopeFacts, PyTableRef, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -44,30 +44,15 @@ fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Builds a cost/pipeline graph for `source` using auto-detected language mode.
-///
-/// Returns a `PyGraph` for Python/SQL input and a `PyPipeline` for DLT.
+/// Builds a graph for `source` using auto-detected language mode.
 #[pyfunction]
-fn check(source: &str) -> PyResult<PyObject> {
+fn check(source: &str) -> PyResult<PyGraph> {
     let mode = detect_mode_from_source(source);
-
-    Python::with_gil(|py| match mode {
-        AnalysisMode::Sdp => {
-            let pg = PipelineGraph::from_sdp(source);
-            let pg_py: PyPipeline = pg.into();
-            Ok(pg_py.into_py(py))
-        }
-        AnalysisMode::Sql => {
-            let cg = Graph::from_sql(source)?;
-            let cg_py: PyGraph = cg.into();
-            Ok(cg_py.into_py(py))
-        }
-        AnalysisMode::Python => {
-            let cg = Graph::from_python(source)?;
-            let cg_py: PyGraph = cg.into();
-            Ok(cg_py.into_py(py))
-        }
-    })
+    let graph = match mode {
+        AnalysisMode::Sql => Graph::from_sql(source)?,
+        AnalysisMode::Python => Graph::from_python(source)?,
+    };
+    Ok(graph.into())
 }
 
 /// Runs all applicable lint rules against `source`.
@@ -128,27 +113,20 @@ pub fn get_registry_count() -> usize {
     rules::get_registry_count()
 }
 
-/// Builds a graph/pipeline for the given mode and returns it alongside any
-/// semantic findings produced during graph construction.
-#[allow(clippy::type_complexity)]
-fn build_graph_and_pipeline(
+fn build_graph(
     mode: &AnalysisMode,
     source: &str,
-) -> Result<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>), EngineError> {
+) -> Result<(PyGraph, Vec<Finding>), EngineError> {
     match mode {
-        AnalysisMode::Sdp => {
-            let pg = PipelineGraph::from_sdp(source);
-            Ok((None, Some(pg.into()), Vec::new()))
-        }
         AnalysisMode::Sql => {
-            let cg = Graph::from_sql(source).map_err(|e| EngineError::GraphBuild(e.to_string()))?;
-            Ok((Some(cg.into()), None, Vec::new()))
+            let g = Graph::from_sql(source).map_err(|e| EngineError::GraphBuild(e.to_string()))?;
+            Ok((g.into(), Vec::new()))
         }
         AnalysisMode::Python => {
-            let cg =
+            let g =
                 Graph::from_python(source).map_err(|e| EngineError::GraphBuild(e.to_string()))?;
-            let sem_findings = cg.findings.clone();
-            Ok((Some(cg.into()), None, sem_findings))
+            let sem_findings = g.findings.clone();
+            Ok((g.into(), sem_findings))
         }
     }
 }
@@ -165,7 +143,6 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
 
         let cell = Cell {
             kind: match mode {
-                AnalysisMode::Sdp => CellKind::Python,
                 AnalysisMode::Sql => CellKind::Sql,
                 AnalysisMode::Python => CellKind::Python,
             },
@@ -175,13 +152,12 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
             origin_path: path.map(std::path::PathBuf::from),
         };
 
-        let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, source)?;
+        let (graph, sem_findings) = build_graph(&mode, source)?;
         findings.extend(sem_findings);
 
         Ok(AnalysisResultPy {
             mode: mode.to_string(),
-            graph,
-            pipeline,
+            graph: Some(graph),
             findings,
             cells: vec![cell],
             path: path.map(String::from),
@@ -193,12 +169,11 @@ fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, EngineError> {
     let source_file = ingest_file(path)?;
     let mode = detect_mode_from_source(&source_file.content);
     let mut findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
-    let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, &source_file.content)?;
+    let (graph, sem_findings) = build_graph(&mode, &source_file.content)?;
     findings.extend(sem_findings);
     Ok(AnalysisResultPy {
         mode: mode.to_string(),
-        graph,
-        pipeline,
+        graph: Some(graph),
         findings,
         cells: source_file.cells,
         path: Some(path.to_string()),
@@ -278,13 +253,11 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SessionStatePy>()?;
     m.add_class::<PyPlanNode>()?;
     m.add_class::<PyGraph>()?;
-    m.add_class::<PyPipeline>()?;
     m.add_class::<PyNode>()?;
     m.add_class::<PyEdge>()?;
     m.add_class::<PyTableRef>()?;
     m.add_class::<PyAstShape>()?;
     m.add_class::<PyScopeFacts>()?;
-    m.add_class::<PyPipelineTable>()?;
     m.add_class::<PyResolvedGraph>()?;
     m.add_class::<PyNodeOverlay>()?;
     m.add_class::<PyStageObservation>()?;

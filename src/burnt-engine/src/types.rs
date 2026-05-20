@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use sqlparser::ast::ObjectName;
 use std::path::PathBuf;
 use strum::Display;
 
@@ -26,69 +25,42 @@ pub struct TableRef {
 }
 
 impl TableRef {
-    /// Build from a `sqlparser::ast::ObjectName` (1, 2, or 3 part name).
-    /// Quote style is dropped — `fqn` always normalises to unquoted dotted form.
-    /// `ObjectNamePart::Function` variants (Snowflake-style dynamic identifiers)
-    /// preserve their rendered form so the ref is still greppable.
-    pub fn from_object_name(name: &ObjectName) -> Self {
-        let parts: Vec<String> = name
-            .0
-            .iter()
-            .map(|part| {
-                part.as_ident()
-                    .map(|i| i.value.clone())
-                    .unwrap_or_else(|| part.to_string())
-            })
-            .collect();
-        let raw = name.to_string();
-        match parts.as_slice() {
-            [t] => Self {
-                raw,
-                catalog: None,
-                schema: None,
-                table: t.clone(),
-                is_temp_view: false,
-                is_path_read: false,
-                path: None,
-            },
-            [s, t] => Self {
-                raw,
-                catalog: None,
-                schema: Some(s.clone()),
-                table: t.clone(),
-                is_temp_view: false,
-                is_path_read: false,
-                path: None,
-            },
-            [c, s, t] => Self {
-                raw,
-                catalog: Some(c.clone()),
-                schema: Some(s.clone()),
-                table: t.clone(),
-                is_temp_view: false,
-                is_path_read: false,
-                path: None,
-            },
-            _ => {
-                // Spark allows up to 3 parts; longer names collapse to the last
-                // identifier with the rest joined into schema for diagnostic value.
-                let table = parts.last().cloned().unwrap_or_default();
-                let head = &parts[..parts.len() - 1];
-                Self {
-                    raw,
-                    catalog: head.first().cloned(),
-                    schema: if head.len() >= 2 {
-                        Some(head[1..].join("."))
-                    } else {
-                        None
-                    },
-                    table,
-                    is_temp_view: false,
-                    is_path_read: false,
-                    path: None,
-                }
+    /// Build from explicit catalog/schema/table parts (from tree-sitter CST field access).
+    /// Quote characters (backtick, double-quote, square brackets) are stripped
+    /// so the fqn always normalises to unquoted dotted form.
+    pub fn from_parts(catalog: Option<String>, schema: Option<String>, table: String) -> Self {
+        let catalog = catalog.map(|s| Self::strip_quotes(&s));
+        let schema = schema.map(|s| Self::strip_quotes(&s));
+        let table = Self::strip_quotes(&table);
+        let raw = match (&catalog, &schema) {
+            (Some(c), Some(s)) => format!("{c}.{s}.{table}"),
+            (None, Some(s)) => format!("{s}.{table}"),
+            _ => table.clone(),
+        };
+        Self {
+            raw,
+            catalog,
+            schema,
+            table,
+            is_temp_view: false,
+            is_path_read: false,
+            path: None,
+        }
+    }
+
+    fn strip_quotes(s: &str) -> String {
+        let s = s.trim();
+        if s.len() >= 2 {
+            let first = s.as_bytes()[0];
+            let last = s.as_bytes()[s.len() - 1];
+            if (first == b'`' && last == b'`')
+                || (first == b'"' && last == b'"')
+                || (first == b'[' && last == b']')
+            {
+                return s[1..s.len() - 1].to_string();
             }
         }
+        s.to_string()
     }
 
     /// Build from a dotted string literal such as `"cat.sch.tbl"`. Used by
@@ -335,38 +307,6 @@ pub struct Edge {
     pub edge_type: String,
 }
 
-#[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
-#[strum(serialize_all = "snake_case")]
-#[non_exhaustive]
-pub enum SdpTableKind {
-    StreamingTable,
-    MaterializedView,
-    TemporaryView,
-}
-
-#[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
-#[strum(serialize_all = "snake_case")]
-#[non_exhaustive]
-pub enum SdpSourceType {
-    CloudFiles,
-    Kafka,
-    SdpRead,
-    DpRead,
-    LiveRef,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineTable {
-    pub id: String,
-    pub name: String,
-    pub kind: SdpTableKind,
-    pub source_types: Vec<SdpSourceType>,
-    pub inner_nodes: Vec<Node>,
-    pub expectations: Vec<String>,
-    pub is_incremental: bool,
-}
-
 // Core types for Task 01
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -397,7 +337,6 @@ pub struct Cell {
 pub enum AnalysisMode {
     Python,
     Sql,
-    Sdp,
 }
 
 #[pyclass(eq, eq_int)]
@@ -514,7 +453,6 @@ pub struct CompiledRule {
 impl AnalysisMode {
     pub fn as_lang_str(&self) -> &'static str {
         match self {
-            AnalysisMode::Sdp => "sdp",
             AnalysisMode::Sql => "sql",
             AnalysisMode::Python => "python",
         }
@@ -528,8 +466,6 @@ pub struct AnalysisResultPy {
     pub mode: String,
     #[pyo3(get)]
     pub graph: Option<crate::graph::PyGraph>,
-    #[pyo3(get)]
-    pub pipeline: Option<crate::graph::PyPipeline>,
     #[pyo3(get)]
     pub findings: Vec<Finding>,
     #[pyo3(get)]
@@ -678,9 +614,7 @@ impl PyScopeFacts {
         use crate::resolved::Namespace;
         self.inner.namespace.as_ref().map(|ns| match ns {
             Namespace::Spark => "spark".into(),
-            Namespace::Dlt => "dlt".into(),
-            Namespace::Dp => "dp".into(),
-            Namespace::PandasOnSpark => "pandas_on_spark".into(),
+            Namespace::Pipeline => "pipeline".into(),
             Namespace::UserDefined(name) => format!("user:{name}"),
             Namespace::Unknown => "unknown".into(),
         })
@@ -817,64 +751,13 @@ impl From<Edge> for PyEdge {
     }
 }
 
-#[pyclass]
-#[derive(Clone)]
-pub struct PyPipelineTable {
-    #[pyo3(get)]
-    pub id: String,
-    #[pyo3(get)]
-    pub name: String,
-    #[pyo3(get)]
-    pub kind: String,
-    #[pyo3(get)]
-    pub source_types: Vec<String>,
-    #[pyo3(get)]
-    pub inner_nodes: Vec<PyNode>,
-    #[pyo3(get)]
-    pub expectations: Vec<String>,
-    #[pyo3(get)]
-    pub is_incremental: bool,
-}
-
-impl From<PipelineTable> for PyPipelineTable {
-    fn from(t: PipelineTable) -> Self {
-        PyPipelineTable {
-            id: t.id,
-            name: t.name,
-            kind: t.kind.to_string(),
-            source_types: t.source_types.iter().map(|s| s.to_string()).collect(),
-            inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
-            expectations: t.expectations,
-            is_incremental: t.is_incremental,
-        }
-    }
-}
-
 #[cfg(test)]
 mod table_ref_tests {
     use super::*;
-    use sqlparser::ast::{SetExpr, Statement, TableFactor};
-    use sqlparser::dialect::DatabricksDialect;
-    use sqlparser::parser::Parser;
-
-    fn parse_object_name(sql_table: &str) -> ObjectName {
-        let sql = format!("SELECT 1 FROM {sql_table}");
-        let stmts = Parser::parse_sql(&DatabricksDialect {}, &sql).expect("parse");
-        let Statement::Query(q) = stmts.into_iter().next().expect("one stmt") else {
-            panic!("expected query");
-        };
-        let SetExpr::Select(s) = *q.body else {
-            panic!("expected select");
-        };
-        let TableFactor::Table { name, .. } = s.from.into_iter().next().unwrap().relation else {
-            panic!("expected table factor");
-        };
-        name
-    }
 
     #[test]
-    fn parse_one_part() {
-        let r = TableRef::from_object_name(&parse_object_name("t"));
+    fn from_parts_one_part() {
+        let r = TableRef::from_parts(None, None, "t".into());
         assert_eq!(r.catalog, None);
         assert_eq!(r.schema, None);
         assert_eq!(r.table, "t");
@@ -882,8 +765,8 @@ mod table_ref_tests {
     }
 
     #[test]
-    fn parse_two_part() {
-        let r = TableRef::from_object_name(&parse_object_name("sch.t"));
+    fn from_parts_two_part() {
+        let r = TableRef::from_parts(None, Some("sch".into()), "t".into());
         assert_eq!(r.catalog, None);
         assert_eq!(r.schema.as_deref(), Some("sch"));
         assert_eq!(r.table, "t");
@@ -891,8 +774,8 @@ mod table_ref_tests {
     }
 
     #[test]
-    fn parse_three_part() {
-        let r = TableRef::from_object_name(&parse_object_name("cat.sch.t"));
+    fn from_parts_three_part() {
+        let r = TableRef::from_parts(Some("cat".into()), Some("sch".into()), "t".into());
         assert_eq!(r.catalog.as_deref(), Some("cat"));
         assert_eq!(r.schema.as_deref(), Some("sch"));
         assert_eq!(r.table, "t");
@@ -900,24 +783,26 @@ mod table_ref_tests {
     }
 
     #[test]
-    fn parse_backtick_quoted_drops_quotes_in_fqn() {
-        let r = TableRef::from_object_name(&parse_object_name("`my-cat`.`my sch`.`weird table`"));
+    fn from_parts_strips_backtick_quotes() {
+        let r = TableRef::from_parts(
+            Some("`my-cat`".into()),
+            Some("`my sch`".into()),
+            "`weird table`".into(),
+        );
         assert_eq!(r.catalog.as_deref(), Some("my-cat"));
         assert_eq!(r.schema.as_deref(), Some("my sch"));
         assert_eq!(r.table, "weird table");
-        // fqn normalises to unquoted dotted form — callers can compare directly
-        // against TableSpec.fqn keys produced from DESCRIBE output.
         assert_eq!(r.fqn(), "my-cat.my sch.weird table");
     }
 
     #[test]
-    fn dotted_string_matches_object_name_parsing() {
-        let from_name = TableRef::from_object_name(&parse_object_name("cat.sch.t"));
+    fn dotted_string_consistent_with_from_parts() {
+        let from_parts = TableRef::from_parts(Some("cat".into()), Some("sch".into()), "t".into());
         let from_str = TableRef::from_dotted("cat.sch.t");
-        assert_eq!(from_name.fqn(), from_str.fqn());
-        assert_eq!(from_name.catalog, from_str.catalog);
-        assert_eq!(from_name.schema, from_str.schema);
-        assert_eq!(from_name.table, from_str.table);
+        assert_eq!(from_parts.fqn(), from_str.fqn());
+        assert_eq!(from_parts.catalog, from_str.catalog);
+        assert_eq!(from_parts.schema, from_str.schema);
+        assert_eq!(from_parts.table, from_str.table);
     }
 
     #[test]
