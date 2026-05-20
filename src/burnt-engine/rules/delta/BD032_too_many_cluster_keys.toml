@@ -19,15 +19,6 @@ fail = [
     "CREATE TABLE t (a INT) CLUSTER BY (col1, col2, col3, col4, col5, col6)",
 ]
 
-[tests]
-pass = [
-    "CREATE TABLE t (a INT, b STRING) CLUSTER BY (a, b)",
-    "CREATE TABLE t (a INT) CLUSTER BY (a, b, c, d)",
-]
-fail = [
-    "CREATE TABLE t (a INT) CLUSTER BY (a, b, c, d, e)",
-]
-
 [graph]
 detect = """
 (fact:source @src
