@@ -1,8 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::types::{
-    Edge, Node, Finding, PipelineTable, PyEdge, PyNode, PyPipelineTable,
-};
+use crate::types::{Edge, Finding, Node, PipelineTable, PyEdge, PyNode, PyPipelineTable};
 
 pub mod python;
 pub mod sdp;
@@ -27,7 +25,9 @@ impl Graph {
         use crate::parse::import_map::ImportMap;
         use tree_sitter::Parser;
 
-        let (nodes, edges, findings) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, edges, findings) = PythonGraphBuilder::new()
+            .build_from_source(source)
+            .map_err(PyErr::from)?;
 
         let mut graph = Graph {
             nodes,
@@ -52,6 +52,7 @@ impl Graph {
             }
         }
 
+        graph.validate();
         Ok(graph)
     }
 
@@ -66,15 +67,118 @@ impl Graph {
             confidence: "low".to_string(),
         };
         crate::resolved::populate_dag_facts(&mut graph);
+        graph.validate();
         Ok(graph)
     }
+
+    #[cfg(debug_assertions)]
+    pub fn validate(&self) {
+        let node_ids: std::collections::HashSet<_> = self.nodes.iter().map(|n| &n.id).collect();
+
+        for edge in &self.edges {
+            if !node_ids.contains(&edge.source) {
+                panic!(
+                    "Graph invariant violation: dangling edge source {} (type={}, target={})",
+                    edge.source, edge.edge_type, edge.target
+                );
+            }
+            if !node_ids.contains(&edge.target) {
+                panic!(
+                    "Graph invariant violation: dangling edge target {} (type={}, source={})",
+                    edge.target, edge.edge_type, edge.source
+                );
+            }
+        }
+
+        let mut seen_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for node in &self.nodes {
+            if !seen_ids.insert(node.id.as_str()) {
+                panic!("Graph invariant violation: duplicate node id {}", node.id);
+            }
+        }
+
+        if let Some(root) = &self.nodes.first() {
+            if !self.nodes.iter().any(|n| n.id == root.id) {
+                panic!("Graph invariant violation: invalid root id {}", root.id);
+            }
+        }
+
+        if let Some(cycle) = detect_cycles(self) {
+            panic!("Graph invariant violation: cycle detected {:?}", cycle);
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub fn validate(&self) {}
+}
+
+fn detect_cycles(graph: &Graph) -> Option<Vec<String>> {
+    let mut adjacency: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for node in &graph.nodes {
+        adjacency.entry(node.id.as_str()).or_default();
+    }
+    for edge in &graph.edges {
+        adjacency
+            .entry(edge.source.as_str())
+            .or_default()
+            .push(edge.target.as_str());
+    }
+
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stack: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut path: Vec<String> = Vec::new();
+
+    fn dfs(
+        node: &str,
+        adjacency: &std::collections::HashMap<&str, Vec<&str>>,
+        visited: &mut std::collections::HashSet<String>,
+        stack: &mut std::collections::HashSet<String>,
+        path: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
+        let node_owned = node.to_string();
+        if stack.contains(&node_owned) {
+            let cycle_start = path.iter().position(|n| n == node)?;
+            return Some(path[cycle_start..].to_vec());
+        }
+        if visited.contains(&node_owned) {
+            return None;
+        }
+        visited.insert(node_owned.clone());
+        stack.insert(node_owned.clone());
+        path.push(node_owned.clone());
+        if let Some(neighbors) = adjacency.get(node) {
+            for neighbor in neighbors {
+                if let Some(cycle) = dfs(neighbor, adjacency, visited, stack, path) {
+                    return Some(cycle);
+                }
+            }
+        }
+        path.pop();
+        stack.remove(&node_owned);
+        None
+    }
+
+    for node in &graph.nodes {
+        if !visited.contains(&node.id) {
+            if let Some(cycle) = dfs(
+                node.id.as_str(),
+                &adjacency,
+                &mut visited,
+                &mut stack,
+                &mut path,
+            ) {
+                return Some(cycle);
+            }
+        }
+    }
+    None
 }
 
 /// Resolve each Python node's namespace via the file's `ImportMap` and
 /// stash it on `node.scope.namespace`. Keeps the DSL out of `ImportMap`
 /// lookups at rule-execution time.
 fn populate_python_namespaces(graph: &mut Graph, imap: &crate::parse::import_map::ImportMap) {
-    use crate::resolved::Namespace;
     for node in &mut graph.nodes {
         let Some(source_code) = node.source_code.as_deref() else {
             continue;

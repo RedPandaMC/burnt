@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::error::EngineError;
 use crate::graph::sql::extract_table_refs;
 use crate::resolved::ast_shape::{
     AstArg, AstNode, AstShape, CallNode, ComprehensionKind, FStringPart, LitKind,
@@ -11,7 +12,7 @@ use tree_sitter::{Node as TsNode, Parser};
 pub struct PythonGraphBuilder {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
-    bindings: HashMap<String, String>,
+    bindings: HashMap<String, Vec<String>>,
     semantic_model: SemanticModel,
 }
 
@@ -30,20 +31,20 @@ impl PythonGraphBuilder {
     pub fn build_from_source(
         mut self,
         source: &str,
-    ) -> (Vec<Node>, Vec<Edge>, Vec<Finding>) {
+    ) -> Result<(Vec<Node>, Vec<Edge>, Vec<Finding>), EngineError> {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
-            .expect("tree-sitter-python grammar failed to load");
+            .map_err(|e| EngineError::GraphBuild(e.to_string()))?;
         let tree = parser
             .parse(source, None)
-            .expect("tree-sitter failed to parse");
+            .ok_or_else(|| EngineError::GraphBuild("tree-sitter parse failed".into()))?;
         let root = tree.root_node();
 
         self.visit_node(&root, source);
 
         let findings = self.semantic_model.get_findings().to_vec();
-        (self.nodes, self.edges, findings)
+        Ok((self.nodes, self.edges, findings))
     }
 
     fn visit_node(&mut self, node: &TsNode, source: &str) {
@@ -51,8 +52,7 @@ impl PythonGraphBuilder {
     }
 
     fn visit_node_with_loop(&mut self, node: &TsNode, source: &str, in_loop: bool) {
-        let next_in_loop = in_loop
-            || matches!(node.kind(), "for_statement" | "while_statement");
+        let next_in_loop = in_loop || matches!(node.kind(), "for_statement" | "while_statement");
 
         match node.kind() {
             "assignment" => {
@@ -90,7 +90,7 @@ impl PythonGraphBuilder {
                     if rhs.kind() == "call" {
                         let node_id = self.handle_spark_call(rhs, source, line, in_loop);
                         if let Some(node_id) = node_id {
-                            self.bindings.insert(var_name, node_id);
+                            self.bindings.entry(var_name).or_default().push(node_id);
                         }
                     }
                 }
@@ -103,7 +103,13 @@ impl PythonGraphBuilder {
         self.handle_spark_call(node, source, line, in_loop)
     }
 
-    fn handle_spark_call(&mut self, node: &TsNode, source: &str, line: u32, in_loop: bool) -> Option<String> {
+    fn handle_spark_call(
+        &mut self,
+        node: &TsNode,
+        source: &str,
+        line: u32,
+        in_loop: bool,
+    ) -> Option<String> {
         let call_text = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
 
         let (kind, scaling, photon, shuffle, driver) =
@@ -247,14 +253,35 @@ impl PythonGraphBuilder {
 
         let refs = extract_refs_from_call(node, source);
         let ast = extract_call_ast(node, source).map(|c| AstShape::new(AstNode::Call(c)));
-        let node_id =
-            self.create_node(kind, scaling, photon, shuffle, driver, line, Some(call_text), in_loop);
+        let node_id = self.create_node(
+            kind,
+            scaling,
+            photon,
+            shuffle,
+            driver,
+            line,
+            Some(call_text),
+            in_loop,
+        );
         for tref in refs {
             self.push_table_ref(&node_id, tref);
         }
         if let Some(shape) = ast {
             self.set_ast(&node_id, shape);
         }
+
+        if let Some(func) = node.child_by_field_name("function") {
+            let chain = extract_method_chain(&func, source);
+            if let Some(base_var) = chain.first() {
+                if base_var != "spark" && base_var != "LIVE" {
+                    let source_id = self.bindings.get(base_var).and_then(|s| s.last().cloned());
+                    if let Some(src) = source_id {
+                        self.create_edge(&src, &node_id, "dataflow");
+                    }
+                }
+            }
+        }
+
         Some(node_id)
     }
 
@@ -274,8 +301,10 @@ impl PythonGraphBuilder {
         // so +1 gives a stable 1-based ID without a separate counter field.
         let node_id = format!("node_{}", self.nodes.len() + 1);
 
-        let mut scope = crate::resolved::ScopeFacts::default();
-        scope.in_for_loop = in_for_loop;
+        let scope = crate::resolved::ScopeFacts {
+            in_for_loop,
+            ..Default::default()
+        };
 
         self.nodes.push(Node {
             id: node_id.clone(),
@@ -296,7 +325,6 @@ impl PythonGraphBuilder {
         node_id
     }
 
-    #[allow(dead_code)]
     fn create_edge(&mut self, source: &str, target: &str, edge_type: &str) {
         self.edges.push(Edge {
             source: source.to_string(),
@@ -439,11 +467,9 @@ fn extract_arg(node: &TsNode, source: &str) -> AstArg {
         "true" => AstArg::Literal(LitKind::Bool(true)),
         "false" => AstArg::Literal(LitKind::Bool(false)),
         "none" => AstArg::Literal(LitKind::None),
-        "identifier" => AstArg::Identifier(
-            node.utf8_text(source.as_bytes())
-                .unwrap_or("")
-                .to_string(),
-        ),
+        "identifier" => {
+            AstArg::Identifier(node.utf8_text(source.as_bytes()).unwrap_or("").to_string())
+        }
         "attribute" => {
             let mut parts: Vec<String> = Vec::new();
             walk_attribute_chain(node, source, &mut parts);
@@ -463,7 +489,9 @@ fn extract_arg(node: &TsNode, source: &str) -> AstArg {
                 })
         }
         "binary_operator" => extract_binary_op(node, source),
-        "list_comprehension" | "set_comprehension" | "dictionary_comprehension"
+        "list_comprehension"
+        | "set_comprehension"
+        | "dictionary_comprehension"
         | "generator_expression" => extract_comprehension(node, source),
         _ => AstArg::Unknown {
             repr: node.utf8_text(source.as_bytes()).unwrap_or("").to_string(),
@@ -560,7 +588,7 @@ fn find_binary_parts<'tree>(
     children: &[TsNode<'tree>],
 ) -> Option<(TsNode<'tree>, TsNode<'tree>, TsNode<'tree>)> {
     // Filter to non-trivial children; the operator is the middle one.
-    let real: Vec<TsNode> = children.iter().copied().collect();
+    let real: Vec<TsNode> = children.to_vec();
     if real.len() < 3 {
         return None;
     }
@@ -753,7 +781,8 @@ mod tests {
     fn test_build_spark_read() {
         let source = r#"df = spark.read.parquet("s3://bucket/data")"#;
 
-        let (nodes, _edges, _findings) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, _edges, _findings) =
+            PythonGraphBuilder::new().build_from_source(source).unwrap();
 
         let read_nodes: Vec<&Node> = nodes
             .iter()
@@ -774,7 +803,8 @@ df2 = df.select("col1", "col2").filter("col1 > 0")
 df2.write.mode("overwrite").parquet("output.parquet")
 "#;
 
-        let (nodes, _edges, _findings) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, _edges, _findings) =
+            PythonGraphBuilder::new().build_from_source(source).unwrap();
 
         assert!(!nodes.is_empty());
 
@@ -791,7 +821,8 @@ df2.write.mode("overwrite").parquet("output.parquet")
 x = spark.read.parquet("path")
 x = spark.read.csv("other")
 "#;
-        let (_nodes, _edges, findings) = PythonGraphBuilder::new().build_from_source(source);
+        let (_nodes, _edges, findings) =
+            PythonGraphBuilder::new().build_from_source(source).unwrap();
         // BN003 should fire for the shadow of `x`
         assert!(
             findings.iter().any(|f| f.code == "BN003"),
@@ -810,8 +841,9 @@ x = spark.read.csv("other")
 
     #[test]
     fn spark_read_parquet_extracts_path_ref() {
-        let (nodes, _, _) =
-            PythonGraphBuilder::new().build_from_source(r#"spark.read.parquet("s3://b/k")"#);
+        let (nodes, _, _) = PythonGraphBuilder::new()
+            .build_from_source(r#"spark.read.parquet("s3://b/k")"#)
+            .unwrap();
         let fqns = read_node_table_fqns(&nodes);
         assert_eq!(fqns, vec!["path:s3://b/k".to_string()]);
         let r = nodes
@@ -827,8 +859,9 @@ x = spark.read.csv("other")
 
     #[test]
     fn spark_read_table_extracts_dotted_ref() {
-        let (nodes, _, _) =
-            PythonGraphBuilder::new().build_from_source(r#"spark.read.table("cat.sch.t")"#);
+        let (nodes, _, _) = PythonGraphBuilder::new()
+            .build_from_source(r#"spark.read.table("cat.sch.t")"#)
+            .unwrap();
         let fqns = read_node_table_fqns(&nodes);
         assert_eq!(fqns, vec!["cat.sch.t".to_string()]);
     }
@@ -859,7 +892,8 @@ x = spark.read.csv("other")
     #[test]
     fn fstring_argument_is_not_extracted() {
         let (nodes, _, _) = PythonGraphBuilder::new()
-            .build_from_source(r#"spark.read.parquet(f"s3://{bucket}/k")"#);
+            .build_from_source(r#"spark.read.parquet(f"s3://{bucket}/k")"#)
+            .unwrap();
         // No literal — no ref attached.
         let read = nodes
             .iter()
@@ -871,7 +905,7 @@ x = spark.read.csv("other")
     #[test]
     fn write_save_as_table_attaches_to_write_node() {
         let source = r#"df.write.saveAsTable("out_db.events")"#;
-        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source).unwrap();
         let write = nodes
             .iter()
             .find(|n| matches!(n.kind, OperationKind::Write))
@@ -883,7 +917,7 @@ x = spark.read.csv("other")
     #[test]
     fn write_parquet_path_attaches_to_write_node() {
         let source = r#"df.write.parquet("s3://b/out/")"#;
-        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source).unwrap();
         let write = nodes
             .iter()
             .find(|n| matches!(n.kind, OperationKind::Write))
@@ -930,7 +964,10 @@ x = spark.read.csv("other")
         let arg = c.args.first().expect("one arg");
         match arg {
             AstArg::FString { parts } => {
-                let text_count = parts.iter().filter(|p| matches!(p, FStringPart::Text(_))).count();
+                let text_count = parts
+                    .iter()
+                    .filter(|p| matches!(p, FStringPart::Text(_)))
+                    .count();
                 let interp_count = parts
                     .iter()
                     .filter(|p| matches!(p, FStringPart::Interpolation { .. }))

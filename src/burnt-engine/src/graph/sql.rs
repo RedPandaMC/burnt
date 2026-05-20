@@ -4,9 +4,7 @@ use sqlparser::ast::{Expr, Join, Query, SetExpr, Statement, TableFactor, TableWi
 use sqlparser::dialect::DatabricksDialect;
 use sqlparser::parser::Parser;
 
-use crate::resolved::ast_shape::{
-    AstNode, AstShape, SqlExpr, SqlStatementKind, SqlStatementNode,
-};
+use crate::resolved::ast_shape::{AstNode, AstShape, SqlExpr, SqlStatementKind, SqlStatementNode};
 use crate::types::{Edge, Node, OperationKind, ScalingBehavior, TableRef};
 
 /// Walk a SQL string and collect every distinct table reference it touches.
@@ -137,9 +135,9 @@ impl SqlGraphBuilder {
                         Some(format!("CREATE TABLE {}", table_name)),
                     );
 
-                    self.push_table_ref(&write_node_id, table_ref);
+                    self.push_table_ref(&write_node_id, table_ref.clone());
                     self.table_definitions
-                        .insert(table_name.clone(), write_node_id.clone());
+                        .insert(table_ref.canonical_key(), write_node_id.clone());
 
                     self.process_query(query, statement_index, Some(&write_node_id));
                 }
@@ -157,13 +155,15 @@ impl SqlGraphBuilder {
                     Some(format!("CREATE VIEW {}", view_name)),
                 );
 
-                self.push_table_ref(&write_node_id, table_ref);
+                self.push_table_ref(&write_node_id, table_ref.clone());
                 self.table_definitions
-                    .insert(view_name.clone(), write_node_id.clone());
+                    .insert(table_ref.canonical_key(), write_node_id.clone());
                 self.process_query(&create_view.query, statement_index, Some(&write_node_id));
             }
             Statement::Merge {
-                table: target, source, ..
+                table: target,
+                source,
+                ..
             } => {
                 let target_ref = if let TableFactor::Table { name, .. } = target {
                     Some(TableRef::from_object_name(name))
@@ -337,17 +337,42 @@ impl SqlGraphBuilder {
                     Some(format!("Read {}", table_name)),
                 );
 
-                self.push_table_ref(&read_node_id, table_ref);
+                self.push_table_ref(&read_node_id, table_ref.clone());
                 read_nodes.push(read_node_id.clone());
 
-                // Record table reference for edge creation
+                // Record table reference for edge creation — use canonical key
+                // (lowercased fqn) for case-insensitive dedup.
                 self.table_references
-                    .entry(table_name)
+                    .entry(table_ref.canonical_key())
                     .or_default()
                     .push(read_node_id);
             }
-            TableFactor::Derived { .. } => {
-                // Subquery - handled by process_query
+            TableFactor::Derived {
+                alias, subquery, ..
+            } => {
+                let subquery_name = alias
+                    .as_ref()
+                    .map(|a| a.name.to_string())
+                    .unwrap_or_else(|| "derived_subquery".to_string());
+                let read_node_id = self.create_node(
+                    OperationKind::Read,
+                    ScalingBehavior::Linear,
+                    false,
+                    false,
+                    false,
+                    statement_index + 1,
+                    Some(format!("Read subquery {}", subquery_name)),
+                );
+
+                // Recurse into the subquery to extract its table references.
+                // This populates table_references so create_table_edges can wire
+                // the subquery's sources to the read node (R-001 fix).
+                let mut subquery_refs: Vec<TableRef> = Vec::new();
+                collect_table_refs_from_query(subquery, &mut subquery_refs);
+                for ref_tref in &subquery_refs {
+                    self.push_table_ref(&read_node_id, ref_tref.clone());
+                }
+                read_nodes.push(read_node_id);
             }
             _ => {}
         }
@@ -355,6 +380,25 @@ impl SqlGraphBuilder {
         // Process joins
         for join in &table.joins {
             self.process_join(join, statement_index, read_nodes);
+        }
+
+        // After all joins have added their read nodes, wire them through a
+        // shuffle if any joins are present. Each process_join creates a read
+        // node; the shuffle collects and redistributes rows across partitions.
+        let has_joins = !table.joins.is_empty();
+        if has_joins && !read_nodes.is_empty() {
+            let shuffle_node_id = self.create_node(
+                OperationKind::Shuffle,
+                ScalingBehavior::LinearWithCliff,
+                false,
+                true,
+                false,
+                statement_index + 1,
+                Some("Join shuffle".to_string()),
+            );
+            for read_node_id in read_nodes {
+                self.create_edge(read_node_id, &shuffle_node_id, "data_flow");
+            }
         }
     }
 
@@ -372,28 +416,15 @@ impl SqlGraphBuilder {
                 Some(format!("Join read {}", table_name)),
             );
 
-            self.push_table_ref(&read_node_id, table_ref);
+            self.push_table_ref(&read_node_id, table_ref.clone());
             read_nodes.push(read_node_id.clone());
 
-            // Record table reference
+            // Record table reference — use canonical key for case-insensitive dedup
             self.table_references
-                .entry(table_name)
+                .entry(table_ref.canonical_key())
                 .or_default()
                 .push(read_node_id);
         }
-
-        // JOIN creates a shuffle operation
-        let _shuffle_node_id = self.create_node(
-            OperationKind::Shuffle,
-            ScalingBehavior::LinearWithCliff,
-            false,
-            true,
-            false,
-            statement_index + 1,
-            Some("Join shuffle".to_string()),
-        );
-
-        // The shuffle node will be connected later in process_query
     }
 
     fn create_table_edges(&mut self) {
@@ -839,10 +870,9 @@ WHEN MATCHED THEN UPDATE SET t.x = s.x";
         match ast {
             AstNode::SqlStatement(s) => {
                 assert!(
-                    s.predicates.iter().any(|p| matches!(
-                        p,
-                        SqlExpr::InSubquery { negated: true, .. }
-                    )),
+                    s.predicates
+                        .iter()
+                        .any(|p| matches!(p, SqlExpr::InSubquery { negated: true, .. })),
                     "expected NOT IN subquery, got {:?}",
                     s.predicates
                 );

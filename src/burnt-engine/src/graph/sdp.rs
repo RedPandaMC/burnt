@@ -33,7 +33,8 @@ impl SdpGraphBuilder {
         self.parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
             .expect("tree-sitter-python grammar failed to load");
-        let tree = self.parser
+        let tree = self
+            .parser
             .parse(source, None)
             .expect("tree-sitter failed to parse");
         let root = tree.root_node();
@@ -129,7 +130,9 @@ impl SdpGraphBuilder {
             for child in &children {
                 if child.kind() == "block" {
                     let body_source = child.utf8_text(source.as_bytes()).unwrap_or("");
-                    let (inner_nodes, _, _) = PythonGraphBuilder::new().build_from_source(body_source);
+                    let (inner_nodes, _, _) = PythonGraphBuilder::new()
+                        .build_from_source(body_source)
+                        .unwrap_or_else(|_| (Vec::new(), Vec::new(), Vec::new()));
 
                     if let Some(table) = &mut self.current_table {
                         table.inner_nodes = inner_nodes;
@@ -167,7 +170,9 @@ impl SdpGraphBuilder {
         }
 
         if let Some((ns_part, method)) = self.extract_call_ns_and_method(&call_text) {
-            if self.ns_tracker.is_pipeline_ns(ns_part) && (method == "read" || method.starts_with("read_")) {
+            if self.ns_tracker.is_pipeline_ns(ns_part)
+                && (method == "read" || method.starts_with("read_"))
+            {
                 if self.ns_tracker.resolve(ns_part) == Some("dp") || ns_part == "dp" {
                     self.handle_dp_read(node, source);
                 } else {
@@ -200,20 +205,27 @@ impl SdpGraphBuilder {
 
     fn handle_sdp_read(&mut self, node: &TsNode, source: &str) {
         if let Some(table) = &mut self.current_table {
-            table.source_type = SdpSourceType::SdpRead;
+            table.source_types.push(SdpSourceType::SdpRead);
 
-            // Extract table name from arguments
+            // Extract table name from arguments — use tree-sitter AST children
+            // rather than raw string splitting (R-028 fix).
             let mut cursor = node.walk();
             let children: Vec<TsNode> = node.children(&mut cursor).collect();
 
             for child in &children {
                 if child.kind() == "argument_list" {
-                    let args_text = child.utf8_text(source.as_bytes()).unwrap_or("");
-                    if let Some(table_name) = args_text
-                        .trim_matches(&['(', ')', '\'', '"'][..])
-                        .split(',')
-                        .next()
-                    {
+                    let mut arg_cursor = child.walk();
+                    let arg_children: Vec<TsNode> = child.children(&mut arg_cursor).collect();
+                    // Skip opening/closing parens; process positional arguments only.
+                    let positional: Vec<&TsNode> = arg_children
+                        .iter()
+                        .filter(|n| n.kind() != "," && n.kind() != "(" && n.kind() != ")")
+                        .collect();
+                    if let Some(first_arg) = positional.first() {
+                        let table_name = first_arg
+                            .utf8_text(source.as_bytes())
+                            .unwrap_or("")
+                            .trim_matches(&['\'', '"'][..]);
                         let table_name = table_name.trim();
                         if let Some(source_table_id) = self.table_references.get(table_name) {
                             // Create edge from source table to current table
@@ -232,7 +244,7 @@ impl SdpGraphBuilder {
 
     fn handle_dp_read(&mut self, _node: &TsNode, _source: &str) {
         if let Some(table) = &mut self.current_table {
-            table.source_type = SdpSourceType::DpRead;
+            table.source_types.push(SdpSourceType::DpRead);
         }
     }
 
@@ -245,7 +257,7 @@ impl SdpGraphBuilder {
                 let live_ref = TableRef::temp_view(table_name);
                 if let Some(source_table_id) = self.table_references.get(table_name) {
                     if let Some(table) = &mut self.current_table {
-                        table.source_type = SdpSourceType::LiveRef;
+                        table.source_types.push(SdpSourceType::LiveRef);
 
                         // Create edge from source table to current table
                         let edge = Edge {
@@ -281,7 +293,7 @@ impl SdpGraphBuilder {
             id: format!("sdp_table_{}", self.table_counter),
             name: format!("table_{}", self.table_counter),
             kind,
-            source_type: source_type.unwrap_or(SdpSourceType::Unknown),
+            source_types: source_type.map(|s| vec![s]).unwrap_or_default(),
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
             is_incremental: matches!(kind, SdpTableKind::StreamingTable),
@@ -324,7 +336,7 @@ impl SdpGraphBuilder {
             id: format!("sql_sdp_table_{}", self.table_counter),
             name: table_name.clone(),
             kind: SdpTableKind::StreamingTable,
-            source_type: SdpSourceType::Unknown,
+            source_types: vec![SdpSourceType::Unknown],
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
             is_incremental: true,
@@ -353,7 +365,7 @@ impl SdpGraphBuilder {
             id: format!("sql_sdp_table_{}", self.table_counter),
             name: view_name.clone(),
             kind: SdpTableKind::MaterializedView,
-            source_type: SdpSourceType::Unknown,
+            source_types: vec![SdpSourceType::Unknown],
             inner_nodes: Vec::new(),
             expectations: Vec::new(),
             is_incremental: false,
@@ -388,7 +400,7 @@ def users():
 
         assert!(!tables.is_empty());
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
-        assert_eq!(tables[0].source_type, SdpSourceType::Unknown);
+        assert_eq!(tables[0].source_types[0], SdpSourceType::Unknown);
         assert!(tables[0].is_incremental);
     }
 
@@ -422,7 +434,7 @@ def processed_users():
         let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
-        assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
+        assert_eq!(tables[0].source_types[0], SdpSourceType::SdpRead);
         assert_eq!(tables[0].kind, SdpTableKind::StreamingTable);
     }
 
@@ -473,7 +485,7 @@ def processed():
         let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
-        assert_eq!(tables[0].source_type, SdpSourceType::SdpRead);
+        assert_eq!(tables[0].source_types[0], SdpSourceType::SdpRead);
     }
 
     #[test]
@@ -489,7 +501,7 @@ def my_table():
         let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
 
         assert!(!tables.is_empty());
-        assert_eq!(tables[0].source_type, SdpSourceType::DpRead);
+        assert_eq!(tables[0].source_types[0], SdpSourceType::DpRead);
     }
 
     #[test]
@@ -504,7 +516,10 @@ def gold_users():
         let (tables, _) = SdpGraphBuilder::new().build_from_source(source);
         assert_eq!(tables.len(), 1);
         let t = &tables[0];
-        assert!(!t.inner_nodes.is_empty(), "expected at least one inner node");
+        assert!(
+            !t.inner_nodes.is_empty(),
+            "expected at least one inner node"
+        );
         for n in &t.inner_nodes {
             let fqns: Vec<String> = n.tables_referenced.iter().map(|r| r.fqn()).collect();
             assert!(
@@ -537,7 +552,7 @@ def downstream():
         let any_live_ref = downstream.inner_nodes.iter().any(|n| {
             n.tables_referenced
                 .iter()
-                .any(|r| r.is_temp_view && r.table == "upstream")
+                .any(|r| r.is_temp_view() && r.table() == "upstream")
         });
         assert!(
             any_live_ref,
