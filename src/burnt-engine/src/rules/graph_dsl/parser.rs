@@ -1,6 +1,6 @@
 //! Recursive-descent parser for the graph-query DSL.
 //!
-//! Converts a stream of tokens (from [`lexer`](super::lexer)) into a
+//! Converts a stream of tokens (from the `lexer` module) into a
 //! [`Pattern`] IR tree. Stops at the first error and returns it with
 //! source position.
 
@@ -80,9 +80,9 @@ impl Parser {
 
         // The head identifier comes next. The lexer keeps the prefix +
         // kind glued as one ident (`op:Read`, `ast/Call`); we split here.
-        let head_tok = self.bump().ok_or_else(|| {
-            ParseError::new(ParseErrorKind::UnexpectedEof, line, column)
-        })?;
+        let head_tok = self
+            .bump()
+            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, line, column))?;
         let head = match head_tok.kind {
             TokenKind::Ident(ref s) => parse_head(s.as_ref(), head_tok.line, head_tok.column)?,
             other => {
@@ -143,7 +143,10 @@ impl Parser {
                 }
                 TokenKind::LParen => {
                     // Either a nested pattern or a predicate. Disambiguate
-                    // by looking at the token after the `(`.
+                    // by looking at the token after the `(`. This is a
+                    // one-token lookahead — the grammar is unambiguous
+                    // because predicates always start with `#` while nested
+                    // patterns start with an op/ast/edge prefix.
                     let next = self.tokens.get(self.pos + 1);
                     match next.map(|t| &t.kind) {
                         Some(TokenKind::Hash(_)) => {
@@ -180,9 +183,9 @@ impl Parser {
     /// Parse a `(#name args...)` predicate. `(` already pending.
     fn parse_predicate(&mut self) -> Result<Predicate, ParseError> {
         let (line, column) = self.expect_lparen()?;
-        let head_tok = self.bump().ok_or_else(|| {
-            ParseError::new(ParseErrorKind::UnexpectedEof, line, column)
-        })?;
+        let head_tok = self
+            .bump()
+            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, line, column))?;
         let name = match head_tok.kind {
             TokenKind::Hash(ref s) => s.to_string(),
             other => {
@@ -292,7 +295,7 @@ fn parse_head(token: &str, line: u32, column: u32) -> Result<Head, ParseError> {
     // Heads are `<prefix>:<Kind>` or `<prefix>/<Kind>`. The lexer keeps
     // them as a single ident; split by the first separator.
     let sep_idx = token
-        .find(|c: char| c == ':' || c == '/')
+        .find(|c: char| [':', '/'].contains(&c))
         .ok_or_else(|| {
             ParseError::new(
                 ParseErrorKind::InvalidHead {

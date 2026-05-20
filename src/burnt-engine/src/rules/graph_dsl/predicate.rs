@@ -10,7 +10,7 @@
 //! definition.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use regex::Regex;
 
@@ -74,6 +74,24 @@ fn registry() -> &'static HashMap<&'static str, PredicateFn> {
     REGISTRY.get_or_init(build_registry)
 }
 
+static REGEX_CACHE: OnceLock<RwLock<HashMap<String, Regex>>> = OnceLock::new();
+
+fn cached_regex(pattern: &str) -> Option<regex::Regex> {
+    let cache = REGEX_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Ok(guard) = cache.read() {
+        if let Some(re) = guard.get(pattern) {
+            return Some(re.clone());
+        }
+    }
+    if let Ok(re) = Regex::new(pattern) {
+        if let Ok(mut guard) = cache.write() {
+            guard.insert(pattern.to_string(), re.clone());
+        }
+        return Some(re);
+    }
+    None
+}
+
 fn build_registry() -> HashMap<&'static str, PredicateFn> {
     let mut m: HashMap<&'static str, PredicateFn> = HashMap::new();
 
@@ -132,7 +150,6 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
     // ------------------------------------------------------------------
     m.insert("binds", pred_binds);
     m.insert("reads", pred_reads);
-    m.insert("shares-receiver", pred_shares_receiver);
 
     // ------------------------------------------------------------------
     // Value extraction
@@ -196,7 +213,7 @@ fn build_registry() -> HashMap<&'static str, PredicateFn> {
 // Helpers shared across predicates
 // ----------------------------------------------------------------------
 
-fn first_value<'a>(args: &'a [PredArg], ctx: &MatchCtx) -> Option<CaptureValue> {
+fn first_value(args: &[PredArg], ctx: &MatchCtx) -> Option<CaptureValue> {
     args.first().and_then(|a| resolve_arg(a, ctx))
 }
 
@@ -226,10 +243,7 @@ fn resolve_value(v: &Value, ctx: &MatchCtx) -> Option<CaptureValue> {
         Value::Ident(s) => Some(CaptureValue::String(s.clone())),
         Value::CaptureRef(name) => ctx.captures.get(name).cloned(),
         Value::List(items) => Some(CaptureValue::List(
-            items
-                .iter()
-                .filter_map(|v| resolve_value(v, ctx))
-                .collect(),
+            items.iter().filter_map(|v| resolve_value(v, ctx)).collect(),
         )),
     }
 }
@@ -288,7 +302,10 @@ fn coerce_string(v: &CaptureValue) -> Option<String> {
 
 fn pred_and(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     for a in args {
-        if !matches!(evaluate_inner(a, ctx), PredResult::Bool(true) | PredResult::Skip) {
+        if !matches!(
+            evaluate_inner(a, ctx),
+            PredResult::Bool(true) | PredResult::Skip
+        ) {
             return PredResult::Bool(false);
         }
     }
@@ -355,11 +372,13 @@ fn pred_not_eq(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 fn pred_match(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let (Some(lhs), Some(rhs)) = (
         first_value(args, ctx).and_then(|v| coerce_string(&v)),
-        args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)),
+        args.get(1)
+            .and_then(|a| resolve_arg(a, ctx))
+            .and_then(|v| coerce_string(&v)),
     ) else {
         return PredResult::Bool(false);
     };
-    let Ok(re) = Regex::new(&rhs) else {
+    let Some(re) = cached_regex(&rhs) else {
         return PredResult::Bool(false);
     };
     PredResult::Bool(re.is_match(&lhs))
@@ -407,7 +426,11 @@ fn pred_kind(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(cap) = first_value(args, ctx) else {
         return PredResult::Bool(false);
     };
-    let Some(target) = args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)) else {
+    let Some(target) = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| coerce_string(&v))
+    else {
         return PredResult::Bool(false);
     };
     let actual = match &cap {
@@ -418,14 +441,12 @@ fn pred_kind(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     PredResult::Bool(actual == target)
 }
 
-fn string_pair(
-    args: &[PredArg],
-    ctx: &MatchCtx,
-    f: impl Fn(String, String) -> bool,
-) -> PredResult {
+fn string_pair(args: &[PredArg], ctx: &MatchCtx, f: impl Fn(String, String) -> bool) -> PredResult {
     let (Some(lhs), Some(rhs)) = (
         first_value(args, ctx).and_then(|v| coerce_string(&v)),
-        args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)),
+        args.get(1)
+            .and_then(|a| resolve_arg(a, ctx))
+            .and_then(|v| coerce_string(&v)),
     ) else {
         return PredResult::Bool(false);
     };
@@ -436,14 +457,12 @@ fn string_pair(
 // Numeric
 // ----------------------------------------------------------------------
 
-fn numeric_pair(
-    args: &[PredArg],
-    ctx: &MatchCtx,
-    f: impl Fn(f64, f64) -> bool,
-) -> PredResult {
+fn numeric_pair(args: &[PredArg], ctx: &MatchCtx, f: impl Fn(f64, f64) -> bool) -> PredResult {
     let (Some(lhs), Some(rhs)) = (
         first_value(args, ctx).and_then(|v| coerce_number(&v)),
-        args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_number(&v)),
+        args.get(1)
+            .and_then(|a| resolve_arg(a, ctx))
+            .and_then(|v| coerce_number(&v)),
     ) else {
         return PredResult::Bool(false);
     };
@@ -669,7 +688,10 @@ fn pred_observed_bytes_gt(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(cap) = first_value(args, ctx) else {
         return PredResult::Bool(false);
     };
-    let threshold = args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_number(&v));
+    let threshold = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| coerce_number(&v));
     let CaptureValue::Node(id) = cap else {
         return PredResult::Bool(false);
     };
@@ -685,7 +707,11 @@ fn pred_table_spec_size_gt(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(fqn) = first_value(args, ctx).and_then(|v| coerce_string(&v)) else {
         return PredResult::Bool(false);
     };
-    let Some(threshold) = args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_number(&v)) else {
+    let Some(threshold) = args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| coerce_number(&v))
+    else {
         return PredResult::Bool(false);
     };
     let Some(spec) = ctx.resolved.table_spec(&fqn) else {
@@ -702,14 +728,22 @@ fn pred_table_spec_size_gt(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 fn pred_binds(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let (Some(cap), Some(name)) = (
         first_value(args, ctx),
-        args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)),
+        args.get(1)
+            .and_then(|a| resolve_arg(a, ctx))
+            .and_then(|v| coerce_string(&v)),
     ) else {
         return PredResult::Bool(false);
     };
     let CaptureValue::Node(id) = cap else {
         return PredResult::Bool(false);
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+    else {
         return PredResult::Bool(false);
     };
     PredResult::Bool(node.scope.writes.iter().any(|w| w == &name))
@@ -718,30 +752,31 @@ fn pred_binds(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 fn pred_reads(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let (Some(cap), Some(name)) = (
         first_value(args, ctx),
-        args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)),
+        args.get(1)
+            .and_then(|a| resolve_arg(a, ctx))
+            .and_then(|v| coerce_string(&v)),
     ) else {
         return PredResult::Bool(false);
     };
     let CaptureValue::Node(id) = cap else {
         return PredResult::Bool(false);
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+    else {
         return PredResult::Bool(false);
     };
     PredResult::Bool(node.scope.reads.iter().any(|r| r == &name))
 }
 
-fn pred_shares_receiver(_args: &[PredArg], _ctx: &MatchCtx) -> PredResult {
-    // Legacy stub — superseded by pred_shares_receiver_impl registered
-    // under "shares-receiver". Kept to avoid registry gaps.
-    PredResult::Bool(false)
-}
-
 /// `(#in-loop @node)` — true iff the captured node was built inside a
 /// `for` or `while` loop body. Set by the Python graph builder.
 fn pred_in_loop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
-    let cap = first_value(args, ctx)
-        .or_else(|| ctx.captures.get("__current").cloned());
+    let cap = first_value(args, ctx).or_else(|| ctx.captures.get("__current").cloned());
     let Some(CaptureValue::Node(id)) = cap else {
         return PredResult::Bool(false);
     };
@@ -759,9 +794,9 @@ fn pred_in_loop(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 /// `(#method-chain-contains @node "trigger")` — true iff any element in
 /// the node's AST Call method_chain contains the given substring.
 fn pred_method_chain_contains(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
-    let cap = first_value(args, ctx)
-        .or_else(|| ctx.captures.get("__current").cloned());
-    let Some(needle) = args.get(if cap.is_some() { 1 } else { 0 })
+    let cap = first_value(args, ctx).or_else(|| ctx.captures.get("__current").cloned());
+    let Some(needle) = args
+        .get(if cap.is_some() { 1 } else { 0 })
         .and_then(|a| resolve_arg(a, ctx))
         .and_then(|v| coerce_string(&v))
     else {
@@ -811,8 +846,7 @@ fn pred_method_chain_contains(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 /// `(#source-of @node)` — returns the node's raw source_code text as a
 /// `CaptureValue::String`. Useful for regex matching on the call site text.
 fn pred_source_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
-    let cap = first_value(args, ctx)
-        .or_else(|| ctx.captures.get("__current").cloned());
+    let cap = first_value(args, ctx).or_else(|| ctx.captures.get("__current").cloned());
     let Some(CaptureValue::Node(id)) = cap else {
         return PredResult::Value(CaptureValue::Nil);
     };
@@ -870,7 +904,7 @@ fn pred_self_join(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         .find(|n| n.id == id.as_str())
         .and_then(|n| n.source_code.as_deref())
         .unwrap_or("");
-    let Ok(re) = Regex::new(r"([a-zA-Z_]\w*)\.join\s*\(\s*([a-zA-Z_]\w*)") else {
+    let Some(re) = cached_regex(r"([a-zA-Z_]\w*)\.join\s*\(\s*([a-zA-Z_]\w*)") else {
         return PredResult::Bool(false);
     };
     PredResult::Bool(re.captures(src).is_some_and(|caps| {
@@ -894,7 +928,13 @@ fn pred_method_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(CaptureValue::Node(id)) = first_value(args, ctx) else {
         return PredResult::Value(CaptureValue::Nil);
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+    else {
         return PredResult::Value(CaptureValue::Nil);
     };
     let method = match node.ast.as_ref().map(|s| &s.root) {
@@ -915,7 +955,13 @@ fn pred_method_chain_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(CaptureValue::Node(id)) = first_value(args, ctx) else {
         return PredResult::Value(CaptureValue::Nil);
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+    else {
         return PredResult::Value(CaptureValue::Nil);
     };
     let chain = match node.ast.as_ref().map(|s| &s.root) {
@@ -959,7 +1005,13 @@ fn pred_fqn_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let Some(CaptureValue::Node(id)) = first_value(args, ctx) else {
         return PredResult::Value(CaptureValue::Nil);
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == id.as_str())
+    else {
         return PredResult::Value(CaptureValue::Nil);
     };
     let fqns: Vec<CaptureValue> = node
@@ -995,10 +1047,7 @@ fn pred_overlay_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         ("stage", "input-bytes") => overlay.observed_input_bytes().map(|v| v as f64),
         ("stage", "shuffle-read-bytes") => overlay.observed_shuffle_read_bytes().map(|v| v as f64),
         ("stage", "count") => Some(overlay.stages.len() as f64),
-        ("plan", "node-count") => overlay
-            .plan_subtree
-            .as_ref()
-            .map(|p| p.nodes.len() as f64),
+        ("plan", "node-count") => overlay.plan_subtree.as_ref().map(|p| p.nodes.len() as f64),
         _ => None,
     };
     n.map_or(PredResult::Value(CaptureValue::Nil), |v| {
@@ -1017,6 +1066,10 @@ fn pred_when(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     };
     if !evaluate_inner(trigger, ctx).as_bool() {
         return PredResult::Skip;
+    }
+    let remaining = args.len() - 1;
+    if remaining.is_multiple_of(2) {
+        return PredResult::Bool(false);
     }
     let mut mutation = FindingMutation::default();
     let mut i = 1;
@@ -1074,7 +1127,10 @@ fn extract_node_id(v: &CaptureValue) -> Option<crate::resolved::ids::StaticNodeI
     }
 }
 
-fn current_or_arg_node(args: &[PredArg], ctx: &MatchCtx) -> Option<crate::resolved::ids::StaticNodeId> {
+fn current_or_arg_node(
+    args: &[PredArg],
+    ctx: &MatchCtx,
+) -> Option<crate::resolved::ids::StaticNodeId> {
     if let Some(v) = first_value(args, ctx).and_then(|v| extract_node_id(&v)) {
         return Some(v);
     }
@@ -1218,11 +1274,9 @@ fn pred_not_receiver_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
     let receivers = &chain[..chain.len() - 1];
     let dotted = format!(".{method_name}(");
     let bare = format!("{method_name}(");
-    let found = receivers.iter().any(|m| {
-        m == &method_name
-            || m.contains(&dotted)
-            || m.starts_with(&bare)
-    });
+    let found = receivers
+        .iter()
+        .any(|m| m == &method_name || m.contains(&dotted) || m.starts_with(&bare));
     PredResult::Bool(!found)
 }
 
@@ -1230,7 +1284,9 @@ fn pred_not_receiver_of(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 /// listed kwarg names appear in the call. Useful for "required option
 /// missing" checks like BP021's JDBC partition options.
 fn pred_kwargs_missing(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
-    kwargs_set_check(args, ctx, |present, required| !required.iter().any(|r| present.contains(r)))
+    kwargs_set_check(args, ctx, |present, required| {
+        !required.iter().any(|r| present.contains(r))
+    })
 }
 
 /// `(#kwargs/has @call ["a" "b"])` — true iff *all* listed kwargs appear.
@@ -1273,10 +1329,7 @@ fn kwargs_set_check(
         return PredResult::Bool(false);
     };
     let required: Vec<String> = match list_arg {
-        CaptureValue::List(items) => items
-            .iter()
-            .filter_map(|v| v.as_str_value())
-            .collect(),
+        CaptureValue::List(items) => items.iter().filter_map(|v| v.as_str_value()).collect(),
         other => other.as_str_value().into_iter().collect(),
     };
     PredResult::Bool(f(&present, &required))
@@ -1405,11 +1458,21 @@ fn pred_table_has_property(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         Some(CaptureValue::Node(id)) => id,
         _ => return PredResult::Bool(false),
     };
-    let key = match args.get(1).and_then(|a| resolve_arg(a, ctx)).and_then(|v| coerce_string(&v)) {
+    let key = match args
+        .get(1)
+        .and_then(|a| resolve_arg(a, ctx))
+        .and_then(|v| coerce_string(&v))
+    {
         Some(k) => k,
         None => return PredResult::Bool(false),
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == node_id.as_str())
+    else {
         return PredResult::Bool(false);
     };
     for tref in &node.tables_referenced {
@@ -1432,7 +1495,13 @@ fn pred_join_type_mismatch(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         Some(CaptureValue::Node(id)) => id,
         _ => return PredResult::Bool(false),
     };
-    let Some(node) = ctx.resolved.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
+    let Some(node) = ctx
+        .resolved
+        .graph()
+        .nodes
+        .iter()
+        .find(|n| n.id == node_id.as_str())
+    else {
         return PredResult::Bool(false);
     };
     let schemas: Vec<_> = node
@@ -1472,8 +1541,8 @@ fn pred_join_type_mismatch(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolved::{NodeOverlay, ResolvedGraphBuilder};
     use crate::resolved::scope_facts::ScopeFacts;
+    use crate::resolved::{NodeOverlay, ResolvedGraphBuilder};
     use crate::types::{Edge, Node, OperationKind, ScalingBehavior};
     use std::sync::Arc;
 
@@ -1513,10 +1582,30 @@ mod tests {
     fn registry_contains_expected_categories() {
         let names = registered_names();
         for required in [
-            "and", "or", "not", "xor", "implies", "eq?", "match?", "in",
-            "starts-with", "kind", "gt", "lt", "count", "all", "any", "none",
-            "has-overlay", "has-provenance", "observed-bytes-gt", "binds",
-            "reads", "method-of", "fqn-of", "when",
+            "and",
+            "or",
+            "not",
+            "xor",
+            "implies",
+            "eq?",
+            "match?",
+            "in",
+            "starts-with",
+            "kind",
+            "gt",
+            "lt",
+            "count",
+            "all",
+            "any",
+            "none",
+            "has-overlay",
+            "has-provenance",
+            "observed-bytes-gt",
+            "binds",
+            "reads",
+            "method-of",
+            "fqn-of",
+            "when",
         ] {
             assert!(
                 names.contains(&required),

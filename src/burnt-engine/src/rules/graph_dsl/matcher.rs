@@ -26,14 +26,11 @@
 
 use std::sync::Arc;
 
-use crate::graph::Graph;
 use crate::resolved::ast_shape::{AstNode, CallNode};
 use crate::resolved::ids::StaticNodeId;
 use crate::resolved::ResolvedGraph;
 use crate::rules::graph_dsl::context::{FindingMutation, MatchCtx};
-use crate::rules::graph_dsl::ir::{
-    Head, Pattern, PatternBody, PredArg, Predicate, Prefix, Value,
-};
+use crate::rules::graph_dsl::ir::{Pattern, PatternBody, PredArg, Predicate, Prefix, Value};
 use crate::rules::graph_dsl::predicate::{evaluate_predicate, PredResult};
 use crate::rules::graph_dsl::value::{ast_arg_kind, CaptureMap, CaptureValue};
 use crate::types::{Node, OperationKind};
@@ -93,7 +90,11 @@ fn match_op_pattern(pattern: &Pattern, resolved: &ResolvedGraph) -> Vec<DslMatch
     // Useful for rules that want to drill into the AST shape without
     // committing to a specific OperationKind classification.
     let is_any = pattern.head.kind == "Any";
-    let target_kind = if is_any { None } else { parse_op_kind(&pattern.head.kind) };
+    let target_kind = if is_any {
+        None
+    } else {
+        parse_op_kind(&pattern.head.kind)
+    };
     let mut out = Vec::new();
     for node in &resolved.graph().nodes {
         if !is_any {
@@ -232,11 +233,13 @@ fn match_fact_pattern(pattern: &Pattern, resolved: &ResolvedGraph) -> Vec<DslMat
     let kind = pattern.head.kind.as_str();
     let fact_value = match kind {
         "Mode" => Some(CaptureValue::String(resolved.graph().mode.clone().into())),
-        "Confidence" => Some(CaptureValue::String(resolved.graph().confidence.clone().into())),
+        "Confidence" => Some(CaptureValue::String(
+            resolved.graph().confidence.clone().into(),
+        )),
         "NodeCount" => Some(CaptureValue::Number(resolved.graph().nodes.len() as f64)),
         "EdgeCount" => Some(CaptureValue::Number(resolved.graph().edges.len() as f64)),
         "UnmatchedStages" => Some(CaptureValue::Number(
-            resolved.unmatched().stages.len() as f64,
+            resolved.unmatched().stages.len() as f64
         )),
         // Raw source text — exposes the full source string so rules can
         // run regex / substring checks directly without needing a node anchor.
@@ -314,7 +317,7 @@ fn match_op_props(pattern: &Pattern, node: &Node, captures: &mut CaptureMap) -> 
             "scope/namespace" => {
                 let want = value_to_string(value).unwrap_or_default();
                 let ns = node.scope.namespace.as_ref().map(namespace_name);
-                ns.as_deref() == Some(want.as_str())
+                ns == Some(want.as_str())
             }
             _ => {
                 // Unknown prop — bind the capture for diagnostic but don't fail.
@@ -426,13 +429,18 @@ fn match_call_node(
     for (key, value) in &sub.props {
         let key_str = key.as_str();
         let ok = if key_str == "method" {
-            value_to_string(value).map(|s| call.method() == s).unwrap_or(false)
+            value_to_string(value)
+                .map(|s| call.method() == s)
+                .unwrap_or(false)
         } else if key_str == "method-chain" {
             match value {
                 Value::List(items) => method_chain_matches(call, items),
                 _ => false,
             }
-        } else if let Some(idx) = key_str.strip_prefix("arg/").and_then(|s| s.parse::<usize>().ok()) {
+        } else if let Some(idx) = key_str
+            .strip_prefix("arg/")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
             match value {
                 Value::CaptureRef(name) => {
                     if let Some(arg) = call.args.get(idx) {
@@ -731,8 +739,7 @@ mod tests {
             mk_call_node("a", vec!["df", "collect"], 1),
             mk_call_node("b", vec!["df", "take"], 2),
         ]));
-        let pattern =
-            parse_pattern(r#"(op:Action (ast/Call :method "collect"))"#).unwrap();
+        let pattern = parse_pattern(r#"(op:Action (ast/Call :method "collect"))"#).unwrap();
         let matches = run_pattern(&pattern, None, &resolved);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].anchor.as_str(), "a");
@@ -740,11 +747,8 @@ mod tests {
 
     #[test]
     fn capture_binds_to_node() {
-        let resolved = build_resolved_for_test(mk_graph(vec![mk_call_node(
-            "a",
-            vec!["df", "collect"],
-            5,
-        )]));
+        let resolved =
+            build_resolved_for_test(mk_graph(vec![mk_call_node("a", vec!["df", "collect"], 5)]));
         let pattern = parse_pattern(r#"(op:Action @call)"#).unwrap();
         let matches = run_pattern(&pattern, None, &resolved);
         assert_eq!(matches.len(), 1);
@@ -847,11 +851,8 @@ mod tests {
 
     #[test]
     fn when_predicate_attaches_mutation() {
-        let resolved = build_resolved_for_test(mk_graph(vec![mk_call_node(
-            "a",
-            vec!["df", "collect"],
-            5,
-        )]));
+        let resolved =
+            build_resolved_for_test(mk_graph(vec![mk_call_node("a", vec!["df", "collect"], 5)]));
         let pattern = parse_pattern(
             r#"(op:Action
                  (ast/Call :method "collect")

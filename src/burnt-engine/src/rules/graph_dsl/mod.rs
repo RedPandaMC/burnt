@@ -37,5 +37,7 @@ pub use error::{ParseError, ParseErrorKind};
 pub use ir::{Capture, Head, Pattern, PatternBody, PredArg, Predicate, Prefix, Value};
 pub use matcher::{run_pattern, DslMatch};
 pub use parser::parse_pattern;
-pub use predicate::{evaluate_predicate, lookup, registered_names, registry_size, PredResult, PredicateFn};
+pub use predicate::{
+    evaluate_predicate, lookup, registered_names, registry_size, PredResult, PredicateFn,
+};
 pub use value::{ast_arg_kind, ast_node_kind, AstNodeRef, AstPathStep, CaptureMap, CaptureValue};

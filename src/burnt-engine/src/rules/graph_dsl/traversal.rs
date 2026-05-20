@@ -61,11 +61,7 @@ pub fn siblings_of(resolved: &ResolvedGraph, id: &StaticNodeId) -> Vec<CaptureVa
         .ancestors
         .iter()
         .filter(|a| {
-            let parent_node = resolved
-                .graph()
-                .nodes
-                .iter()
-                .find(|n| n.id == a.as_str());
+            let parent_node = resolved.graph().nodes.iter().find(|n| n.id == a.as_str());
             // A direct parent has the current node as a *child*, i.e. it
             // appears in the parent's descendants but doesn't have any
             // other ancestor pointing at it that's "between" us. The
@@ -74,7 +70,12 @@ pub fn siblings_of(resolved: &ResolvedGraph, id: &StaticNodeId) -> Vec<CaptureVa
             // index we approximate by treating every ancestor as a
             // potential parent and deduping at the end.
             parent_node
-                .map(|p| p.scope.descendants.iter().any(|d| d.as_str() == id.as_str()))
+                .map(|p| {
+                    p.scope
+                        .descendants
+                        .iter()
+                        .any(|d| d.as_str() == id.as_str())
+                })
                 .unwrap_or(false)
         })
         .collect();
@@ -169,8 +170,8 @@ pub fn call_receiver_matches(node: &AstNode, expected: &str) -> bool {
 mod tests {
     use super::*;
     use crate::resolved::scope_facts::populate_dag_facts;
-    use crate::resolved::ResolvedGraphBuilder;
     use crate::resolved::scope_facts::ScopeFacts;
+    use crate::resolved::ResolvedGraphBuilder;
     use crate::types::{Edge, Node, OperationKind, ScalingBehavior};
 
     fn mk_node(id: &str) -> Node {

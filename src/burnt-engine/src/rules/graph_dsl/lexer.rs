@@ -75,103 +75,99 @@ impl<'a> Lexer<'a> {
     }
 
     fn next_token(&mut self) -> Result<Option<Token>, ParseError> {
-        loop {
-            self.skip_ws_and_comments();
-            let Some(c) = self.peek() else {
-                return Ok(None);
-            };
-            let (line, column) = (self.line, self.column);
-            match c {
-                b'(' => {
-                    self.advance();
-                    return Ok(Some(Token {
-                        kind: TokenKind::LParen,
-                        line,
-                        column,
-                    }));
-                }
-                b')' => {
-                    self.advance();
-                    return Ok(Some(Token {
-                        kind: TokenKind::RParen,
-                        line,
-                        column,
-                    }));
-                }
-                b'[' => {
-                    self.advance();
-                    return Ok(Some(Token {
-                        kind: TokenKind::LBracket,
-                        line,
-                        column,
-                    }));
-                }
-                b']' => {
-                    self.advance();
-                    return Ok(Some(Token {
-                        kind: TokenKind::RBracket,
-                        line,
-                        column,
-                    }));
-                }
-                b'@' => {
-                    self.advance();
-                    let name = self.read_ident();
-                    return Ok(Some(Token {
-                        kind: TokenKind::At(Arc::from(name)),
-                        line,
-                        column,
-                    }));
-                }
-                b'#' => {
-                    self.advance();
-                    let name = self.read_ident();
-                    return Ok(Some(Token {
-                        kind: TokenKind::Hash(Arc::from(name)),
-                        line,
-                        column,
-                    }));
-                }
-                b':' => {
-                    self.advance();
-                    let name = self.read_ident();
-                    return Ok(Some(Token {
-                        kind: TokenKind::Colon(Arc::from(name)),
-                        line,
-                        column,
-                    }));
-                }
-                b'"' => {
-                    let s = self.read_string(line, column)?;
-                    return Ok(Some(Token {
-                        kind: TokenKind::String(Arc::from(s)),
-                        line,
-                        column,
-                    }));
-                }
-                b'-' | b'0'..=b'9' => {
-                    let token = self.read_number_or_size(line, column)?;
-                    return Ok(Some(token));
-                }
-                c if is_ident_start(c) => {
-                    let name = self.read_ident();
-                    let kind = match name.as_str() {
-                        "true" => TokenKind::Bool(true),
-                        "false" => TokenKind::Bool(false),
-                        _ => TokenKind::Ident(Arc::from(name)),
-                    };
-                    return Ok(Some(Token { kind, line, column }));
-                }
-                _ => {
-                    return Err(ParseError::new(
-                        ParseErrorKind::UnexpectedToken {
-                            token: (c as char).to_string(),
-                        },
-                        line,
-                        column,
-                    ));
-                }
+        self.skip_ws_and_comments();
+        let Some(c) = self.peek() else {
+            return Ok(None);
+        };
+        let (line, column) = (self.line, self.column);
+        match c {
+            b'(' => {
+                self.advance();
+                Ok(Some(Token {
+                    kind: TokenKind::LParen,
+                    line,
+                    column,
+                }))
             }
+            b')' => {
+                self.advance();
+                Ok(Some(Token {
+                    kind: TokenKind::RParen,
+                    line,
+                    column,
+                }))
+            }
+            b'[' => {
+                self.advance();
+                Ok(Some(Token {
+                    kind: TokenKind::LBracket,
+                    line,
+                    column,
+                }))
+            }
+            b']' => {
+                self.advance();
+                Ok(Some(Token {
+                    kind: TokenKind::RBracket,
+                    line,
+                    column,
+                }))
+            }
+            b'@' => {
+                self.advance();
+                let name = self.read_ident();
+                Ok(Some(Token {
+                    kind: TokenKind::At(Arc::from(name)),
+                    line,
+                    column,
+                }))
+            }
+            b'#' => {
+                self.advance();
+                let name = self.read_ident();
+                Ok(Some(Token {
+                    kind: TokenKind::Hash(Arc::from(name)),
+                    line,
+                    column,
+                }))
+            }
+            b':' => {
+                self.advance();
+                let name = self.read_ident();
+                Ok(Some(Token {
+                    kind: TokenKind::Colon(Arc::from(name)),
+                    line,
+                    column,
+                }))
+            }
+            b'"' => {
+                let s = self.read_string(line, column)?;
+                Ok(Some(Token {
+                    kind: TokenKind::String(Arc::from(s)),
+                    line,
+                    column,
+                }))
+            }
+            b'-' | b'0'..=b'9' => {
+                let token = self.read_number_or_size(line, column)?;
+                Ok(Some(token))
+            }
+            c if is_ident_start(c) => {
+                let name = self.read_ident();
+                let kind = match name.as_str() {
+                    "true" => TokenKind::Bool(true),
+                    "false" => TokenKind::Bool(false),
+                    _ => TokenKind::Ident(Arc::from(name)),
+                };
+                Ok(Some(Token { kind, line, column }))
+            }
+            _ => Err(ParseError::new(
+                ParseErrorKind::UnexpectedToken {
+                    token: (c as char).to_string(),
+                },
+                line,
+                column,
+            )),
         }
     }
 
@@ -354,9 +350,10 @@ impl<'a> Lexer<'a> {
         // Bare number followed by an unrelated identifier — surface as
         // an unknown suffix on the size form (the more common case) so
         // the error is useful.
-        if suffix.chars().all(|c| {
-            "BKMGTPibB".contains(c) || c.is_ascii_alphabetic()
-        }) && suffix.len() <= 3
+        if suffix
+            .chars()
+            .all(|c| "BKMGTPibB".contains(c) || c.is_ascii_alphabetic())
+            && suffix.len() <= 3
         {
             Err(ParseError::new(
                 ParseErrorKind::InvalidSize { token },
