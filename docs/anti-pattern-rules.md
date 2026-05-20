@@ -19,9 +19,9 @@ S-expression pattern over the resolved graph — see `docs/dsl-reference.md`.
 
 ## Rule Index
 
-<!-- rule count: 110 — regenerate with: python3 scripts/gen_rule_index.py -->
+<!-- rule count: 111 — regenerate with: python3 scripts/gen_rule_index.py -->
 
-110 rules are active by default (`select = ["ALL"]`).
+111 rules are active by default (`select = ["ALL"]`).
 
 | Code | Severity | Language | Tags | Description |
 |------|----------|----------|------|-------------|
@@ -43,6 +43,7 @@ S-expression pattern over the resolved graph — see `docs/dsl-reference.md`.
 | [BD022](#bd022) | info | sql | delta,performance,sql | WHEN MATCHED THEN UPDATE SET * without an AND condition updates unchanged rows, causing unnecessary rewrites |
 | [BD026](#bd026) | info | sql | delta,performance,sql | CONVERT TO DELTA leaves small files from the source format — run OPTIMIZE afterward |
 | [BD032](#bd032) | warning | sql | delta,performance,sql | More than 4 Liquid Clustering keys reduces clustering effectiveness and increases write overhead |
+| [BJ001](#bj001) | warning | python | pyspark,join,correctness | Join on columns of differing types — implicit cast may silently change values or degrade performance |
 | [BJ002](#bj002) | warning | python | pyspark,join,correctness | Self-joining a DataFrame without aliasing produces ambiguous column references that cause AnalysisException |
 | [BJ004](#bj004) | warning | python | pyspark,join,correctness | Passing a column name as a string to .join() produces an ambiguous column reference when both DataFrames have that column |
 | [BN001](#bn001) | info | notebook | notebook,structure | Notebook missing run directive or target |
