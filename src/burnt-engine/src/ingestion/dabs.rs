@@ -1,3 +1,4 @@
+use crate::error::EngineError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +20,9 @@ pub struct JobDef {
     pub cluster: Option<String>,
 }
 
-pub fn parse_dabs(path: &str) -> Result<DabsConfig, String> {
+pub fn parse_dabs(path: &str) -> Result<DabsConfig, EngineError> {
     let _ = path;
-    Err("Not implemented".to_string())
+    Err(EngineError::Internal(
+        "DABS parsing not implemented".to_string(),
+    ))
 }

@@ -1,3 +1,4 @@
+use crate::error::EngineError;
 use crate::parse::notebooks::{parse_file_content, FileFormat};
 use crate::types::Cell;
 use serde::{Deserialize, Serialize};
@@ -11,18 +12,17 @@ pub struct SourceFile {
     pub cells: Vec<Cell>,
 }
 
-pub fn ingest_file(path: &str) -> Result<SourceFile, String> {
+pub fn ingest_file(path: &str) -> Result<SourceFile, EngineError> {
     let path_buf = Path::new(path);
 
     if !path_buf.exists() {
-        return Err(format!("File not found: {}", path));
+        return Err(EngineError::FileNotFound(path.to_string()));
     }
 
-    let content = std::fs::read_to_string(path_buf)
-        .map_err(|e| format!("Failed to read file {}: {}", path, e))?;
+    let content = std::fs::read_to_string(path_buf)?;
 
-    let format =
-        FileFormat::from_path(path).ok_or_else(|| format!("Unsupported file format: {}", path))?;
+    let format = FileFormat::from_path(path)
+        .ok_or_else(|| EngineError::UnsupportedFormat(path.to_string()))?;
 
     let language = match format {
         FileFormat::PlainPython | FileFormat::DatabricksPython => "python",
