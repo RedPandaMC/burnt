@@ -14,7 +14,7 @@ use crate::graph::Graph;
 use crate::resolved::ids::StaticNodeId;
 
 /// Symbolic namespace of a call's leading identifier, resolved by
-/// [`ImportMap`](crate::parse::import_map::ImportMap).
+/// `ImportMap`.
 ///
 /// Replaces the runtime `ImportMap` lookups today's Context rules do; once
 /// `ScopeFacts.namespace` is populated, the DSL can ask
@@ -251,9 +251,8 @@ mod tests {
             confidence: "low".into(),
         };
         populate_dag_facts(&mut g);
-        let scope_of = |id: &str| -> &ScopeFacts {
-            &g.nodes.iter().find(|n| n.id == id).unwrap().scope
-        };
+        let scope_of =
+            |id: &str| -> &ScopeFacts { &g.nodes.iter().find(|n| n.id == id).unwrap().scope };
         assert_eq!(scope_of("a").descendants.len(), 1);
         assert_eq!(scope_of("a").descendants[0].as_str(), "b");
         assert!(scope_of("a").ancestors.is_empty());

@@ -168,7 +168,10 @@ impl ResolvedGraphBuilder {
         for stage in self.stages {
             let sql_exec_id = stage.sql_exec_id;
             let obs = stage.into_observation();
-            match obs.source_line.and_then(|line| pick_node(&line_index, line)) {
+            match obs
+                .source_line
+                .and_then(|line| pick_node(&line_index, line))
+            {
                 Some(node_id) => {
                     if let Some(overlay) = overlays.get_mut(&node_id) {
                         overlay.stages.push(obs);
@@ -250,10 +253,7 @@ fn build_line_index(graph: &Graph) -> BTreeMap<u32, Vec<StaticNodeId>> {
 /// hashes lowest by string id. The hash tiebreak is rare enough that
 /// correctness doesn't ride on it — it just stops the result depending on
 /// `HashMap` iteration order.
-fn pick_node(
-    index: &BTreeMap<u32, Vec<StaticNodeId>>,
-    stage_line: u32,
-) -> Option<StaticNodeId> {
+fn pick_node(index: &BTreeMap<u32, Vec<StaticNodeId>>, stage_line: u32) -> Option<StaticNodeId> {
     let lo = stage_line.saturating_sub(LINE_WINDOW);
     let hi = stage_line.saturating_add(LINE_WINDOW);
     let mut best: Option<(u32, &StaticNodeId)> = None;
@@ -263,9 +263,7 @@ fn pick_node(
             best = match best {
                 None => Some((dist, id)),
                 Some((bd, _)) if dist < bd => Some((dist, id)),
-                Some((bd, bid)) if dist == bd && id.as_str() < bid.as_str() => {
-                    Some((dist, id))
-                }
+                Some((bd, bid)) if dist == bd && id.as_str() < bid.as_str() => Some((dist, id)),
                 other => other,
             };
         }
@@ -301,14 +299,8 @@ mod tests {
             Some(42)
         );
         assert_eq!(extract_source_line("save at q.sql:7"), Some(7));
-        assert_eq!(
-            extract_source_line("Spark <stdin>:5 broadcast"),
-            Some(5)
-        );
-        assert_eq!(
-            extract_source_line("nb.ipynb:128"),
-            Some(128)
-        );
+        assert_eq!(extract_source_line("Spark <stdin>:5 broadcast"), Some(5));
+        assert_eq!(extract_source_line("nb.ipynb:128"), Some(128));
         assert_eq!(extract_source_line("no marker here"), None);
         assert_eq!(extract_source_line(""), None);
     }
@@ -483,10 +475,7 @@ mod tests {
             .with_plan_bundles(vec![bundle])
             .build();
         assert_eq!(resolved.unmatched().plan_bundles.len(), 1);
-        assert_eq!(
-            resolved.unmatched().plan_bundles[0],
-            SqlExecId::new(99)
-        );
+        assert_eq!(resolved.unmatched().plan_bundles[0], SqlExecId::new(99));
         assert!(resolved.overlay("a").unwrap().plan_subtree.is_none());
     }
 
@@ -501,5 +490,4 @@ mod tests {
             assert!(!ov.provenance.contains(Provenance::PLAN));
         }
     }
-
 }

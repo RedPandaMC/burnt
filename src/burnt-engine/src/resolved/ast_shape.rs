@@ -90,10 +90,7 @@ impl CallNode {
     /// Look up a kwarg by name.
     #[must_use]
     pub fn kwarg(&self, name: &str) -> Option<&AstArg> {
-        self.kwargs
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v)
+        self.kwargs.iter().find(|(k, _)| k == name).map(|(_, v)| v)
     }
 }
 
@@ -364,9 +361,7 @@ mod tests {
     fn fstring_part_round_trip_serde() {
         let parts = vec![
             FStringPart::Text("SELECT FROM ".into()),
-            FStringPart::Interpolation {
-                expr: "t".into(),
-            },
+            FStringPart::Interpolation { expr: "t".into() },
         ];
         let serialised = serde_json::to_string(&parts).unwrap();
         let parsed: Vec<FStringPart> = serde_json::from_str(&serialised).unwrap();

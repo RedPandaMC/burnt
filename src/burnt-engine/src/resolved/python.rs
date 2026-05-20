@@ -395,15 +395,7 @@ fn py_graph_to_domain(py_graph: &PyGraph) -> crate::graph::Graph {
             tables_referenced: n
                 .tables_referenced
                 .iter()
-                .map(|t| TableRef {
-                    raw: t.raw.clone(),
-                    catalog: t.catalog.clone(),
-                    schema: t.schema.clone(),
-                    table: t.table.clone(),
-                    is_temp_view: t.is_temp_view,
-                    is_path_read: t.is_path_read,
-                    path: t.path.clone(),
-                })
+                .map(|t| TableRef::from(t.clone()))
                 .collect(),
             estimated_input_bytes: n.estimated_input_bytes,
             estimated_cost_usd: n.estimated_cost_usd,
@@ -526,11 +518,15 @@ fn pyattr_to_values(
 }
 
 fn parse_plan_nodes(value: Option<&serde_json::Value>) -> Vec<PlanNode> {
+    const MAX_NODES: usize = 100_000;
     let Some(arr) = value.and_then(|v| v.as_array()) else {
         return Vec::new();
     };
-    let mut out = Vec::with_capacity(arr.len());
-    for node_value in arr {
+    let mut out = Vec::with_capacity(arr.len().min(MAX_NODES));
+    for (i, node_value) in arr.iter().enumerate() {
+        if i >= MAX_NODES {
+            break;
+        }
         let Some(node_id) = node_value.get("nodeId").and_then(|v| v.as_i64()) else {
             continue;
         };
@@ -547,11 +543,7 @@ fn parse_plan_nodes(value: Option<&serde_json::Value>) -> Vec<PlanNode> {
         let metrics = node_value
             .get("metrics")
             .and_then(|v| v.as_object())
-            .map(|obj| {
-                obj.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
-            })
+            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
         out.push(PlanNode {
             node_id,

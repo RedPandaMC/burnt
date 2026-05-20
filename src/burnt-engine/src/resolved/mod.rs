@@ -68,7 +68,7 @@ pub use scope_facts::{populate_dag_facts, Namespace, ScopeFacts};
 /// three signals (static / plan / stage / table-spec) live in one type.
 ///
 /// The `schema` and `table_properties` fields are populated by the Rust-side
-/// [`CatalogClient`] enrichment pass (`run_graph_rules_with_catalog`) and are
+/// catalog enrichment pass (`run_graph_rules_with_catalog`) and are
 /// not exposed to Python — the Python layer only supplies the size/count fields.
 #[derive(Debug, Clone, Default)]
 pub struct TableSpec {
@@ -149,7 +149,8 @@ impl ResolvedGraph {
 
     /// Look up the overlay for a static node by id.
     pub fn overlay(&self, id: impl AsRef<str>) -> Option<&NodeOverlay> {
-        self.overlays.get(&StaticNodeId::new(id.as_ref().to_string()))
+        self.overlays
+            .get(&StaticNodeId::new(id.as_ref().to_string()))
     }
 
     /// Iterate `(id, overlay)` pairs in unspecified order.
@@ -281,7 +282,11 @@ mod tests {
             .tables_referenced
             .push(TableRef::from_dotted("other"));
         let resolved = ResolvedGraphBuilder::new(g).build();
-        let mut fqns: Vec<String> = resolved.distinct_table_refs().iter().map(|t| t.fqn()).collect();
+        let mut fqns: Vec<String> = resolved
+            .distinct_table_refs()
+            .iter()
+            .map(|t| t.fqn())
+            .collect();
         fqns.sort();
         assert_eq!(fqns, vec!["cat.sch.t".to_string(), "other".to_string()]);
     }
