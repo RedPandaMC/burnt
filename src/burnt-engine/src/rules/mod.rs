@@ -1,3 +1,4 @@
+use crate::error::EngineError;
 use crate::parse::import_map::ImportMap;
 use crate::types::{CompiledRule, Finding as TypesFinding, RuleEntry};
 use pyo3::prelude::*;
@@ -62,7 +63,7 @@ impl Default for RulePipeline {
 
 static PIPELINE: OnceLock<RulePipeline> = OnceLock::new();
 
-pub fn run(source: &str, language: &str) -> Result<Vec<TypesFinding>, String> {
+pub fn run(source: &str, language: &str) -> Result<Vec<TypesFinding>, EngineError> {
     let pipeline = PIPELINE.get_or_init(RulePipeline::new);
     Ok(pipeline.execute(source, language))
 }

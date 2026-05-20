@@ -24,9 +24,8 @@ use crate::types::{CompiledRule, Confidence, Finding, Severity};
 /// Cached parsed-pattern store keyed by rule code. Built lazily on first
 /// rule execution; once populated, lookups are O(1) and don't re-parse.
 fn pattern_cache() -> &'static RwLock<std::collections::HashMap<String, Arc<CompiledPatterns>>> {
-    static CACHE: OnceLock<
-        RwLock<std::collections::HashMap<String, Arc<CompiledPatterns>>>,
-    > = OnceLock::new();
+    static CACHE: OnceLock<RwLock<std::collections::HashMap<String, Arc<CompiledPatterns>>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| RwLock::new(std::collections::HashMap::new()))
 }
 
@@ -45,10 +44,7 @@ fn compile_for(rule: &CompiledRule) -> Option<Arc<CompiledPatterns>> {
     let detect = match parse_pattern(&rule.graph_detect) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!(
-                "burnt: rule {} has invalid [graph].detect: {e}",
-                rule.code
-            );
+            eprintln!("burnt: rule {} has invalid [graph].detect: {e}", rule.code);
             return None;
         }
     };
@@ -56,10 +52,7 @@ fn compile_for(rule: &CompiledRule) -> Option<Arc<CompiledPatterns>> {
         Some(src) if !src.is_empty() => match parse_pattern(src) {
             Ok(p) => Some(p),
             Err(e) => {
-                eprintln!(
-                    "burnt: rule {} has invalid [graph].exclude: {e}",
-                    rule.code
-                );
+                eprintln!("burnt: rule {} has invalid [graph].exclude: {e}", rule.code);
                 return None;
             }
         },
@@ -81,11 +74,7 @@ fn compile_for(rule: &CompiledRule) -> Option<Arc<CompiledPatterns>> {
 /// Rules marked `has_catalog = true` are **skipped** on this path; use
 /// [`run_graph_rules_with_catalog`] to evaluate them.
 #[must_use]
-pub fn run_graph_rules(
-    source: &str,
-    language: &str,
-    rules: &[CompiledRule],
-) -> Vec<Finding> {
+pub fn run_graph_rules(source: &str, language: &str, rules: &[CompiledRule]) -> Vec<Finding> {
     let Some(resolved) = resolve_for_source(source, language) else {
         return Vec::new();
     };
@@ -224,7 +213,14 @@ fn build_finding(rule: &CompiledRule, m: &DslMatch, resolved: &ResolvedGraph) ->
         .clone()
         .unwrap_or_else(|| rule.suggestion.clone());
 
-    make_finding(&rule.code, severity, &message, &suggestion, line, confidence)
+    make_finding(
+        &rule.code,
+        severity,
+        &message,
+        &suggestion,
+        line,
+        confidence,
+    )
 }
 
 fn resolve_line(rule: &CompiledRule, m: &DslMatch, resolved: &ResolvedGraph) -> u32 {
@@ -302,12 +298,7 @@ fn mutation_confidence(m: &FindingMutation) -> Option<Confidence> {
 mod tests {
     use super::*;
 
-    fn make_rule(
-        code: &str,
-        detect: &str,
-        exclude: Option<&str>,
-        language: &str,
-    ) -> CompiledRule {
+    fn make_rule(code: &str, detect: &str, exclude: Option<&str>, language: &str) -> CompiledRule {
         CompiledRule {
             id: code.to_lowercase(),
             code: code.into(),
@@ -355,12 +346,7 @@ df.collect()
 
     #[test]
     fn language_filter_skips_non_matching_rules() {
-        let rule = make_rule(
-            "PYRULE",
-            r#"(op:Action)"#,
-            None,
-            "python",
-        );
+        let rule = make_rule("PYRULE", r#"(op:Action)"#, None, "python");
         let findings = run_graph_rules("SELECT 1", "sql", std::slice::from_ref(&rule));
         assert!(findings.is_empty());
     }
