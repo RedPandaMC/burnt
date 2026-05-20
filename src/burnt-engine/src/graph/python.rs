@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use crate::error::EngineError;
 use crate::graph::sql::extract_table_refs;
+use crate::parse::import_map::{DecoratorKind, ImportMap};
 use crate::resolved::ast_shape::{
     AstArg, AstNode, AstShape, CallNode, ComprehensionKind, FStringPart, LitKind,
 };
+use crate::resolved::Namespace;
 use crate::semantic::SemanticModel;
 use crate::types::{Edge, Finding, Node, OperationKind, ScalingBehavior, TableRef};
 use tree_sitter::{Node as TsNode, Parser};
@@ -14,6 +16,7 @@ pub struct PythonGraphBuilder {
     edges: Vec<Edge>,
     bindings: HashMap<String, Vec<String>>,
     semantic_model: SemanticModel,
+    import_map: ImportMap,
 }
 
 impl PythonGraphBuilder {
@@ -23,6 +26,7 @@ impl PythonGraphBuilder {
             edges: Vec::new(),
             bindings: HashMap::new(),
             semantic_model: SemanticModel::new(),
+            import_map: ImportMap::new(),
         }
     }
 
@@ -40,6 +44,10 @@ impl PythonGraphBuilder {
             .parse(source, None)
             .ok_or_else(|| EngineError::GraphBuild("tree-sitter parse failed".into()))?;
         let root = tree.root_node();
+
+        // Build ImportMap from the same parse so namespace classification
+        // happens at graph-build time (no second parse needed).
+        self.import_map = ImportMap::build(source, root);
 
         self.visit_node(&root, source);
 
@@ -60,6 +68,9 @@ impl PythonGraphBuilder {
             }
             "call" => {
                 self.handle_call(node, source, next_in_loop);
+            }
+            "decorated_definition" => {
+                self.handle_decorated_definition(node, source, next_in_loop);
             }
             _ => {}
         }
@@ -101,6 +112,59 @@ impl PythonGraphBuilder {
     fn handle_call(&mut self, node: &TsNode, source: &str, in_loop: bool) -> Option<String> {
         let line = node.start_position().row as u32 + 1;
         self.handle_spark_call(node, source, line, in_loop)
+    }
+
+    fn handle_decorated_definition(&mut self, node: &TsNode, source: &str, in_loop: bool) {
+        let mut cursor = node.walk();
+        let mut decorator_kind: Option<DecoratorKind> = None;
+        let mut func_name: Option<String> = None;
+        let mut line = node.start_position().row as u32 + 1;
+
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "decorator" => {
+                    let text = child.utf8_text(source.as_bytes()).unwrap_or("");
+                    if let Some(dk) = self.import_map.decorator_kind(text) {
+                        decorator_kind = Some(dk);
+                    }
+                }
+                "function_definition" => {
+                    line = child.start_position().row as u32 + 1;
+                    func_name = child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(String::from);
+                }
+                _ => {}
+            }
+        }
+
+        let Some(dk) = decorator_kind else { return };
+        if matches!(dk, DecoratorKind::Expect) {
+            return;
+        }
+
+        let label = format!(
+            "@pipeline {}",
+            func_name.as_deref().unwrap_or("?")
+        );
+        let node_id = self.create_node(
+            OperationKind::Write,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            line,
+            Some(label),
+            in_loop,
+        );
+
+        if let Some(n) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            n.scope.namespace = Some(Namespace::Pipeline);
+        }
+        if let Some(name) = func_name {
+            self.bindings.entry(name).or_default().push(node_id);
+        }
     }
 
     fn handle_spark_call(
@@ -853,8 +917,8 @@ x = spark.read.csv("other")
             .tables_referenced
             .first()
             .unwrap();
-        assert!(r.is_path_read);
-        assert_eq!(r.table, "k");
+        assert!(r.is_path_read());
+        assert_eq!(r.table(), "k");
     }
 
     #[test]
@@ -930,7 +994,7 @@ x = spark.read.csv("other")
     use crate::resolved::ast_shape::{AstArg, AstNode, FStringPart, LitKind};
 
     fn first_call_ast(source: &str) -> CallNode {
-        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source);
+        let (nodes, _, _) = PythonGraphBuilder::new().build_from_source(source).unwrap();
         let node = nodes
             .into_iter()
             .find(|n| n.ast.is_some())

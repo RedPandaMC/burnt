@@ -1,13 +1,11 @@
 use pyo3::prelude::*;
 
-use crate::types::{Edge, Finding, Node, PipelineTable, PyEdge, PyNode, PyPipelineTable};
+use crate::types::{Edge, Finding, Node, PyEdge, PyNode};
 
 pub mod python;
-pub mod sdp;
 pub mod sql;
 
 use python::PythonGraphBuilder;
-use sdp::SdpGraphBuilder;
 use sql::SqlGraphBuilder;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -212,35 +210,12 @@ fn classify_namespace(
         return Namespace::Spark;
     }
     if imap.is_pipeline_ns(head) {
-        // The pipeline namespace can resolve to either `dlt` or `dp`; check
-        // the underlying module to disambiguate.
-        match imap.resolve(head) {
-            Some("dp") => Namespace::Dp,
-            _ => Namespace::Dlt,
-        }
-    } else if let Some(module) = imap.resolve(head) {
+        return Namespace::Pipeline;
+    }
+    if let Some(module) = imap.resolve(head) {
         Namespace::UserDefined(module.to_string())
     } else {
         Namespace::Unknown
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PipelineGraph {
-    pub tables: Vec<PipelineTable>,
-    pub mode: String,
-    pub confidence: String,
-}
-
-impl PipelineGraph {
-    pub fn from_sdp(source: &str) -> Self {
-        let (tables, _edges) = SdpGraphBuilder::new().build_from_source(source);
-
-        PipelineGraph {
-            tables,
-            mode: "sdp".to_string(),
-            confidence: "low".to_string(),
-        }
     }
 }
 
@@ -268,23 +243,3 @@ impl From<Graph> for PyGraph {
     }
 }
 
-#[pyclass]
-#[derive(Clone)]
-pub struct PyPipeline {
-    #[pyo3(get)]
-    pub tables: Vec<PyPipelineTable>,
-    #[pyo3(get)]
-    pub mode: String,
-    #[pyo3(get)]
-    pub confidence: String,
-}
-
-impl From<PipelineGraph> for PyPipeline {
-    fn from(g: PipelineGraph) -> Self {
-        PyPipeline {
-            tables: g.tables.into_iter().map(|t| t.into()).collect(),
-            mode: g.mode,
-            confidence: g.confidence,
-        }
-    }
-}

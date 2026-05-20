@@ -1,79 +1,446 @@
 use std::collections::HashMap;
 
-use sqlparser::ast::{Expr, Join, Query, SetExpr, Statement, TableFactor, TableWithJoins};
-use sqlparser::dialect::DatabricksDialect;
-use sqlparser::parser::Parser;
+use tree_sitter::Node;
 
 use crate::resolved::ast_shape::{AstNode, AstShape, SqlExpr, SqlStatementKind, SqlStatementNode};
-use crate::types::{Edge, Node, OperationKind, ScalingBehavior, TableRef};
+use crate::types::{Edge, Node as GraphNode, OperationKind, ScalingBehavior, TableRef};
 
-/// Walk a SQL string and collect every distinct table reference it touches.
+// ---- Low-level CST helpers ------------------------------------------------
+
+fn node_text<'a>(node: Node, source: &'a [u8]) -> &'a str {
+    std::str::from_utf8(&source[node.byte_range()]).unwrap_or("")
+}
+
+fn object_ref_to_table_ref(node: Node, source: &[u8]) -> Option<TableRef> {
+    if node.kind() != "object_reference" {
+        return None;
+    }
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, source).to_string())?;
+    let schema = node
+        .child_by_field_name("schema")
+        .map(|n| node_text(n, source).to_string());
+    // tree-sitter-sequel calls the catalog part "database"
+    let catalog = node
+        .child_by_field_name("database")
+        .map(|n| node_text(n, source).to_string());
+    Some(TableRef::from_parts(catalog, schema, name))
+}
+
+/// Collect table refs for a SELECT/INSERT/CTAS context.
 ///
-/// Public crate helper so the Python builder can reuse it when it sees an
-/// inline `spark.sql("…")` literal: the same parser path that backs the
-/// SQL graph builder also yields its `TableRef`s. Returns an empty Vec on
-/// parse failure (mirrors `SqlGraphBuilder::build_from_source` behaviour).
-pub fn extract_table_refs(sql_text: &str) -> Vec<TableRef> {
-    let Ok(statements) = Parser::parse_sql(&DatabricksDialect {}, sql_text) else {
-        return Vec::new();
-    };
-    let mut refs: Vec<TableRef> = Vec::new();
-    for stmt in &statements {
-        collect_table_refs_from_statement(stmt, &mut refs);
+/// - `ctx_node`: the node owning the FROM clause (inner stmt, create_query, insert)
+/// - `extra_nodes`: program-level ERROR siblings of the outer `statement` node —
+///   tree-sitter puts `JOIN t` (no ON clause) there, not inside the statement
+fn collect_stmt_table_refs<'a>(
+    ctx_node: Node<'a>,
+    extra_nodes: &[Node<'a>],
+    source: &[u8],
+) -> Vec<TableRef> {
+    let mut refs = Vec::new();
+    let mut cursor = ctx_node.walk();
+    for child in ctx_node.children(&mut cursor) {
+        if child.kind() == "from" || child.is_error() {
+            collect_relations_recursive(child, source, &mut refs);
+        }
+    }
+    // Also collect from any program-level ERROR siblings (e.g., JOIN without ON)
+    for &extra in extra_nodes {
+        collect_relations_recursive(extra, source, &mut refs);
     }
     refs
 }
 
-fn collect_table_refs_from_statement(stmt: &Statement, out: &mut Vec<TableRef>) {
-    match stmt {
-        Statement::Query(query) => collect_table_refs_from_query(query, out),
-        Statement::CreateTable(create) => {
-            out.push(TableRef::from_object_name(&create.name));
-            if let Some(q) = &create.query {
-                collect_table_refs_from_query(q, out);
+fn collect_relations_recursive(node: Node, source: &[u8], out: &mut Vec<TableRef>) {
+    if node.kind() == "relation" {
+        let mut cursor = node.walk();
+        for c in node.children(&mut cursor) {
+            if c.kind() == "object_reference" {
+                if let Some(r) = object_ref_to_table_ref(c, source) {
+                    out.push(r);
+                }
+                return;
             }
         }
-        Statement::CreateView(create_view) => {
-            out.push(TableRef::from_object_name(&create_view.name));
-            collect_table_refs_from_query(&create_view.query, out);
-        }
-        Statement::Insert(insert) => {
-            if let sqlparser::ast::TableObject::TableName(name) = &insert.table {
-                out.push(TableRef::from_object_name(name));
-            }
-            if let Some(q) = &insert.source {
-                collect_table_refs_from_query(q, out);
-            }
-        }
-        Statement::Explain { statement, .. } => {
-            collect_table_refs_from_statement(statement, out);
-        }
-        _ => {}
+        return;
+    }
+    // Don't recurse into these — they contain column refs, not table refs
+    if matches!(
+        node.kind(),
+        "subquery" | "where" | "group_by" | "order_by" | "having" | "limit"
+    ) {
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_relations_recursive(child, source, out);
     }
 }
 
-fn collect_table_refs_from_query(query: &Query, out: &mut Vec<TableRef>) {
-    if let SetExpr::Select(select) = &*query.body {
-        for table in &select.from {
-            collect_table_refs_from_table(table, out);
+/// Returns true if a SELECT context node has a GROUP BY anywhere in its FROM clause.
+fn ctx_has_group_by(ctx_node: Node) -> bool {
+    let Some(from) = find_child(ctx_node, "from") else {
+        return false;
+    };
+    let mut cursor = from.walk();
+    let result = from.children(&mut cursor).any(|c| c.kind() == "group_by");
+    result
+}
+
+/// Returns true if a SELECT context has any JOIN, including program-level
+/// ERROR siblings (tree-sitter puts `JOIN t` with no ON clause there).
+fn ctx_has_join(ctx_node: Node, extra_nodes: &[Node]) -> bool {
+    fn has_join_keyword(node: Node) -> bool {
+        if node.kind() == "keyword_join" {
+            return true;
+        }
+        if node.kind() == "subquery" {
+            return false;
+        }
+        let mut cursor = node.walk();
+        let result = node.children(&mut cursor).any(|c| has_join_keyword(c));
+        result
+    }
+    let mut cursor = ctx_node.walk();
+    if ctx_node.children(&mut cursor).any(|c| has_join_keyword(c)) {
+        return true;
+    }
+    extra_nodes.iter().any(|n| has_join_keyword(*n))
+}
+
+fn find_child<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    let result = node.children(&mut cursor).find(|c| c.kind() == kind);
+    result
+}
+
+// ---- Predicate/expression conversion --------------------------------------
+
+fn convert_expr(node: Node, source: &[u8]) -> SqlExpr {
+    match node.kind() {
+        "binary_expression" => convert_binary_expr(node, source),
+        _ => SqlExpr::Other(node_text(node, source).to_string()),
+    }
+}
+
+fn convert_binary_expr(node: Node, source: &[u8]) -> SqlExpr {
+    let left = node.child_by_field_name("left");
+    let right = node.child_by_field_name("right");
+    let op_node = node.child_by_field_name("operator");
+    // Note: op_node.kind() is &'static str for named nodes, but anonymous
+    // comparison operators (>, <, =, etc.) also appear here as unnamed nodes.
+    let op_kind = op_node.map(|n| n.kind());
+
+    match op_kind {
+        Some("keyword_and") => {
+            let lhs = left
+                .map(|n| convert_expr(n, source))
+                .unwrap_or(SqlExpr::Other(String::new()));
+            let rhs = right
+                .map(|n| convert_expr(n, source))
+                .unwrap_or(SqlExpr::Other(String::new()));
+            SqlExpr::Logical {
+                op: "AND".into(),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            }
+        }
+        Some("keyword_or") => {
+            let lhs = left
+                .map(|n| convert_expr(n, source))
+                .unwrap_or(SqlExpr::Other(String::new()));
+            let rhs = right
+                .map(|n| convert_expr(n, source))
+                .unwrap_or(SqlExpr::Other(String::new()));
+            SqlExpr::Logical {
+                op: "OR".into(),
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            }
+        }
+        Some("not_in") => {
+            let lhs = left
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            match right {
+                Some(r) if r.kind() == "subquery" => SqlExpr::InSubquery {
+                    lhs,
+                    subquery: node_text(r, source).to_string(),
+                    negated: true,
+                },
+                Some(r) => SqlExpr::InList {
+                    lhs,
+                    items: vec![node_text(r, source).to_string()],
+                    negated: true,
+                },
+                None => SqlExpr::Other(node_text(node, source).to_string()),
+            }
+        }
+        Some("keyword_in") => {
+            let lhs = left
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            match right {
+                Some(r) if r.kind() == "subquery" => SqlExpr::InSubquery {
+                    lhs,
+                    subquery: node_text(r, source).to_string(),
+                    negated: false,
+                },
+                Some(r) => SqlExpr::InList {
+                    lhs,
+                    items: vec![node_text(r, source).to_string()],
+                    negated: false,
+                },
+                None => SqlExpr::Other(node_text(node, source).to_string()),
+            }
+        }
+        // Anonymous comparison tokens: ">", "<", "=", ">=", "<=", "<>", "!="
+        // as well as named keywords like IS, LIKE, etc. that don't match above.
+        Some(_) => {
+            let lhs_text = left
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            let rhs_text = right
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            let op_text = op_node
+                .map(|n| node_text(n, source).to_string())
+                .unwrap_or_default();
+            SqlExpr::Comparison {
+                lhs: lhs_text,
+                op: op_text,
+                rhs: rhs_text,
+            }
+        }
+        None => SqlExpr::Other(node_text(node, source).to_string()),
+    }
+}
+
+// ---- AstShape extraction --------------------------------------------------
+
+/// `extra_nodes`: program-level ERROR siblings of the outer `statement` (e.g.,
+/// `JOIN t` with no ON clause — tree-sitter places these at the program level).
+fn extract_ast_shape<'a>(
+    stmt_node: Node<'a>,
+    extra_nodes: &[Node<'a>],
+    source: &[u8],
+    line: u32,
+) -> Option<SqlStatementNode> {
+    let mut cursor = stmt_node.walk();
+    let children: Vec<Node> = stmt_node.children(&mut cursor).collect();
+
+    // MERGE: keyword_merge is a direct child of the statement node
+    if children.iter().any(|c| c.kind() == "keyword_merge") {
+        let obj_refs: Vec<Node> = children
+            .iter()
+            .filter(|c| c.kind() == "object_reference")
+            .copied()
+            .collect();
+        let target = obj_refs
+            .first()
+            .and_then(|n| object_ref_to_table_ref(*n, source))
+            .map(|t| t.fqn());
+        let from = obj_refs
+            .get(1)
+            .and_then(|n| object_ref_to_table_ref(*n, source))
+            .map(|t| t.fqn())
+            .into_iter()
+            .collect();
+        return Some(SqlStatementNode {
+            kind: SqlStatementKind::Merge,
+            from,
+            target,
+            predicates: Vec::new(),
+            line,
+        });
+    }
+
+    // Walk children for statement-type discriminant
+    for child in &children {
+        match child.kind() {
+            "create_table" => {
+                let target = find_child(*child, "object_reference")
+                    .and_then(|n| object_ref_to_table_ref(n, source))
+                    .map(|t| t.fqn());
+                let (from_fqns, predicates) = child
+                    .children(&mut child.walk())
+                    .find_map(|c| {
+                        if c.kind() == "create_query" {
+                            Some(extract_from_fqns_and_predicates(c, &[], source))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                return Some(SqlStatementNode {
+                    kind: SqlStatementKind::CreateTable,
+                    from: from_fqns,
+                    target,
+                    predicates,
+                    line,
+                });
+            }
+            "create_view" | "create_materialized_view" => {
+                let target = find_child(*child, "object_reference")
+                    .and_then(|n| object_ref_to_table_ref(n, source))
+                    .map(|t| t.fqn());
+                let (from_fqns, predicates) = child
+                    .children(&mut child.walk())
+                    .find_map(|c| {
+                        if c.kind() == "create_query" {
+                            Some(extract_from_fqns_and_predicates(c, &[], source))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                return Some(SqlStatementNode {
+                    kind: SqlStatementKind::CreateView,
+                    from: from_fqns,
+                    target,
+                    predicates,
+                    line,
+                });
+            }
+            "insert" => {
+                let target = find_child(*child, "object_reference")
+                    .and_then(|n| object_ref_to_table_ref(n, source))
+                    .map(|t| t.fqn());
+                let (from_fqns, predicates) =
+                    extract_from_fqns_and_predicates(*child, &[], source);
+                return Some(SqlStatementNode {
+                    kind: SqlStatementKind::Insert,
+                    from: from_fqns,
+                    target,
+                    predicates,
+                    line,
+                });
+            }
+            "from" => {
+                // Plain SELECT: pass stmt_node as ctx and extra_nodes to capture
+                // program-level ERROR siblings (JOINs without ON clause).
+                let (from_fqns, predicates) =
+                    extract_from_fqns_and_predicates(stmt_node, extra_nodes, source);
+                return Some(SqlStatementNode {
+                    kind: SqlStatementKind::Select,
+                    from: from_fqns,
+                    target: None,
+                    predicates,
+                    line,
+                });
+            }
+            "statement" => {
+                // Recurse into double-wrapped statement; no ERROR siblings at this level.
+                if let Some(shape) = extract_ast_shape(*child, &[], source, line) {
+                    return Some(shape);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Extract table FQNs and WHERE predicates from a context node that owns a
+/// FROM clause (inner statement, `create_query`, or `insert`).
+/// `extra_nodes` carries program-level ERROR siblings for the SELECT path.
+fn extract_from_fqns_and_predicates<'a>(
+    ctx_node: Node<'a>,
+    extra_nodes: &[Node<'a>],
+    source: &[u8],
+) -> (Vec<String>, Vec<SqlExpr>) {
+    let fqns: Vec<String> = collect_stmt_table_refs(ctx_node, extra_nodes, source)
+        .into_iter()
+        .map(|t| t.fqn())
+        .collect();
+
+    // Predicates live inside `where`, which is a child of the `from` node.
+    let mut predicates = Vec::new();
+    if let Some(from_node) = find_child(ctx_node, "from") {
+        let mut cursor = from_node.walk();
+        for child in from_node.children(&mut cursor) {
+            if child.kind() == "where" {
+                if let Some(pred) = child.child_by_field_name("predicate") {
+                    predicates.push(convert_expr(pred, source));
+                }
+            }
+        }
+    }
+
+    (fqns, predicates)
+}
+
+// ---- Public helper: walk a SQL string and collect all table references ----
+
+/// Walk a SQL string and collect every distinct table reference.
+///
+/// Public crate helper so the Python builder can reuse it for inline
+/// `spark.sql("…")` literals. Returns an empty Vec if the input produces no
+/// parseable statements (graceful degradation — no silent failure).
+pub fn extract_table_refs(sql_text: &str) -> Vec<TableRef> {
+    let mut parser = tree_sitter::Parser::new();
+    if parser
+        .set_language(&tree_sitter_sequel::LANGUAGE.into())
+        .is_err()
+    {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(sql_text, None) else {
+        return Vec::new();
+    };
+    let source = sql_text.as_bytes();
+    let mut out = Vec::new();
+    collect_all_table_refs(tree.root_node(), source, &mut out);
+    out
+}
+
+fn collect_all_table_refs(node: Node, source: &[u8], out: &mut Vec<TableRef>) {
+    match node.kind() {
+        "relation" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "object_reference" {
+                    if let Some(r) = object_ref_to_table_ref(child, source) {
+                        out.push(r);
+                    }
+                    return;
+                }
+            }
+        }
+        "create_table" | "create_view" | "create_materialized_view" | "insert" => {
+            // The first object_reference is the target table
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "object_reference" {
+                    if let Some(r) = object_ref_to_table_ref(child, source) {
+                        out.push(r);
+                    }
+                    break;
+                }
+            }
+            // Recurse into children to pick up source tables
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_all_table_refs(child, source, out);
+            }
+        }
+        // Don't recurse into these — they contain column refs, not table refs
+        "where" | "binary_expression" | "field" | "assignment" | "when_clause" => {}
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_all_table_refs(child, source, out);
+            }
         }
     }
 }
 
-fn collect_table_refs_from_table(table: &TableWithJoins, out: &mut Vec<TableRef>) {
-    if let TableFactor::Table { name, .. } = &table.relation {
-        out.push(TableRef::from_object_name(name));
-    }
-    for join in &table.joins {
-        if let TableFactor::Table { name, .. } = &join.relation {
-            out.push(TableRef::from_object_name(name));
-        }
-    }
-}
+// ---- SqlGraphBuilder ------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct SqlGraphBuilder {
-    nodes: Vec<Node>,
+    nodes: Vec<GraphNode>,
     edges: Vec<Edge>,
     table_definitions: HashMap<String, String>,
     table_references: HashMap<String, Vec<String>>,
@@ -89,359 +456,383 @@ impl SqlGraphBuilder {
         }
     }
 
-    pub fn build_from_source(mut self, source: &str) -> (Vec<Node>, Vec<Edge>) {
-        let statements = match Parser::parse_sql(&DatabricksDialect {}, source) {
-            Ok(stmts) => stmts,
-            Err(_) => return (Vec::new(), Vec::new()),
+    pub fn build_from_source(mut self, source: &str) -> (Vec<GraphNode>, Vec<Edge>) {
+        let mut parser = tree_sitter::Parser::new();
+        if parser
+            .set_language(&tree_sitter_sequel::LANGUAGE.into())
+            .is_err()
+        {
+            return (Vec::new(), Vec::new());
+        }
+        let Some(tree) = parser.parse(source, None) else {
+            return (Vec::new(), Vec::new());
         };
 
-        for (i, stmt) in statements.iter().enumerate() {
+        let src = source.as_bytes();
+        let root = tree.root_node();
+        // Collect all program-level children up front so we can look ahead for
+        // ERROR siblings. `JOIN t` with no ON clause appears as an ERROR node
+        // that is a sibling of the outer `statement` at the program level.
+        let mut root_cursor = root.walk();
+        let program_children: Vec<tree_sitter::Node> =
+            root.children(&mut root_cursor).collect();
+        let mut stmt_idx: u32 = 0;
+        let mut i = 0;
+
+        while i < program_children.len() {
+            let outer_stmt = program_children[i];
+            if outer_stmt.kind() != "statement" {
+                i += 1;
+                continue;
+            }
+            // Collect consecutive ERROR nodes that immediately follow — these are
+            // program-level parse errors that belong to this statement.
+            let mut j = i + 1;
+            while j < program_children.len() && program_children[j].is_error() {
+                j += 1;
+            }
+            let error_siblings = &program_children[i + 1..j];
+
+            let inner = self.find_inner_statement(outer_stmt);
             let stmt_start = self.nodes.len();
-            self.process_statement(stmt, i as u32);
-            // Attach the per-statement AstShape to every node this
-            // statement created. Sharing one shape across siblings is
-            // cheap (Clone-friendly) and gives rules a consistent
-            // "this is a SELECT from cat.s.t WHERE …" view regardless of
-            // which physical node they matched.
-            if let Some(shape) = extract_statement_ast(stmt, i as u32) {
+            self.process_statement_node(inner, error_siblings, src, stmt_idx);
+
+            if let Some(shape) = extract_ast_shape(inner, error_siblings, src, stmt_idx + 1) {
+                let ast = AstShape::new(AstNode::SqlStatement(shape));
                 for node in &mut self.nodes[stmt_start..] {
-                    node.ast = Some(AstShape::new(AstNode::SqlStatement(shape.clone())));
+                    node.ast = Some(ast.clone());
                 }
             }
+
+            stmt_idx += 1;
+            i = j;
         }
 
-        // Create edges between table definitions and references
         self.create_table_edges();
-
         (self.nodes, self.edges)
     }
 
-    fn process_statement(&mut self, stmt: &Statement, statement_index: u32) {
-        match stmt {
-            Statement::Query(query) => {
-                self.process_query(query, statement_index, None);
+    fn find_inner_statement<'a>(&self, outer: Node<'a>) -> Node<'a> {
+        let mut cursor = outer.walk();
+        for child in outer.children(&mut cursor) {
+            if child.kind() == "statement" {
+                return child;
             }
-            Statement::CreateTable(create_table) => {
-                let table_ref = TableRef::from_object_name(&create_table.name);
-                let table_name = create_table.name.to_string();
-                if let Some(query) = &create_table.query {
-                    let write_node_id = self.create_node(
-                        OperationKind::Write,
-                        ScalingBehavior::Linear,
-                        false,
-                        false,
-                        false,
-                        statement_index + 1,
-                        Some(format!("CREATE TABLE {}", table_name)),
-                    );
+        }
+        outer
+    }
 
-                    self.push_table_ref(&write_node_id, table_ref.clone());
-                    self.table_definitions
-                        .insert(table_ref.canonical_key(), write_node_id.clone());
+    fn process_statement_node<'a>(
+        &mut self,
+        node: Node<'a>,
+        extra_nodes: &[Node<'a>],
+        source: &[u8],
+        stmt_idx: u32,
+    ) {
+        let mut cursor = node.walk();
+        let children: Vec<Node> = node.children(&mut cursor).collect();
 
-                    self.process_query(query, statement_index, Some(&write_node_id));
+        // MERGE has no sub-node — keyword_merge is a direct child
+        if children.iter().any(|c| c.kind() == "keyword_merge") {
+            self.process_merge(node, source, stmt_idx);
+            return;
+        }
+
+        for child in &children {
+            match child.kind() {
+                "create_table" => {
+                    self.process_create_table(*child, source, stmt_idx);
+                    return;
                 }
+                "create_view" | "create_materialized_view" => {
+                    self.process_create_view(*child, source, stmt_idx);
+                    return;
+                }
+                "insert" => {
+                    self.process_insert(*child, source, stmt_idx);
+                    return;
+                }
+                "from" => {
+                    // Pass inner stmt as ctx + program-level ERROR siblings so
+                    // JOINs without ON (which land at the program level) are found.
+                    self.process_from_clause(node, extra_nodes, source, stmt_idx, None);
+                    return;
+                }
+                "statement" => {
+                    // Double-wrapped — recurse once (no ERROR siblings at this level)
+                    self.process_statement_node(*child, &[], source, stmt_idx);
+                    return;
+                }
+                _ => {}
             }
-            Statement::CreateView(create_view) => {
-                let table_ref = TableRef::from_object_name(&create_view.name);
-                let view_name = create_view.name.to_string();
-                let write_node_id = self.create_node(
-                    OperationKind::Write,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some(format!("CREATE VIEW {}", view_name)),
-                );
-
-                self.push_table_ref(&write_node_id, table_ref.clone());
-                self.table_definitions
-                    .insert(table_ref.canonical_key(), write_node_id.clone());
-                self.process_query(&create_view.query, statement_index, Some(&write_node_id));
-            }
-            Statement::Merge {
-                table: target,
-                source,
-                ..
-            } => {
-                let target_ref = if let TableFactor::Table { name, .. } = target {
-                    Some(TableRef::from_object_name(name))
-                } else {
-                    None
-                };
-                let source_ref = if let TableFactor::Table { name, .. } = source {
-                    Some(TableRef::from_object_name(name))
-                } else {
-                    None
-                };
-
-                // MERGE INTO creates a write operation with shuffle
-                let merge_node_id = self.create_node(
-                    OperationKind::Write,
-                    ScalingBehavior::LinearWithCliff,
-                    false,
-                    true, // shuffle_required for MERGE
-                    false,
-                    statement_index + 1,
-                    Some("MERGE INTO".to_string()),
-                );
-                if let Some(ref t) = target_ref {
-                    self.push_table_ref(&merge_node_id, t.clone());
-                }
-
-                // MERGE involves reading from source and target
-                let read_node_id = self.create_node(
-                    OperationKind::Read,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some("MERGE source read".to_string()),
-                );
-                if let Some(s) = source_ref {
-                    self.push_table_ref(&read_node_id, s);
-                }
-
-                let read_node_id2 = self.create_node(
-                    OperationKind::Read,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some("MERGE target read".to_string()),
-                );
-                if let Some(t) = target_ref {
-                    self.push_table_ref(&read_node_id2, t);
-                }
-
-                let shuffle_node_id = self.create_node(
-                    OperationKind::Shuffle,
-                    ScalingBehavior::LinearWithCliff,
-                    false,
-                    true,
-                    false,
-                    statement_index + 1,
-                    Some("MERGE shuffle".to_string()),
-                );
-
-                // Create edges for MERGE pipeline
-                self.create_edge(&read_node_id, &shuffle_node_id, "data_flow");
-                self.create_edge(&read_node_id2, &shuffle_node_id, "data_flow");
-                self.create_edge(&shuffle_node_id, &merge_node_id, "data_flow");
-            }
-            Statement::Explain { statement, .. } => {
-                if let Statement::Query(query) = &**statement {
-                    self.process_query(query, statement_index, None);
-                }
-            }
-            _ => {}
         }
     }
 
-    fn process_query(
+    fn process_create_table(&mut self, node: Node, source: &[u8], stmt_idx: u32) {
+        let target_ref = find_child(node, "object_reference")
+            .and_then(|n| object_ref_to_table_ref(n, source));
+
+        let table_name = target_ref
+            .as_ref()
+            .map(|t| t.fqn())
+            .unwrap_or_else(|| "?".to_string());
+
+        let write_id = self.create_node(
+            OperationKind::Write,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            stmt_idx + 1,
+            Some(format!("CREATE TABLE {table_name}")),
+        );
+
+        if let Some(tref) = target_ref {
+            self.table_definitions
+                .insert(tref.canonical_key(), write_id.clone());
+            self.push_table_ref(&write_id, tref);
+        }
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "create_query" {
+                self.process_from_clause(child, &[], source, stmt_idx, Some(&write_id));
+                return;
+            }
+        }
+    }
+
+    fn process_create_view(&mut self, node: Node, source: &[u8], stmt_idx: u32) {
+        let target_ref = find_child(node, "object_reference")
+            .and_then(|n| object_ref_to_table_ref(n, source));
+
+        let view_name = target_ref
+            .as_ref()
+            .map(|t| t.fqn())
+            .unwrap_or_else(|| "?".to_string());
+
+        let write_id = self.create_node(
+            OperationKind::Write,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            stmt_idx + 1,
+            Some(format!("CREATE VIEW {view_name}")),
+        );
+
+        if let Some(tref) = target_ref {
+            self.table_definitions
+                .insert(tref.canonical_key(), write_id.clone());
+            self.push_table_ref(&write_id, tref);
+        }
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "create_query" {
+                self.process_from_clause(child, &[], source, stmt_idx, Some(&write_id));
+                return;
+            }
+        }
+    }
+
+    fn process_insert(&mut self, node: Node, source: &[u8], stmt_idx: u32) {
+        let target_ref = find_child(node, "object_reference")
+            .and_then(|n| object_ref_to_table_ref(n, source));
+
+        let table_name = target_ref
+            .as_ref()
+            .map(|t| t.fqn())
+            .unwrap_or_else(|| "?".to_string());
+
+        let write_id = self.create_node(
+            OperationKind::Write,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            stmt_idx + 1,
+            Some(format!("INSERT INTO {table_name}")),
+        );
+
+        if let Some(tref) = target_ref {
+            self.table_definitions
+                .insert(tref.canonical_key(), write_id.clone());
+            self.push_table_ref(&write_id, tref);
+        }
+
+        self.process_from_clause(node, &[], source, stmt_idx, Some(&write_id));
+    }
+
+    fn process_merge(&mut self, stmt_node: Node, source: &[u8], stmt_idx: u32) {
+        let mut cursor = stmt_node.walk();
+        let obj_refs: Vec<Node> = stmt_node
+            .children(&mut cursor)
+            .filter(|c| c.kind() == "object_reference")
+            .collect();
+
+        // First object_reference = MERGE INTO target, second = USING source
+        let target_ref = obj_refs
+            .first()
+            .and_then(|n| object_ref_to_table_ref(*n, source));
+        let source_ref = obj_refs
+            .get(1)
+            .and_then(|n| object_ref_to_table_ref(*n, source));
+
+        let merge_id = self.create_node(
+            OperationKind::Write,
+            ScalingBehavior::LinearWithCliff,
+            false,
+            true,
+            false,
+            stmt_idx + 1,
+            Some("MERGE INTO".to_string()),
+        );
+        if let Some(ref t) = target_ref {
+            self.push_table_ref(&merge_id, t.clone());
+        }
+
+        let src_read_id = self.create_node(
+            OperationKind::Read,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            stmt_idx + 1,
+            Some("MERGE source read".to_string()),
+        );
+        if let Some(s) = source_ref {
+            self.push_table_ref(&src_read_id, s);
+        }
+
+        let tgt_read_id = self.create_node(
+            OperationKind::Read,
+            ScalingBehavior::Linear,
+            false,
+            false,
+            false,
+            stmt_idx + 1,
+            Some("MERGE target read".to_string()),
+        );
+        if let Some(t) = target_ref {
+            self.push_table_ref(&tgt_read_id, t);
+        }
+
+        let shuffle_id = self.create_node(
+            OperationKind::Shuffle,
+            ScalingBehavior::LinearWithCliff,
+            false,
+            true,
+            false,
+            stmt_idx + 1,
+            Some("MERGE shuffle".to_string()),
+        );
+
+        self.create_edge(&src_read_id, &shuffle_id, "data_flow");
+        self.create_edge(&tgt_read_id, &shuffle_id, "data_flow");
+        self.create_edge(&shuffle_id, &merge_id, "data_flow");
+    }
+
+    fn process_from_clause<'a>(
         &mut self,
-        query: &Query,
-        statement_index: u32,
+        ctx_node: Node<'a>,       // inner statement, create_query, or insert
+        extra_nodes: &[Node<'a>], // program-level ERROR siblings (JOINs without ON)
+        source: &[u8],
+        stmt_idx: u32,
         write_node_id: Option<&String>,
     ) {
-        if let SetExpr::Select(select) = &*query.body {
-            let mut read_nodes = Vec::new();
+        let needs_shuffle = ctx_has_group_by(ctx_node) || ctx_has_join(ctx_node, extra_nodes);
+        let mut read_nodes: Vec<String> = Vec::new();
 
-            // Process FROM clause
-            for table in &select.from {
-                self.process_table_with_joins(table, statement_index, &mut read_nodes);
-            }
-
-            // Check for GROUP BY to add shuffle
-            let has_group_by = !matches!(&select.group_by, sqlparser::ast::GroupByExpr::Expressions(exprs, _) if exprs.is_empty());
-
-            if has_group_by {
-                let shuffle_node_id = self.create_node(
-                    OperationKind::Shuffle,
-                    ScalingBehavior::LinearWithCliff,
-                    false,
-                    true,
-                    false,
-                    statement_index + 1,
-                    Some("GROUP BY shuffle".to_string()),
-                );
-
-                // Connect reads to shuffle
-                for read_node_id in &read_nodes {
-                    self.create_edge(read_node_id, &shuffle_node_id, "data_flow");
-                }
-
-                // If final SELECT (no write), create action node
-                if write_node_id.is_none() {
-                    let action_node_id = self.create_node(
-                        OperationKind::Action,
-                        ScalingBehavior::StepFailure,
-                        false,
-                        false,
-                        true, // driver_bound for final result
-                        statement_index + 1,
-                        Some("SELECT result".to_string()),
-                    );
-
-                    self.create_edge(&shuffle_node_id, &action_node_id, "data_flow");
-                } else if let Some(write_id) = write_node_id {
-                    self.create_edge(&shuffle_node_id, write_id, "data_flow");
-                }
-            } else if !read_nodes.is_empty() {
-                // Simple SELECT without GROUP BY
-                if write_node_id.is_none() {
-                    let action_node_id = self.create_node(
-                        OperationKind::Action,
-                        ScalingBehavior::StepFailure,
-                        false,
-                        false,
-                        true,
-                        statement_index + 1,
-                        Some("SELECT result".to_string()),
-                    );
-
-                    // Connect first read to action
-                    if let Some(first_read) = read_nodes.first() {
-                        self.create_edge(first_read, &action_node_id, "data_flow");
-                    }
-                } else if let Some(write_id) = write_node_id {
-                    // Connect reads to write
-                    for read_node_id in &read_nodes {
-                        self.create_edge(read_node_id, write_id, "data_flow");
-                    }
-                }
-            }
-        }
-    }
-
-    fn process_table_with_joins(
-        &mut self,
-        table: &TableWithJoins,
-        statement_index: u32,
-        read_nodes: &mut Vec<String>,
-    ) {
-        match &table.relation {
-            TableFactor::Table { name, .. } => {
-                let table_ref = TableRef::from_object_name(name);
-                let table_name = name.to_string();
-                let read_node_id = self.create_node(
-                    OperationKind::Read,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some(format!("Read {}", table_name)),
-                );
-
-                self.push_table_ref(&read_node_id, table_ref.clone());
-                read_nodes.push(read_node_id.clone());
-
-                // Record table reference for edge creation — use canonical key
-                // (lowercased fqn) for case-insensitive dedup.
-                self.table_references
-                    .entry(table_ref.canonical_key())
-                    .or_default()
-                    .push(read_node_id);
-            }
-            TableFactor::Derived {
-                alias, subquery, ..
-            } => {
-                let subquery_name = alias
-                    .as_ref()
-                    .map(|a| a.name.to_string())
-                    .unwrap_or_else(|| "derived_subquery".to_string());
-                let read_node_id = self.create_node(
-                    OperationKind::Read,
-                    ScalingBehavior::Linear,
-                    false,
-                    false,
-                    false,
-                    statement_index + 1,
-                    Some(format!("Read subquery {}", subquery_name)),
-                );
-
-                // Recurse into the subquery to extract its table references.
-                // This populates table_references so create_table_edges can wire
-                // the subquery's sources to the read node (R-001 fix).
-                let mut subquery_refs: Vec<TableRef> = Vec::new();
-                collect_table_refs_from_query(subquery, &mut subquery_refs);
-                for ref_tref in &subquery_refs {
-                    self.push_table_ref(&read_node_id, ref_tref.clone());
-                }
-                read_nodes.push(read_node_id);
-            }
-            _ => {}
-        }
-
-        // Process joins
-        for join in &table.joins {
-            self.process_join(join, statement_index, read_nodes);
-        }
-
-        // After all joins have added their read nodes, wire them through a
-        // shuffle if any joins are present. Each process_join creates a read
-        // node; the shuffle collects and redistributes rows across partitions.
-        let has_joins = !table.joins.is_empty();
-        if has_joins && !read_nodes.is_empty() {
-            let shuffle_node_id = self.create_node(
-                OperationKind::Shuffle,
-                ScalingBehavior::LinearWithCliff,
-                false,
-                true,
-                false,
-                statement_index + 1,
-                Some("Join shuffle".to_string()),
-            );
-            for read_node_id in read_nodes {
-                self.create_edge(read_node_id, &shuffle_node_id, "data_flow");
-            }
-        }
-    }
-
-    fn process_join(&mut self, join: &Join, statement_index: u32, read_nodes: &mut Vec<String>) {
-        if let TableFactor::Table { name, .. } = &join.relation {
-            let table_ref = TableRef::from_object_name(name);
-            let table_name = name.to_string();
-            let read_node_id = self.create_node(
+        for tref in collect_stmt_table_refs(ctx_node, extra_nodes, source) {
+            let label = format!("Read {}", tref.fqn());
+            let node_id = self.create_node(
                 OperationKind::Read,
                 ScalingBehavior::Linear,
                 false,
                 false,
                 false,
-                statement_index + 1,
-                Some(format!("Join read {}", table_name)),
+                stmt_idx + 1,
+                Some(label),
             );
-
-            self.push_table_ref(&read_node_id, table_ref.clone());
-            read_nodes.push(read_node_id.clone());
-
-            // Record table reference — use canonical key for case-insensitive dedup
             self.table_references
-                .entry(table_ref.canonical_key())
+                .entry(tref.canonical_key())
                 .or_default()
-                .push(read_node_id);
+                .push(node_id.clone());
+            self.push_table_ref(&node_id, tref);
+            read_nodes.push(node_id);
+        }
+
+        if needs_shuffle {
+            let shuffle_id = self.create_node(
+                OperationKind::Shuffle,
+                ScalingBehavior::LinearWithCliff,
+                false,
+                true,
+                false,
+                stmt_idx + 1,
+                Some(if ctx_has_group_by(ctx_node) {
+                    "GROUP BY shuffle".to_string()
+                } else {
+                    "Join shuffle".to_string()
+                }),
+            );
+            for read_id in &read_nodes {
+                self.create_edge(read_id, &shuffle_id, "data_flow");
+            }
+            match write_node_id {
+                Some(w) => self.create_edge(&shuffle_id, w, "data_flow"),
+                None => {
+                    let action_id = self.create_node(
+                        OperationKind::Action,
+                        ScalingBehavior::StepFailure,
+                        false,
+                        false,
+                        true,
+                        stmt_idx + 1,
+                        Some("SELECT result".to_string()),
+                    );
+                    self.create_edge(&shuffle_id, &action_id, "data_flow");
+                }
+            }
+        } else if !read_nodes.is_empty() {
+            match write_node_id {
+                Some(w) => {
+                    for read_id in &read_nodes {
+                        self.create_edge(read_id, w, "data_flow");
+                    }
+                }
+                None => {
+                    let action_id = self.create_node(
+                        OperationKind::Action,
+                        ScalingBehavior::StepFailure,
+                        false,
+                        false,
+                        true,
+                        stmt_idx + 1,
+                        Some("SELECT result".to_string()),
+                    );
+                    if let Some(first) = read_nodes.first() {
+                        self.create_edge(first, &action_id, "data_flow");
+                    }
+                }
+            }
         }
     }
 
     fn create_table_edges(&mut self) {
         let mut edges_to_create = Vec::new();
-
-        for (table_name, reference_node_ids) in &self.table_references {
-            if let Some(definition_node_id) = self.table_definitions.get(table_name) {
-                for reference_node_id in reference_node_ids {
+        for (table_key, ref_node_ids) in &self.table_references {
+            if let Some(def_node_id) = self.table_definitions.get(table_key) {
+                for ref_node_id in ref_node_ids {
                     edges_to_create.push((
-                        definition_node_id.clone(),
-                        reference_node_id.clone(),
+                        def_node_id.clone(),
+                        ref_node_id.clone(),
                         "table_dependency".to_string(),
                     ));
                 }
             }
         }
-
         for (source, target, edge_type) in edges_to_create {
             self.create_edge(&source, &target, &edge_type);
         }
@@ -459,8 +850,7 @@ impl SqlGraphBuilder {
         source_code: Option<String>,
     ) -> String {
         let node_id = format!("sql_node_{}", self.nodes.len() + 1);
-
-        let node = Node {
+        self.nodes.push(GraphNode {
             id: node_id.clone(),
             kind,
             scaling_type,
@@ -474,24 +864,18 @@ impl SqlGraphBuilder {
             source_code,
             ast: None,
             scope: crate::resolved::ScopeFacts::default(),
-        };
-
-        self.nodes.push(node);
+        });
         node_id
     }
 
     fn create_edge(&mut self, source: &str, target: &str, edge_type: &str) {
-        let edge = Edge {
+        self.edges.push(Edge {
             source: source.to_string(),
             target: target.to_string(),
             edge_type: edge_type.to_string(),
-        };
-        self.edges.push(edge);
+        });
     }
 
-    /// Attach a `TableRef` to a previously created node by id. Dedupes on
-    /// `TableRef` equality so the same table appearing twice in a statement
-    /// surfaces once per node.
     fn push_table_ref(&mut self, node_id: &str, tref: TableRef) {
         if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
             if !node.tables_referenced.contains(&tref) {
@@ -507,174 +891,7 @@ impl Default for SqlGraphBuilder {
     }
 }
 
-// ---------------------------------------------------------------------------
-// AstShape extraction for SQL statements.
-//
-// Builds the structured AstShape::SqlStatement payload from a sqlparser
-// `Statement`. WHERE predicates are decomposed into `SqlExpr` variants so
-// BQ-family rules can match them via the DSL without touching sqlparser
-// at rule-execution time.
-// ---------------------------------------------------------------------------
-
-fn extract_statement_ast(stmt: &Statement, statement_index: u32) -> Option<SqlStatementNode> {
-    let line = statement_index + 1;
-    match stmt {
-        Statement::Query(query) => Some(SqlStatementNode {
-            kind: SqlStatementKind::Select,
-            from: collect_from_fqns(query),
-            target: None,
-            predicates: collect_predicates(query),
-            line,
-        }),
-        Statement::CreateTable(create) => Some(SqlStatementNode {
-            kind: SqlStatementKind::CreateTable,
-            from: create
-                .query
-                .as_deref()
-                .map(collect_from_fqns)
-                .unwrap_or_default(),
-            target: Some(create.name.to_string()),
-            predicates: create
-                .query
-                .as_deref()
-                .map(collect_predicates)
-                .unwrap_or_default(),
-            line,
-        }),
-        Statement::CreateView(create_view) => Some(SqlStatementNode {
-            kind: SqlStatementKind::CreateView,
-            from: collect_from_fqns(&create_view.query),
-            target: Some(create_view.name.to_string()),
-            predicates: collect_predicates(&create_view.query),
-            line,
-        }),
-        Statement::Insert(insert) => {
-            let target = if let sqlparser::ast::TableObject::TableName(name) = &insert.table {
-                Some(name.to_string())
-            } else {
-                None
-            };
-            Some(SqlStatementNode {
-                kind: SqlStatementKind::Insert,
-                from: insert
-                    .source
-                    .as_deref()
-                    .map(collect_from_fqns)
-                    .unwrap_or_default(),
-                target,
-                predicates: insert
-                    .source
-                    .as_deref()
-                    .map(collect_predicates)
-                    .unwrap_or_default(),
-                line,
-            })
-        }
-        Statement::Merge {
-            table: target,
-            source,
-            ..
-        } => {
-            let target_fqn = if let TableFactor::Table { name, .. } = target {
-                Some(name.to_string())
-            } else {
-                None
-            };
-            let source_fqn = if let TableFactor::Table { name, .. } = source {
-                Some(name.to_string())
-            } else {
-                None
-            };
-            Some(SqlStatementNode {
-                kind: SqlStatementKind::Merge,
-                from: source_fqn.into_iter().collect(),
-                target: target_fqn,
-                predicates: Vec::new(),
-                line,
-            })
-        }
-        Statement::Explain { statement, .. } => extract_statement_ast(statement, statement_index),
-        _ => None,
-    }
-}
-
-fn collect_from_fqns(query: &Query) -> Vec<String> {
-    let mut out = Vec::new();
-    if let SetExpr::Select(select) = &*query.body {
-        for table in &select.from {
-            if let TableFactor::Table { name, .. } = &table.relation {
-                out.push(name.to_string());
-            }
-            for join in &table.joins {
-                if let TableFactor::Table { name, .. } = &join.relation {
-                    out.push(name.to_string());
-                }
-            }
-        }
-    }
-    out
-}
-
-fn collect_predicates(query: &Query) -> Vec<SqlExpr> {
-    let mut out: Vec<SqlExpr> = Vec::new();
-    if let SetExpr::Select(select) = &*query.body {
-        if let Some(where_expr) = &select.selection {
-            out.push(convert_sql_expr(where_expr));
-        }
-        if let Some(having) = &select.having {
-            out.push(convert_sql_expr(having));
-        }
-    }
-    out
-}
-
-/// Best-effort conversion from `sqlparser::ast::Expr` into our narrower
-/// `SqlExpr`. Anything we don't model yet falls through to
-/// `SqlExpr::Other(rendered_text)` so rules can still pattern-match via
-/// regex if needed.
-fn convert_sql_expr(expr: &Expr) -> SqlExpr {
-    match expr {
-        Expr::InList {
-            expr: lhs,
-            list,
-            negated,
-        } => SqlExpr::InList {
-            lhs: lhs.to_string(),
-            items: list.iter().map(|e| e.to_string()).collect(),
-            negated: *negated,
-        },
-        Expr::InSubquery {
-            expr: lhs,
-            subquery,
-            negated,
-        } => SqlExpr::InSubquery {
-            lhs: lhs.to_string(),
-            subquery: subquery.to_string(),
-            negated: *negated,
-        },
-        Expr::BinaryOp { left, op, right } => {
-            let op_str = op.to_string();
-            // Logical combinators get their own variant for tree walking;
-            // everything else is a Comparison.
-            match op_str.as_str() {
-                "AND" | "OR" => SqlExpr::Logical {
-                    op: op_str,
-                    lhs: Box::new(convert_sql_expr(left)),
-                    rhs: Box::new(convert_sql_expr(right)),
-                },
-                _ => SqlExpr::Comparison {
-                    lhs: left.to_string(),
-                    op: op_str,
-                    rhs: right.to_string(),
-                },
-            }
-        }
-        Expr::UnaryOp { op, expr: inner } if op.to_string() == "NOT" => {
-            SqlExpr::Not(Box::new(convert_sql_expr(inner)))
-        }
-        other => SqlExpr::Other(other.to_string()),
-    }
-}
+// ---- Tests ----------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -683,12 +900,9 @@ mod tests {
     #[test]
     fn test_build_select_with_group_by() {
         let source = "SELECT user_id, COUNT(*) FROM orders GROUP BY user_id";
-
         let (nodes, _edges) = SqlGraphBuilder::new().build_from_source(source);
-
         assert!(!nodes.is_empty());
-
-        let shuffle_nodes: Vec<&Node> = nodes
+        let shuffle_nodes: Vec<&GraphNode> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Shuffle))
             .collect();
@@ -699,40 +913,24 @@ mod tests {
     fn test_build_create_table_as_select() {
         let source =
             "CREATE TABLE results AS SELECT * FROM users JOIN orders ON users.id = orders.user_id";
-
         let (nodes, _edges) = SqlGraphBuilder::new().build_from_source(source);
-
         assert!(!nodes.is_empty());
-
-        let read_nodes: Vec<&Node> = nodes
+        assert!(nodes.iter().any(|n| matches!(n.kind, OperationKind::Read)));
+        assert!(nodes.iter().any(|n| matches!(n.kind, OperationKind::Write)));
+        assert!(nodes
             .iter()
-            .filter(|n| matches!(n.kind, OperationKind::Read))
-            .collect();
-        let write_nodes: Vec<&Node> = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, OperationKind::Write))
-            .collect();
-        let shuffle_nodes: Vec<&Node> = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, OperationKind::Shuffle))
-            .collect();
-
-        assert!(!read_nodes.is_empty());
-        assert!(!write_nodes.is_empty());
-        assert!(!shuffle_nodes.is_empty());
+            .any(|n| matches!(n.kind, OperationKind::Shuffle)));
     }
 
     #[test]
     fn three_part_select_populates_tables_referenced_on_each_read() {
         let source = "SELECT * FROM cat.sch.t JOIN sch.u";
         let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
-
         let read_fqns: Vec<String> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Read))
             .flat_map(|n| n.tables_referenced.iter().map(|t| t.fqn()))
             .collect();
-
         assert_eq!(read_fqns.len(), 2);
         assert!(read_fqns.contains(&"cat.sch.t".to_string()));
         assert!(read_fqns.contains(&"sch.u".to_string()));
@@ -742,7 +940,6 @@ mod tests {
     fn create_table_as_select_marks_target_on_write_node_and_source_on_reads() {
         let source = "CREATE TABLE out AS SELECT * FROM src";
         let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
-
         let write = nodes
             .iter()
             .find(|n| matches!(n.kind, OperationKind::Write))
@@ -755,7 +952,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["out".to_string()]
         );
-
         let read = nodes
             .iter()
             .find(|n| matches!(n.kind, OperationKind::Read))
@@ -776,15 +972,13 @@ MERGE INTO target_tbl t \
 USING src_tbl s ON s.id = t.id \
 WHEN MATCHED THEN UPDATE SET t.x = s.x";
         let (nodes, _) = SqlGraphBuilder::new().build_from_source(source);
-
         let write = nodes
             .iter()
             .find(|n| matches!(n.kind, OperationKind::Write))
             .expect("merge write node");
         let write_fqns: Vec<String> = write.tables_referenced.iter().map(|t| t.fqn()).collect();
         assert_eq!(write_fqns, vec!["target_tbl".to_string()]);
-
-        let reads: Vec<&Node> = nodes
+        let reads: Vec<&GraphNode> = nodes
             .iter()
             .filter(|n| matches!(n.kind, OperationKind::Read))
             .collect();
@@ -806,6 +1000,7 @@ WHEN MATCHED THEN UPDATE SET t.x = s.x";
 
     #[test]
     fn extract_table_refs_returns_empty_on_parse_error() {
+        // tree-sitter is error-tolerant; invalid SQL produces no valid table refs
         let refs = extract_table_refs("not valid sql at all");
         assert!(refs.is_empty());
     }
@@ -823,7 +1018,8 @@ WHEN MATCHED THEN UPDATE SET t.x = s.x";
         assert!(fqns.contains(&"origin".to_string()));
     }
 
-    // ----- SQL AstShape coverage -----
+    // ---- SQL AstShape coverage ----
+
     use crate::resolved::ast_shape::{AstNode, SqlExpr, SqlStatementKind};
 
     fn first_ast(source: &str) -> AstNode {
