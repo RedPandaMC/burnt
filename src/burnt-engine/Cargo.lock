@@ -73,7 +73,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
- "streaming-iterator",
  "strum",
  "tempfile",
  "thiserror",

@@ -33,7 +33,7 @@ build-backend = "maturin"
 python-source = "src"
 module-name = "burnt._engine"
 manifest-path = "src/burnt-engine/Cargo.toml"
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyo3/abi3-py310"]
 
 [dependency-groups]
 dev = [

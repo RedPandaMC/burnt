@@ -11,10 +11,9 @@ name = "_engine"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
 strum = { version = "0.26", features = ["derive"] }
 tree-sitter = "0.24"
-streaming-iterator = "0.1"
 tree-sitter-python = "0.23"
 tree-sitter-sequel = "0.3"
 sqlparser = { version = "0.60", features = ["visitor"] }
