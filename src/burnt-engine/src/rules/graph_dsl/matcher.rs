@@ -605,9 +605,7 @@ fn namespace_name(ns: &crate::resolved::Namespace) -> &'static str {
     use crate::resolved::Namespace;
     match ns {
         Namespace::Spark => "Spark",
-        Namespace::Dlt => "Dlt",
-        Namespace::Dp => "Dp",
-        Namespace::PandasOnSpark => "PandasOnSpark",
+        Namespace::Pipeline => "Pipeline",
         Namespace::UserDefined(_) => "UserDefined",
         Namespace::Unknown => "Unknown",
     }
@@ -663,13 +661,14 @@ fn edge_kind_matches(actual: &str, expected: &str) -> bool {
 /// Build a minimal `ResolvedGraph` directly from a `Graph` for tests.
 /// Re-exported because two test modules need the same fixture path.
 #[cfg(test)]
-pub(super) fn build_resolved_for_test(graph: Graph) -> ResolvedGraph {
+pub(super) fn build_resolved_for_test(graph: crate::graph::Graph) -> ResolvedGraph {
     crate::resolved::ResolvedGraphBuilder::new(graph).build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::Graph;
     use crate::resolved::ast_shape::{AstShape, CallNode, LitKind};
     use crate::resolved::scope_facts::{Namespace, ScopeFacts};
     use crate::rules::graph_dsl::parser::parse_pattern;
@@ -705,8 +704,8 @@ mod tests {
         n
     }
 
-    fn mk_graph(nodes: Vec<Node>) -> Graph {
-        Graph {
+    fn mk_graph(nodes: Vec<Node>) -> crate::graph::Graph {
+        crate::graph::Graph {
             nodes,
             edges: Vec::new(),
             findings: Vec::new(),

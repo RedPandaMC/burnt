@@ -1068,7 +1068,7 @@ fn pred_when(args: &[PredArg], ctx: &MatchCtx) -> PredResult {
         return PredResult::Skip;
     }
     let remaining = args.len() - 1;
-    if remaining.is_multiple_of(2) {
+    if remaining % 2 != 0 {
         return PredResult::Bool(false);
     }
     let mut mutation = FindingMutation::default();
