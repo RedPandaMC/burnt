@@ -65,8 +65,11 @@ impl DatabricksCatalogClient {
             "{}/api/2.1/unity-catalog/tables/{}",
             self.base_url, table_fqn
         );
-        let result = self.client.get_json::<UcTable>(&url).ok().map(|t| {
-            UcTableCached {
+        let result = self
+            .client
+            .get_json::<UcTable>(&url)
+            .ok()
+            .map(|t| UcTableCached {
                 schema: TableSchema {
                     columns: t
                         .columns
@@ -79,8 +82,7 @@ impl DatabricksCatalogClient {
                         .collect(),
                 },
                 properties: t.properties,
-            }
-        });
+            });
         let mut cache = self.cache.lock().unwrap_or_else(|p| p.into_inner());
         cache.insert(table_fqn.to_string(), result.clone());
         result
