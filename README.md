@@ -122,8 +122,9 @@ Inside Databricks:
 %pip install burnt
 ```
 
-> **Current status (v0.3.0):** Static lint (110 rules), PyGraph, REST session
+> **Current status (v0.3.0):** Static lint (110 rules), unified PyGraph, REST session
 > enrichment, and four pricing backends (Azure, AWS, GCP, on-prem) are fully operational.
+> All parsing uses tree-sitter (Python + SQL) — no legacy string-match heuristics.
 
 ### Install matrix
 
@@ -245,10 +246,10 @@ index, and [`docs/dsl-reference.md`](docs/dsl-reference.md) for the pattern lang
  warning BD016  .write inside a loop — one small file per iteration
  + 9 more BD* rules covering OPTIMIZE, MERGE, CONVERT TO DELTA, Liquid Clustering
 
-─── DLT / SDP Pipelines (SDP*)  ───────────────────────────────────────────
+─── Declarative Pipelines / DLT / SDP (SDP*)  ─────────────────────────────
  warning SDP001  table missing @expect — no data quality contract
  warning SDP003  streaming source without schema — breaks on schema evolution
- + 4 more SDP* rules
+ + 4 more SDP* rules (fire on @dlt.table, @dp.table, and @sdp.table decorators)
 
 ─── Streaming (BS*)  ──────────────────────────────────────────────────────
  error   BS001  writeStream without checkpointLocation — loses progress on restart
@@ -273,7 +274,7 @@ CLI: burnt check                 Notebook: burnt.check()
    Rust engine (PyO3)          Rust engine (same)
    110 rules, PyGraph        + REST API enrichment
    graph-DSL over AST          + providers/ (optional)
-                                     │
+   tree-sitter Python/SQL              │
                            ┌─────────┴──────────┐
                            │                    │
                     [azure-databricks]    [onprem-spark]
@@ -281,7 +282,9 @@ CLI: burnt check                 Notebook: burnt.check()
                     [gcp-databricks]
 ```
 
-**Rust engine:** tree-sitter Python + SQL + DLT, `%run` resolution, mode detection, semantic scope model, graph-DSL rule engine, 110 rules.  
+**Parsing:** All source analysis is CST-based via tree-sitter. Python files use [tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python); SQL files use [tree-sitter-sql-extended](https://github.com/RedPandaMC/tree-sitter-sql-extended), a fork of DerekStride's grammar extended with Databricks DDL (`CREATE STREAMING TABLE`, `OPTIMIZE … ZORDER BY`, `VACUUM`, Unity Catalog statements, and more).
+
+**Rust engine:** tree-sitter Python + [tree-sitter-sql-extended](https://github.com/RedPandaMC/tree-sitter-sql-extended) (Databricks/Spark/UC grammar), unified `PyGraph` with optional REST/Spark plan enrichment, graph-DSL rule engine, 110 rules.  
 **Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `ProviderBackend` (providers/), Rich display, typer CLI.  
 **Core install:** zero cloud SDK, zero credentials required.
 

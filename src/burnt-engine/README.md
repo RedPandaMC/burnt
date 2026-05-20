@@ -30,22 +30,22 @@ cargo clippy -- -D warnings
 
 ```
 ingestion/      Read files and notebooks from disk → SourceFile / Cell
-parse/          tree-sitter Python/SQL parsers; notebook cell splitter
-graph/          PyGraph (Python/SQL) and PipelineGraph (DLT) builders
-  python.rs     Walk Python AST → PyNode/PyEdge + SemanticModel findings
-  sql.rs        Walk SQL AST via sqlparser-rs → PyNode/PyEdge
-  dlt.rs        DLT-specific pipeline graph builder
-semantic/       SemanticModel: variable bindings, scope stack, shadow detection
+parse/          tree-sitter Python/SQL parsers; ImportMap; notebook cell splitter
+graph/          Unified PyGraph builder
+  python.rs     Walk Python AST → PyNode/PyEdge; ImportMap-based namespace; pipeline decorators
+  sql.rs        Walk SQL CST via tree-sitter-sql-extended → PyNode/PyEdge
+  mod.rs        classify_namespace(); entry points from_python() / from_sql()
+resolved/       Scope facts, Namespace enum {Spark, Pipeline, UserDefined, Unknown}
 rules/          Three-tier rule pipeline
-  query.rs      Tier 1 — tree-sitter S-expression pattern matching
-  context.rs    Tier 2 — loop/naming/chain context checks (HashMap dispatch)
-  dataflow.rs   Tier 3 — cache lifecycle and multi-action tracking
-  finding.rs    Shared make_finding() helper
-  registry      Code-generated rule registry (built from TOML files in rules/)
-detect.rs       Auto-detect language mode from source text
+  graph_dsl/    Graph-DSL pattern engine (lexer, parser, matcher, traversal, predicates)
+  graph_pipeline.rs  Orchestrates graph-DSL rule evaluation
+  mod.rs        Rule registry and dispatch
+detect.rs       Auto-detect language mode (Python / SQL) from source text
 types.rs        Core types: Finding, PyNode, PyEdge, AnalysisResultPy, …
 lib.rs          PyO3 entry points exposed to Python
 ```
+
+**SQL parser:** `tree-sitter-sql-extended` (fork of DerekStride/tree-sitter-sql). Parses with graceful degradation — errors in one statement do not blank the rest of the file. Extended with Databricks DDL constructs; see the [grammar issue tracker](https://github.com/RedPandaMC/tree-sitter-sql-extended/issues/1).
 
 ---
 

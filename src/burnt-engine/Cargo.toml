@@ -16,7 +16,6 @@ strum = { version = "0.26", features = ["derive"] }
 tree-sitter = "0.24"
 tree-sitter-python = "0.23"
 tree-sitter-sequel = "0.3"
-sqlparser = { version = "0.60", features = ["visitor"] }
 toml = "0.8"
 rayon = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
