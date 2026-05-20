@@ -287,9 +287,14 @@ mod tests {
 
         let mut state = SessionStatePy::new();
         state.collected.push(serde_json::to_value(stage).unwrap());
-        state.collected.push(serde_json::json!({"jobId": 1, "name": "j"}));
+        state
+            .collected
+            .push(serde_json::json!({"jobId": 1, "name": "j"}));
 
-        let raw = state.collected.iter().filter(|v| v.get("stageId").is_some());
+        let raw = state
+            .collected
+            .iter()
+            .filter(|v| v.get("stageId").is_some());
         assert_eq!(raw.count(), 1, "exactly one element should carry stageId");
     }
 }
