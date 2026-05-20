@@ -12,16 +12,17 @@ use strum::Display;
 /// `table = raw`.
 ///
 /// `fqn()` returns a stable key used as the join field with the
-/// `TableSpec` overlay attached to `ResolvedGraph`.
+/// `TableSpec` overlay attached to `ResolvedGraph`. `canonical_key()`
+/// returns the FQN lowercased for case-insensitive dedup.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TableRef {
-    pub raw: String,
-    pub catalog: Option<String>,
-    pub schema: Option<String>,
-    pub table: String,
-    pub is_temp_view: bool,
-    pub is_path_read: bool,
-    pub path: Option<String>,
+    raw: String,
+    catalog: Option<String>,
+    schema: Option<String>,
+    table: String,
+    is_temp_view: bool,
+    is_path_read: bool,
+    path: Option<String>,
 }
 
 impl TableRef {
@@ -191,6 +192,35 @@ impl TableRef {
             (Some(c), None) => format!("{c}.{}", self.table),
         }
     }
+
+    /// Case-insensitive join key. Returns the same value as `fqn()` but
+    /// lowercased so that `CATALOG.SCHEMA.TBL` and `catalog.schema.tbl`
+    /// produce the same key — useful for deduplication in builders.
+    pub fn canonical_key(&self) -> String {
+        self.fqn().to_ascii_lowercase()
+    }
+
+    pub fn raw(&self) -> &str {
+        &self.raw
+    }
+    pub fn catalog(&self) -> Option<&str> {
+        self.catalog.as_deref()
+    }
+    pub fn schema(&self) -> Option<&str> {
+        self.schema.as_deref()
+    }
+    pub fn table(&self) -> &str {
+        &self.table
+    }
+    pub fn is_temp_view(&self) -> bool {
+        self.is_temp_view
+    }
+    pub fn is_path_read(&self) -> bool {
+        self.is_path_read
+    }
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,6 +301,33 @@ pub struct Node {
     pub scope: crate::resolved::ScopeFacts,
 }
 
+#[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Eq)]
+#[strum(serialize_all = "snake_case")]
+#[non_exhaustive]
+pub enum EdgeKind {
+    DataFlow,
+    TableDependency,
+    Alias,
+    Scope,
+}
+
+impl EdgeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EdgeKind::DataFlow => "data_flow",
+            EdgeKind::TableDependency => "table_dependency",
+            EdgeKind::Alias => "alias",
+            EdgeKind::Scope => "scope",
+        }
+    }
+}
+
+impl From<EdgeKind> for String {
+    fn from(kind: EdgeKind) -> Self {
+        kind.as_str().to_string()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     pub source: String,
@@ -304,7 +361,7 @@ pub struct PipelineTable {
     pub id: String,
     pub name: String,
     pub kind: SdpTableKind,
-    pub source_type: SdpSourceType,
+    pub source_types: Vec<SdpSourceType>,
     pub inner_nodes: Vec<Node>,
     pub expectations: Vec<String>,
     pub is_incremental: bool,
@@ -449,7 +506,7 @@ pub struct CompiledRule {
     ///
     /// Rules with `requires_catalog = true` in their TOML are skipped by the
     /// standard `run_graph_rules` path and only evaluated when a
-    /// [`CatalogClient`] is available via `run_graph_rules_with_catalog`.
+    /// [`CatalogClient`](crate::catalog::CatalogClient) is available via `run_graph_rules_with_catalog`.
     #[serde(default)]
     pub has_catalog: bool,
 }
@@ -518,6 +575,21 @@ impl From<TableRef> for PyTableRef {
     fn from(t: TableRef) -> Self {
         let fqn = t.fqn();
         PyTableRef {
+            raw: t.raw().to_string(),
+            catalog: t.catalog().map(String::from),
+            schema: t.schema().map(String::from),
+            table: t.table().to_string(),
+            is_temp_view: t.is_temp_view(),
+            is_path_read: t.is_path_read(),
+            path: t.path().map(String::from),
+            fqn,
+        }
+    }
+}
+
+impl From<PyTableRef> for TableRef {
+    fn from(t: PyTableRef) -> Self {
+        TableRef {
             raw: t.raw,
             catalog: t.catalog,
             schema: t.schema,
@@ -525,7 +597,6 @@ impl From<TableRef> for PyTableRef {
             is_temp_view: t.is_temp_view,
             is_path_read: t.is_path_read,
             path: t.path,
-            fqn,
         }
     }
 }
@@ -756,7 +827,7 @@ pub struct PyPipelineTable {
     #[pyo3(get)]
     pub kind: String,
     #[pyo3(get)]
-    pub source_type: String,
+    pub source_types: Vec<String>,
     #[pyo3(get)]
     pub inner_nodes: Vec<PyNode>,
     #[pyo3(get)]
@@ -771,7 +842,7 @@ impl From<PipelineTable> for PyPipelineTable {
             id: t.id,
             name: t.name,
             kind: t.kind.to_string(),
-            source_type: t.source_type.to_string(),
+            source_types: t.source_types.iter().map(|s| s.to_string()).collect(),
             inner_nodes: t.inner_nodes.into_iter().map(|n| n.into()).collect(),
             expectations: t.expectations,
             is_incremental: t.is_incremental,

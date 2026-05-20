@@ -8,19 +8,24 @@ use pyo3::prelude::*;
 
 pub mod catalog;
 pub mod detect;
+pub mod error;
 pub mod graph;
 pub mod ingestion;
 pub(crate) mod json_py;
 pub(crate) mod parse;
 pub mod plan_parser;
+pub(crate) mod py_exceptions;
 pub mod resolved;
 pub mod rules;
 mod semantic;
 pub mod session;
 pub mod types;
 
+pub use py_exceptions::{BurntEngineError, CatalogError, IoError, ParseError, RuleError};
+
 use detect::detect_mode_from_source;
-use graph::{Graph, PyGraph, PipelineGraph, PyPipeline};
+use error::EngineError;
+use graph::{Graph, PipelineGraph, PyGraph, PyPipeline};
 use ingestion::files::ingest_file;
 use plan_parser::{parse_physical_plan_py, PyPlanNode};
 use resolved::python::{
@@ -29,8 +34,8 @@ use resolved::python::{
 };
 use session::{session_collect, session_start, SessionStatePy};
 use types::{
-    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyEdge, PyNode, PyPipelineTable,
-    PyAstShape, PyScopeFacts, PyTableRef, RuleEntry,
+    AnalysisMode, AnalysisResultPy, Cell, CellKind, Finding, PyAstShape, PyEdge, PyNode,
+    PyPipelineTable, PyScopeFacts, PyTableRef, RuleEntry,
 };
 
 /// Returns the crate version string from `Cargo.toml`.
@@ -76,7 +81,7 @@ fn run_rules(source: &str, language: Option<&str>) -> PyResult<Vec<types::Findin
         Some("auto") | None => detect_mode_from_source(source).as_lang_str(),
         Some(l) => l,
     };
-    rules::run(source, lang).map_err(pyo3::exceptions::PyRuntimeError::new_err)
+    Ok(rules::run(source, lang)?)
 }
 
 /// Runs all applicable lint rules against `source`, enriching table specs from
@@ -101,13 +106,12 @@ fn run_rules_with_catalog(
     py.allow_threads(|| {
         if let Some(url) = catalog_url {
             let all_rules = rules::load_all_compiled();
-            let client =
-                catalog::databricks::DatabricksCatalogClient::new(url, catalog_token);
+            let client = catalog::databricks::DatabricksCatalogClient::new(url, catalog_token);
             Ok(rules::graph_pipeline::run_graph_rules_with_catalog(
                 source, lang, &all_rules, &client,
             ))
         } else {
-            rules::run(source, lang).map_err(pyo3::exceptions::PyRuntimeError::new_err)
+            Ok(rules::run(source, lang)?)
         }
     })
 }
@@ -126,21 +130,23 @@ pub fn get_registry_count() -> usize {
 
 /// Builds a graph/pipeline for the given mode and returns it alongside any
 /// semantic findings produced during graph construction.
+#[allow(clippy::type_complexity)]
 fn build_graph_and_pipeline(
     mode: &AnalysisMode,
     source: &str,
-) -> PyResult<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>)> {
+) -> Result<(Option<PyGraph>, Option<PyPipeline>, Vec<Finding>), EngineError> {
     match mode {
         AnalysisMode::Sdp => {
             let pg = PipelineGraph::from_sdp(source);
             Ok((None, Some(pg.into()), Vec::new()))
         }
         AnalysisMode::Sql => {
-            let cg = Graph::from_sql(source)?;
+            let cg = Graph::from_sql(source).map_err(|e| EngineError::GraphBuild(e.to_string()))?;
             Ok((Some(cg.into()), None, Vec::new()))
         }
         AnalysisMode::Python => {
-            let cg = Graph::from_python(source)?;
+            let cg =
+                Graph::from_python(source).map_err(|e| EngineError::GraphBuild(e.to_string()))?;
             let sem_findings = cg.findings.clone();
             Ok((Some(cg.into()), None, sem_findings))
         }
@@ -155,7 +161,7 @@ fn build_graph_and_pipeline(
 fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<AnalysisResultPy> {
     py.allow_threads(|| {
         let mode = detect_mode_from_source(source);
-        let mut findings = rules::run(source, mode.as_lang_str()).unwrap_or_default();
+        let mut findings = rules::run(source, mode.as_lang_str())?;
 
         let cell = Cell {
             kind: match mode {
@@ -183,12 +189,11 @@ fn analyze_source(py: Python<'_>, source: &str, path: Option<&str>) -> PyResult<
     })
 }
 
-fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, String> {
-    let source_file = ingest_file(path).map_err(|e| e.to_string())?;
+fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, EngineError> {
+    let source_file = ingest_file(path)?;
     let mode = detect_mode_from_source(&source_file.content);
     let mut findings = rules::run(&source_file.content, mode.as_lang_str()).unwrap_or_default();
-    let (graph, pipeline, sem_findings) =
-        build_graph_and_pipeline(&mode, &source_file.content).map_err(|e| e.to_string())?;
+    let (graph, pipeline, sem_findings) = build_graph_and_pipeline(&mode, &source_file.content)?;
     findings.extend(sem_findings);
     Ok(AnalysisResultPy {
         mode: mode.to_string(),
@@ -203,7 +208,7 @@ fn analyze_path_internal(path: &str) -> Result<AnalysisResultPy, String> {
 /// Analyses a file on disk and returns a full `AnalysisResultPy`.
 #[pyfunction]
 fn analyze_file(py: Python<'_>, path: &str) -> PyResult<AnalysisResultPy> {
-    py.allow_threads(|| analyze_path_internal(path).map_err(pyo3::exceptions::PyIOError::new_err))
+    py.allow_threads(|| Ok(analyze_path_internal(path)?))
 }
 
 /// Analyses all `.py`, `.sql`, and `.ipynb` files in a directory in parallel.
@@ -217,20 +222,14 @@ fn analyze_directory(py: Python<'_>, path: &str) -> PyResult<Vec<AnalysisResultP
 
         let dir = std::path::Path::new(path);
         if !dir.exists() {
-            return Err(pyo3::exceptions::PyIOError::new_err(format!(
-                "Directory not found: {}",
-                path
-            )));
+            return Err(EngineError::FileNotFound(path.to_string()).into());
         }
         if !dir.is_dir() {
-            return Err(pyo3::exceptions::PyIOError::new_err(format!(
-                "Not a directory: {}",
-                path
-            )));
+            return Err(EngineError::Internal(format!("not a directory: {path}")).into());
         }
 
         let entries: Vec<_> = std::fs::read_dir(dir)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?
+            .map_err(|e| -> EngineError { EngineError::Io(e) })?
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .map(|e| e.path())
@@ -251,6 +250,17 @@ fn analyze_directory(py: Python<'_>, path: &str) -> PyResult<Vec<AnalysisResultP
 
 #[pymodule]
 fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Exception hierarchy — registered first so Python's `from _engine import
+    // ParseError` works immediately.
+    m.add(
+        "BurntEngineError",
+        m.py().get_type_bound::<BurntEngineError>(),
+    )?;
+    m.add("ParseError", m.py().get_type_bound::<ParseError>())?;
+    m.add("RuleError", m.py().get_type_bound::<RuleError>())?;
+    m.add("CatalogError", m.py().get_type_bound::<CatalogError>())?;
+    m.add("IoError", m.py().get_type_bound::<IoError>())?;
+
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(check, m)?)?;
     m.add_function(wrap_pyfunction!(run_rules, m)?)?;

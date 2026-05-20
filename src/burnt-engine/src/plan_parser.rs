@@ -19,10 +19,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::json_py::value_to_py;
 
+const MAX_PLAN_NODES: usize = 100_000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum PlanParseError {
     #[error("malformed plan JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("plan has {0} nodes, exceeding limit of {MAX_PLAN_NODES}")]
+    PlanTooLarge(usize),
 }
 
 /// A single Catalyst operator from a Spark physical plan.
@@ -133,8 +137,7 @@ impl PyPlanNode {
     fn from_plan_node(py: Python<'_>, n: PlanNode) -> Self {
         let dict = PyDict::new_bound(py);
         for (k, v) in &n.metrics {
-            dict.set_item(k, value_to_py(py, v))
-                .expect("PyDict::set_item failed under stable allocator");
+            let _ = dict.set_item(k, value_to_py(py, v));
         }
         PyPlanNode {
             node_id: n.node_id,
@@ -164,6 +167,9 @@ fn try_parse(json_str: &str) -> Result<Vec<PlanNode>, PlanParseError> {
     let raw: RawPlan = serde_json::from_str(json_str)?;
     if raw.nodes.is_empty() {
         return Ok(Vec::new());
+    }
+    if raw.nodes.len() > MAX_PLAN_NODES {
+        return Err(PlanParseError::PlanTooLarge(raw.nodes.len()));
     }
 
     // Edge `{fromId: a, toId: b}` is data-flow direction: `a` produces, `b`
@@ -224,8 +230,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             name
         );
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("fixture not found at {path}"))
+        std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("fixture not found at {path}"))
     }
 
     #[test]
@@ -271,7 +276,10 @@ mod tests {
         let json = load_fixture("reused_exchange.json");
         let nodes = parse_physical_plan(&json);
         assert_eq!(nodes.len(), 4);
-        let reused = nodes.iter().find(|n| n.node_name == "ReusedExchange").unwrap();
+        let reused = nodes
+            .iter()
+            .find(|n| n.node_name == "ReusedExchange")
+            .unwrap();
         assert_eq!(reused.parent_ids, vec![1]);
         let exchange = nodes.iter().find(|n| n.node_name == "Exchange").unwrap();
         let mut p = exchange.parent_ids.clone();
