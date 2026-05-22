@@ -11,7 +11,7 @@
       "enabled": true,
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer {file:~/.config/opencode/.secrets/github-pat}"
+        "Authorization": "Bearer {file:~/.config/opencode/.secrets/burnt-github-pat}"
       }
     }
   }
