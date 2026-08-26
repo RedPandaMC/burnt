@@ -45,7 +45,7 @@ types.rs        Core types: Finding, PyNode, PyEdge, AnalysisResultPy, …
 lib.rs          PyO3 entry points exposed to Python
 ```
 
-**SQL parser:** `tree-sitter-sql-extended` (fork of DerekStride/tree-sitter-sql). Parses with graceful degradation — errors in one statement do not blank the rest of the file. Extended with Databricks DDL constructs; see the [grammar issue tracker](https://github.com/RedPandaMC/tree-sitter-sql-extended/issues/1).
+**SQL parser:** `tree-sitter-sql-extended` (fork of DerekStride/tree-sitter-sql). Parses with graceful degradation — errors in one statement do not blank the rest of the file. Extended with Databricks DDL constructs; see the [grammar issue tracker](https://github.com/RelativelyUnknown/tree-sitter-sql-extended/issues/1).
 
 ---
 

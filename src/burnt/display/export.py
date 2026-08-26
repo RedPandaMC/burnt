@@ -62,7 +62,7 @@ def report_to_sarif(result: CheckResult) -> dict:
                     "driver": {
                         "name": "burnt",
                         "version": getattr(result, "__version__", "0.2.0"),
-                        "informationUri": "https://github.com/redpandamc/burnt",
+                        "informationUri": "https://github.com/relativelyunknown/burnt",
                         "rules": rules,
                     }
                 },

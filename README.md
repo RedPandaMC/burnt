@@ -282,9 +282,9 @@ CLI: burnt check                 Notebook: burnt.check()
                     [gcp-databricks]
 ```
 
-**Parsing:** All source analysis is CST-based via tree-sitter. Python files use [tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python); SQL files use [tree-sitter-sql-extended](https://github.com/RedPandaMC/tree-sitter-sql-extended), a fork of DerekStride's grammar extended with Databricks DDL (`CREATE STREAMING TABLE`, `OPTIMIZE … ZORDER BY`, `VACUUM`, Unity Catalog statements, and more).
+**Parsing:** All source analysis is CST-based via tree-sitter. Python files use [tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python); SQL files use [tree-sitter-sql-extended](https://github.com/RelativelyUnknown/tree-sitter-sql-extended), a fork of DerekStride's grammar extended with Databricks DDL (`CREATE STREAMING TABLE`, `OPTIMIZE … ZORDER BY`, `VACUUM`, Unity Catalog statements, and more).
 
-**Rust engine:** tree-sitter Python + [tree-sitter-sql-extended](https://github.com/RedPandaMC/tree-sitter-sql-extended) (Databricks/Spark/UC grammar), unified `PyGraph` with optional REST/Spark plan enrichment, graph-DSL rule engine, 110 rules.  
+**Rust engine:** tree-sitter Python + [tree-sitter-sql-extended](https://github.com/RelativelyUnknown/tree-sitter-sql-extended) (Databricks/Spark/UC grammar), unified `PyGraph` with optional REST/Spark plan enrichment, graph-DSL rule engine, 110 rules.  
 **Python layer:** Spark monitoring REST client, graph enrichment, cost estimation via `ProviderBackend` (providers/), Rich display, typer CLI.  
 **Core install:** zero cloud SDK, zero credentials required.
 
